@@ -40,9 +40,11 @@ Import('*')
 
 Source('htm.cc')
 Source('mmu.cc')
-if env['CONF']['USE_ARM_ISA'] or
-        env['CONF']['USE_RISCV_ISA'] or
-        env['CONF']['USE_RISCV_CHERI_ISA']:
+if (
+     env['CONF']['USE_ARM_ISA'] or
+     env['CONF']['USE_RISCV_ISA'] or
+     env['CONF']['USE_RISCV_CHERI_ISA']
+):
      Source('semihosting.cc')
      SimObject('BaseSemihosting.py', sim_objects=['BaseSemihosting'])
      DebugFlag('Semihosting')
