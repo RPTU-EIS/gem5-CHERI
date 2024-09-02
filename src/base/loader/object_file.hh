@@ -72,7 +72,9 @@ enum Arch
     Power,
     Power64,
     Riscv64,
-    Riscv32
+    Riscv32,
+    CHERIRiscv64,
+    CHERIRiscv32
 };
 
 const char *archToString(Arch arch);

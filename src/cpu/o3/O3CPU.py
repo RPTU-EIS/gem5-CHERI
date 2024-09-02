@@ -30,6 +30,7 @@ arch_vars = [
     "USE_MIPS_ISA",
     "USE_POWER_ISA",
     "USE_RISCV_ISA",
+    "USE_RISCV_CHERI_ISA",
     "USE_SPARC_ISA",
     "USE_X86_ISA",
 ]
@@ -46,6 +47,8 @@ if len(enabled) == 1:
         from m5.objects.PowerCPU import PowerO3CPU as O3CPU
     elif arch == "USE_RISCV_ISA":
         from m5.objects.RiscvCPU import RiscvO3CPU as O3CPU
+    elif arch == "USE_RISCV_CHERI_ISA":
+        from m5.objects.CHERIRiscvCPU import RiscvCHERIO3CPU as O3CPU
     elif arch == "USE_SPARC_ISA":
         from m5.objects.SparcCPU import SparcO3CPU as O3CPU
     elif arch == "USE_X86_ISA":

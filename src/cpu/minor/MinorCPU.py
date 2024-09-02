@@ -30,6 +30,7 @@ arch_vars = [
     "USE_MIPS_ISA",
     "USE_POWER_ISA",
     "USE_RISCV_ISA",
+    "USE_RISCV_CHERI_ISA",
     "USE_SPARC_ISA",
     "USE_X86_ISA",
 ]
@@ -42,3 +43,5 @@ if len(enabled) == 1:
         from m5.objects.ArmCPU import ArmMinorCPU as MinorCPU
     if arch == "USE_RISCV_ISA":
         from m5.objects.RiscvCPU import RiscvMinorCPU as MinorCPU
+    if arch == "USE_RISCV_CHERI_ISA":
+        from m5.objects.CHERIRiscvCPU import RiscvCHERIMinorCPU as MinorCPU

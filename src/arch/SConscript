@@ -62,6 +62,7 @@ if env['CONF']['BUILD_ISA']:
         not env['CONF']['USE_MIPS_ISA'] and
         not env['CONF']['USE_POWER_ISA'] and
         not env['CONF']['USE_RISCV_ISA'] and
+        not env['CONF']['USE_RISCV_CHERI_ISA'] and
         not env['CONF']['USE_SPARC_ISA'] and
         not env['CONF']['USE_X86_ISA']
     ):

@@ -83,6 +83,10 @@ archToString(Arch arch)
         return "riscv64";
       case Riscv32:
         return "riscv32";
+      case CHERIRiscv64:
+        return "CHERIriscv64";
+      case CHERIRiscv32:
+        return "CHERIriscv32";
       default:
         panic("Unrecognized arch %d.", arch);
     }
@@ -156,6 +160,7 @@ archIs64Bit(const loader::Arch arch)
       case Arm64:
       case Power64:
       case Riscv64:
+      case CHERIRiscv64:
         return true;
       default:
         return false;

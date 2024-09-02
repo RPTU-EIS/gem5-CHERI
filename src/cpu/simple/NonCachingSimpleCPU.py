@@ -30,6 +30,7 @@ arch_vars = [
     "USE_MIPS_ISA",
     "USE_POWER_ISA",
     "USE_RISCV_ISA",
+    "USE_RISCV_CHERI_ISA",
     "USE_SPARC_ISA",
     "USE_X86_ISA",
 ]
@@ -53,6 +54,10 @@ if len(enabled) == 1:
     elif arch == "USE_RISCV_ISA":
         from m5.objects.RiscvCPU import (
             RiscvNonCachingSimpleCPU as NonCachingSimpleCPU,
+        )
+    elif arch == "USE_RISCV_CHERI_ISA":
+        from m5.objects.CHERIRiscvCPU import (
+            RiscvCHERINonCachingSimpleCPU as NonCachingSimpleCPU,
         )
     elif arch == "USE_SPARC_ISA":
         from m5.objects.SparcCPU import (
