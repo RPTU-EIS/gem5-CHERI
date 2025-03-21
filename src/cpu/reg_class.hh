@@ -59,6 +59,7 @@ namespace gem5
 enum RegClassType
 {
     IntRegClass,        ///< Integer register
+    CapRegClass,        ///< Integer register
     FloatRegClass,      ///< Floating-point register
     /** Vector Register. */
     VecRegClass,
@@ -73,6 +74,7 @@ enum RegClassType
 
 // "Standard" register class names. Using these is encouraged but optional.
 inline constexpr char IntRegClassName[] = "integer";
+inline constexpr char CapRegClassName[] = "capabilities";
 inline constexpr char FloatRegClassName[] = "floating_point";
 inline constexpr char VecRegClassName[] = "vector";
 inline constexpr char VecElemClassName[] = "vector_element";

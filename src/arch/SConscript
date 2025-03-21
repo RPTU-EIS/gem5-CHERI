@@ -225,6 +225,7 @@ def ISADesc(desc, decoder_splits=1, exec_splits=1, tags=None, add_tags=None):
 
 Export('ISADesc')
 
+DebugFlag('CapRegs')
 DebugFlag('IntRegs')
 DebugFlag('FloatRegs')
 DebugFlag('VecRegs')

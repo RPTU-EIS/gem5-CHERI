@@ -159,3 +159,11 @@ def bitfield BIT31      bit31;
 def bitfield BIT30      bit30;
 def bitfield SIMM5      uimm_vsetivli;
 def bitfield SIMM3      simm3;
+
+//Capability instructions
+def bitfield MAJOROP        <6:0>;
+def bitfield INSPECT_CODE   <24:20>;
+def bitfield CS1            <19:15>;
+def bitfield CS2            <24:20>;
+def bitfield CAPFUN         <24:20>;
+def bitfield CD             <11:7>;

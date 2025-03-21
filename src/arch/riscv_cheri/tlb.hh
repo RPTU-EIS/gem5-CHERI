@@ -87,7 +87,7 @@ class TLB : public BaseTLB
 
   public:
     CHERIBasePMAChecker *pma;
-    PMP *pmp;
+    CHERIPMP *pmp;
 
   public:
     typedef CHERIRiscvTLBParams Params;

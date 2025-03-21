@@ -56,7 +56,7 @@ if len(enabled) == 1:
             RiscvNonCachingSimpleCPU as NonCachingSimpleCPU,
         )
     elif arch == "USE_RISCV_CHERI_ISA":
-        from m5.objects.CHERIRiscvCPU import (
+        from m5.objects.RiscvCHERICPU import (
             RiscvCHERINonCachingSimpleCPU as NonCachingSimpleCPU,
         )
     elif arch == "USE_SPARC_ISA":

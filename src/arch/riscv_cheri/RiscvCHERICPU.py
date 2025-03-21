@@ -34,28 +34,28 @@ from m5.objects.CHERIRiscvISA import CHERIRiscvISA
 from m5.objects.CHERIRiscvMMU import CHERIRiscvMMU
 
 
-class CHERIRiscvCPU:
+class RiscvCHERICPU:
     ArchDecoder = CHERIRiscvDecoder
     ArchMMU = CHERIRiscvMMU
     ArchInterrupts = CHERIRiscvInterrupts
     ArchISA = CHERIRiscvISA
 
 
-class RiscvCHERIAtomicSimpleCPU(BaseAtomicSimpleCPU, CHERIRiscvCPU):
+class RiscvCHERIAtomicSimpleCPU(BaseAtomicSimpleCPU, RiscvCHERICPU):
     mmu = CHERIRiscvMMU()
 
 
-class RiscvCHERINonCachingSimpleCPU(BaseNonCachingSimpleCPU, CHERIRiscvCPU):
+class RiscvCHERINonCachingSimpleCPU(BaseNonCachingSimpleCPU, RiscvCHERICPU):
     mmu = CHERIRiscvMMU()
 
 
-class RiscvCHERITimingSimpleCPU(BaseTimingSimpleCPU, CHERIRiscvCPU):
+class RiscvCHERITimingSimpleCPU(BaseTimingSimpleCPU, RiscvCHERICPU):
     mmu = CHERIRiscvMMU()
 
 
-class RiscvCHERIO3CPU(BaseO3CPU, CHERIRiscvCPU):
+class RiscvCHERIO3CPU(BaseO3CPU, RiscvCHERICPU):
     mmu = CHERIRiscvMMU()
 
 
-class RiscvCHERIMinorCPU(BaseMinorCPU, CHERIRiscvCPU):
+class RiscvCHERIMinorCPU(BaseMinorCPU, RiscvCHERICPU):
     mmu = CHERIRiscvMMU()

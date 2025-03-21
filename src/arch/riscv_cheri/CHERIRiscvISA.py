@@ -117,9 +117,9 @@ class CHERIRiscvISA(BaseISA):
     def get_isa_string(self):
         isa_extensions = []
         # check for the base ISA type
-        if self.riscv_type.value == "RV32":
+        if self.cheri_riscv_type.value == "RV32":
             isa_extensions.append("rv32")
-        elif self.riscv_type.value == "RV64":
+        elif self.cheri_riscv_type.value == "RV64":
             isa_extensions.append("rv64")
         # use imafdc by default
         isa_extensions.extend(["i", "m", "a", "f", "d", "c"])

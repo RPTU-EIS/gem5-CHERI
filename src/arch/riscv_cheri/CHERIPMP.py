@@ -30,8 +30,8 @@ from m5.SimObject import SimObject
 
 
 class CHERIPMP(SimObject):
-    type = "PMP"
+    type = "CHERIPMP"
     cxx_header = "arch/riscv_cheri/pmp.hh"
-    cxx_class = "gem5::CHERIRiscvISA::PMP"
+    cxx_class = "gem5::CHERIRiscvISA::CHERIPMP"
 
     pmp_entries = Param.Int(16, "Maximum PMP Entries Supported")

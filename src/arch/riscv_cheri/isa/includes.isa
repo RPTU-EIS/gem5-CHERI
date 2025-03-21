@@ -48,6 +48,7 @@ output header {{
 
 #include "arch/riscv_cheri/insts/amo.hh"
 #include "arch/riscv_cheri/insts/bs.hh"
+#include "arch/riscv_cheri/insts/capability.hh"
 #include "arch/riscv_cheri/insts/compressed.hh"
 #include "arch/riscv_cheri/insts/mem.hh"
 #include "arch/riscv_cheri/insts/pseudo.hh"
@@ -101,6 +102,7 @@ output exec {{
 #include "arch/riscv_cheri/fp_inst.hh"
 #include "arch/riscv_cheri/mmu.hh"
 #include "arch/riscv_cheri/reg_abi.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/float.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
 #include "arch/riscv_cheri/regs/vector.hh"

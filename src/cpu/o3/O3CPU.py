@@ -48,7 +48,7 @@ if len(enabled) == 1:
     elif arch == "USE_RISCV_ISA":
         from m5.objects.RiscvCPU import RiscvO3CPU as O3CPU
     elif arch == "USE_RISCV_CHERI_ISA":
-        from m5.objects.CHERIRiscvCPU import RiscvCHERIO3CPU as O3CPU
+        from m5.objects.RiscvCHERICPU import RiscvCHERIO3CPU as O3CPU
     elif arch == "USE_SPARC_ISA":
         from m5.objects.SparcCPU import SparcO3CPU as O3CPU
     elif arch == "USE_X86_ISA":

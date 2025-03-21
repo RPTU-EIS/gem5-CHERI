@@ -54,11 +54,11 @@ namespace CHERIRiscvISA
  * protection (pmp) primitive.
  * @todo Add statistics and debug prints.
  */
-class PMP : public SimObject
+class CHERIPMP : public SimObject
 {
   public:
     PARAMS(CHERIPMP);
-    PMP(const Params &params);
+    CHERIPMP(const Params &params);
 
   private:
     /** maximum number of entries in the pmp table */

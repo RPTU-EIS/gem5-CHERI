@@ -88,7 +88,7 @@ class MMU : public BaseMMU
 
     }
 
-    PMP *
+    CHERIPMP *
     getPMP()
     {
         return static_cast<TLB*>(dtb)->pmp;

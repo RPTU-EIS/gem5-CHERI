@@ -49,6 +49,7 @@
 #include <sstream>
 #include <string>
 
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/float.hh"
 #include "arch/riscv_cheri/regs/int.hh"
 #include "arch/riscv_cheri/regs/vector.hh"
@@ -145,6 +146,13 @@ registerName(RegId reg)
             return str.str();
         }
         return int_reg::RegNames[reg.index()];
+    } if (reg.is(CapRegClass)) {
+        if (reg.index() >= cap_reg::NumCapRegs) {
+            std::stringstream str;
+            str << "?? (c" << reg.index() << ')';
+            return str.str();
+        }
+        return cap_reg::RegNames[reg.index()];
     } else if (reg.is(FloatRegClass)) {
         if (reg.index() >= float_reg::NumRegs) {
             std::stringstream str;

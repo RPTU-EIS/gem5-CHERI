@@ -54,7 +54,15 @@ BareMetal::BareMetal(const Params &p) : Workload(p),
         _resetVect = p.reset_vect;
     }
 
+    std::cout << loader::archToString(bootloader->getArch()) << std::endl;
+    std::cout << "Bare Metal workload constructed" << std::endl;
+    std::cout << "Entry point: ";
+    std::cout<< std::hex << bootloader->entryPoint() << std::endl;
     loader::debugSymbolTable.insert(bootloaderSymtab);
+    for (const auto& it: loader::debugSymbolTable) {
+        std::cout << "name: " << it.name() << " addr: ";
+        std::cout << std::hex << it.address() << std::endl;
+    }
 }
 
 BareMetal::~BareMetal()

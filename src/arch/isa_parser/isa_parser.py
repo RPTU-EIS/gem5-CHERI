@@ -51,7 +51,7 @@ from .operand_list import *
 from .operand_types import *
 from .util import *
 
-debug = False
+debug = True
 
 ####################
 # Template objects.
@@ -563,6 +563,7 @@ class ISAParser(Grammar):
             {
                 "overrideInOperand": overrideInOperand,
                 "IntRegOp": IntRegOperandDesc,
+                "CapRegOp": CapRegOperandDesc,
                 "FloatRegOp": FloatRegOperandDesc,
                 "CCRegOp": CCRegOperandDesc,
                 "VecElemOp": VecElemOperandDesc,

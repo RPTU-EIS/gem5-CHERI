@@ -42,6 +42,7 @@ isa_string_map = {
     ISA.X86: "X86",
     ISA.ARM: "Arm",
     ISA.RISCV: "Riscv",
+    ISA.RISCV_CHERI: "RiscvCHERI",
     ISA.SPARC: "Sparc",
     ISA.POWER: "Power",
     ISA.MIPS: "Mips",

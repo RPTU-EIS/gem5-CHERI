@@ -372,6 +372,7 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
     delayed = false;
 
     if (FullSystem) {
+        DPRINTF(TLB, "Full system\n");
         CHERIPrivilegeMode pmode = getMemPriv(tc, mode);
         MISA misa = tc->readMiscRegNoEffect(MISCREG_ISA);
         SATP satp = tc->readMiscReg(MISCREG_SATP);
@@ -421,8 +422,10 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         Process * p = tc->getProcessPtr();
 
         Fault fault = p->pTable->translate(req);
-        if (fault != NoFault)
+        if (fault != NoFault) {
+            DPRINTF(TLB, "Fault\n");
             return fault;
+        }
 
         return NoFault;
     }

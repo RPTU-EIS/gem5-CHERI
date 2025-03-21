@@ -175,7 +175,7 @@ namespace CHERIRiscvISA
         TLB * tlb;
         System * sys;
         CHERIBasePMAChecker * pma;
-        PMP * pmp;
+        CHERIPMP * pmp;
         RequestorID requestorId;
 
         // The number of outstanding walks that can be squashed per cycle.

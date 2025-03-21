@@ -4861,6 +4861,20 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
 
+        0x16: decode FUNCT7 {
+            0x7f: decode CAPFUN {
+                format COp {
+                    0x0: cgetperm({{
+                        // Instead of accessing fields
+                        // access the whole thing and mask it out?
+                        Cs1 = xc->getRegOperand(this,CS1 +
+                            gem5::CHERIRiscvISA::cap_reg::NumArchCapRegs);
+                        Rd = Cs1;
+                    }});
+                }
+            }
+        }
+
         0x18: decode FUNCT3 {
             format BOp {
                 0x0: beq({{

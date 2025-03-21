@@ -51,7 +51,7 @@ class ISA(Enum):
 
     X86 = "x86"
     RISCV = "riscv"
-    RISCV_CHERI = "riscv cheri"
+    RISCV_CHERI = "riscv_cheri"
     ARM = "arm"
     MIPS = "mips"
     POWER = "power"

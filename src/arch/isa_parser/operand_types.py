@@ -255,6 +255,11 @@ class IntRegOperandDesc(RegOperandDesc):
         super().__init__("intRegClass", RegValOperand, *args, **kwargs)
 
 
+class CapRegOperandDesc(RegOperandDesc):
+    def __init__(self, *args, **kwargs):
+        super().__init__("capRegClass", RegValOperand, *args, **kwargs)
+
+
 class FloatRegOperandDesc(RegOperandDesc):
     def __init__(self, *args, **kwargs):
         super().__init__("floatRegClass", RegValOperand, *args, **kwargs)

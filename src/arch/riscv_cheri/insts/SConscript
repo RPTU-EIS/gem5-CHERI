@@ -29,6 +29,7 @@ Import('*')
 
 Source('amo.cc', tags='riscv cheri isa')
 Source('bs.cc', tags='riscv cheri isa')
+Source('capability.cc', tags='riscv cheri isa')
 Source('compressed.cc', tags='riscv cheri isa')
 Source('mem.cc', tags='riscv cheri isa')
 Source('standard.cc', tags='riscv cheri isa')

@@ -43,7 +43,7 @@
 
 // Include formats for nonstandard extensions
 ##include "compressed.isa"
-
+##include "capability.isa"
 // Pseudo operations
 ##include "m5ops.isa"
 

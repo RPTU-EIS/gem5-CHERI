@@ -72,6 +72,9 @@ arch-power:
 arch-riscv:
     status: orphaned
 
+arch-cheri-riscv:
+    status: orphaned
+
 arch-sparc:
     status: orphaned
 

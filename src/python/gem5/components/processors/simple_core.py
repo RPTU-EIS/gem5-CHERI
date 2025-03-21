@@ -72,6 +72,7 @@ class SimpleCore(BaseCPUCore):
             ISA.X86: "X86",
             ISA.ARM: "Arm",
             ISA.RISCV: "Riscv",
+            ISA.RISCV_CHERI: "RiscvCHERI",
             ISA.SPARC: "Sparc",
             ISA.POWER: "Power",
             ISA.MIPS: "Mips",
@@ -87,7 +88,7 @@ class SimpleCore(BaseCPUCore):
 
         if isa not in _isa_string_map:
             raise NotImplementedError(
-                f"ISA '{isa.name}' does not have an"
+                f"ISA '{isa.name}' does not have an "
                 "entry in `AbstractCore.cpu_simobject_factory._isa_string_map`"
             )
 
@@ -123,6 +124,9 @@ class SimpleCore(BaseCPUCore):
                 f"{_isa_string_map[isa]}" f"{_cpu_types_string_map[cpu_type]}"
             )
 
+        print(module_str)
+        print(cpu_class_str)
+        print(importlib.import_module(module_str))
         try:
             to_return_cls = getattr(
                 importlib.import_module(module_str), cpu_class_str

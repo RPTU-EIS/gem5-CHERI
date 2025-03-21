@@ -45,7 +45,6 @@ Decoder::Decoder(const CHERIRiscvDecoderParams &p) : InstDecoder(p, &machInst)
     ISA *isa = dynamic_cast<ISA*>(p.isa);
     vlen = isa->getVecLenInBits();
     elen = isa->getVecElemLenInBits();
-    assert(0);
     reset();
 }
 

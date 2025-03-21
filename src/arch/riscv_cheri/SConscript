@@ -89,7 +89,7 @@ SimObject('CHERIRiscvSeWorkload.py', sim_objects=[
 SimObject('CHERIRiscvTLB.py', sim_objects=['CHERIRiscvPagetableWalker',
     'CHERIRiscvTLB'], tags='riscv cheri isa')
 
-SimObject('CHERIRiscvCPU.py', sim_objects=[], tags='riscv cheri isa')
+SimObject('RiscvCHERICPU.py', sim_objects=[], tags='riscv cheri isa')
 
 DebugFlag('CHERIRiscvMisc', tags='riscv cheri isa')
 DebugFlag('CHERIPMP', tags='riscv cheri isa')

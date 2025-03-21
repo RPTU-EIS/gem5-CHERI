@@ -48,7 +48,7 @@ namespace gem5
 namespace CHERIRiscvISA
 {
 
-PMP::PMP(const Params &params) :
+CHERIPMP::CHERIPMP(const Params &params) :
     SimObject(params),
     pmpEntries(params.pmp_entries),
     numRules(0),
@@ -58,7 +58,7 @@ PMP::PMP(const Params &params) :
 }
 
 Fault
-PMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
+CHERIPMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
               CHERIPrivilegeMode pmode, ThreadContext *tc, Addr vaddr)
 {
     // First determine if pmp table should be consulted
@@ -126,7 +126,7 @@ PMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
 }
 
 Fault
-PMP::createAddrfault(Addr vaddr, BaseMMU::Mode mode)
+CHERIPMP::createAddrfault(Addr vaddr, BaseMMU::Mode mode)
 {
     ExceptionCode code;
     if (mode == BaseMMU::Read) {
@@ -141,7 +141,7 @@ PMP::createAddrfault(Addr vaddr, BaseMMU::Mode mode)
 }
 
 inline uint8_t
-PMP::pmpGetAField(uint8_t cfg)
+CHERIPMP::pmpGetAField(uint8_t cfg)
 {
     // to get a field from pmpcfg register
     uint8_t a = cfg >> 3;
@@ -150,7 +150,7 @@ PMP::pmpGetAField(uint8_t cfg)
 
 
 bool
-PMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
+CHERIPMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
 {
     if (pmp_index >= pmpEntries) {
         DPRINTF(CHERIPMP, "Can't update pmp entry config %u"
@@ -172,7 +172,7 @@ PMP::pmpUpdateCfg(uint32_t pmp_index, uint8_t this_cfg)
 }
 
 void
-PMP::pmpUpdateRule(uint32_t pmp_index)
+CHERIPMP::pmpUpdateRule(uint32_t pmp_index)
 {
     // In qemu, the rule is updated whenever
     // pmpaddr/pmpcfg is written
@@ -227,7 +227,7 @@ PMP::pmpUpdateRule(uint32_t pmp_index)
 }
 
 void
-PMP::pmpReset()
+CHERIPMP::pmpReset()
 {
     for (uint32_t i = 0; i < pmpTable.size(); i++) {
         pmpTable[i].pmpCfg &= ~(PMP_A_MASK | PMP_LOCK);
@@ -236,7 +236,7 @@ PMP::pmpReset()
 }
 
 bool
-PMP::pmpUpdateAddr(uint32_t pmp_index, Addr this_addr)
+CHERIPMP::pmpUpdateAddr(uint32_t pmp_index, Addr this_addr)
 {
     if (pmp_index >= pmpEntries) {
         DPRINTF(CHERIPMP, "Can't update pmp entry address %u"
@@ -273,7 +273,7 @@ PMP::pmpUpdateAddr(uint32_t pmp_index, Addr this_addr)
 }
 
 bool
-PMP::shouldCheckPMP(CHERIPrivilegeMode pmode, ThreadContext *tc)
+CHERIPMP::shouldCheckPMP(CHERIPrivilegeMode pmode, ThreadContext *tc)
 {
     // The privilege mode of memory read and write
     // is modified by TLB. It can just simply check if
@@ -284,7 +284,7 @@ PMP::shouldCheckPMP(CHERIPrivilegeMode pmode, ThreadContext *tc)
 }
 
 AddrRange
-PMP::pmpDecodeNapot(Addr pmpaddr)
+CHERIPMP::pmpDecodeNapot(Addr pmpaddr)
 {
     if (pmpaddr == -1) {
         AddrRange this_range(0, -1);

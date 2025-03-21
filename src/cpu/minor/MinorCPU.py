@@ -44,4 +44,4 @@ if len(enabled) == 1:
     if arch == "USE_RISCV_ISA":
         from m5.objects.RiscvCPU import RiscvMinorCPU as MinorCPU
     if arch == "USE_RISCV_CHERI_ISA":
-        from m5.objects.CHERIRiscvCPU import RiscvCHERIMinorCPU as MinorCPU
+        from m5.objects.RiscvCHERICPU import RiscvCHERIMinorCPU as MinorCPU

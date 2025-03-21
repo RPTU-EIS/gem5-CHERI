@@ -48,7 +48,7 @@ if len(enabled) == 1:
     elif arch == "USE_RISCV_ISA":
         from m5.objects.RiscvCPU import RiscvTimingSimpleCPU as TimingSimpleCPU
     elif arch == "USE_RISCV_CHERI_ISA":
-        from m5.objects.CHERIRiscvCPU import (
+        from m5.objects.RiscvCHERICPU import (
             RiscvCHERITimingSimpleCPU as TimingSimpleCPU,
         )
     elif arch == "USE_SPARC_ISA":

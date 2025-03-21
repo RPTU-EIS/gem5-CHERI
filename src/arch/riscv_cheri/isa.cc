@@ -42,6 +42,7 @@
 #include "arch/riscv_cheri/pagetable.hh"
 #include "arch/riscv_cheri/pcstate.hh"
 #include "arch/riscv_cheri/pmp.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/float.hh"
 #include "arch/riscv_cheri/regs/int.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
@@ -262,6 +263,7 @@ ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
     _privilegeModeSet(p.privilege_mode_set)
 {
     _regClasses.push_back(&intRegClass);
+    _regClasses.push_back(&capRegClass);
     _regClasses.push_back(&floatRegClass);
     _regClasses.push_back(&vecRegClass);
     _regClasses.push_back(&vecElemClass);
@@ -294,11 +296,15 @@ ISA::copyRegsFrom(ThreadContext *src)
     for (auto &id: intRegClass)
         tc->setReg(id, src->getReg(id));
 
-    // Second loop through the float registers.
+    // Second loop through the capability registers.
+    for (auto &id: capRegClass)
+        tc->setReg(id, src->getReg(id));
+
+    // Third loop through the float registers.
     for (auto &id: floatRegClass)
         tc->setReg(id, src->getReg(id));
 
-    // Third loop through the vector registers.
+    // Fourth loop through the vector registers.
     CHERIRiscvISA::VecRegContainer vc;
     for (auto &id: vecRegClass) {
         src->getReg(id, &vc);

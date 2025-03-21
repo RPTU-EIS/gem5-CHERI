@@ -58,6 +58,14 @@ let {{
                    f'{self.reg_class}[{self.reg_spec}]'
 }};
 
+let {{
+    class CapReg(CapRegOp):
+        @overrideInOperand
+        def regId(self):
+            return f'(({self.reg_spec}) == 0) ? RegId() : ' \
+                   f'{self.reg_class}[{self.reg_spec}]'
+}};
+
 def operands {{
 #General Purpose Integer Reg Operands
     'Rd': IntReg('ud', 'RD', 'IsInteger', 1),
@@ -93,6 +101,21 @@ def operands {{
     'Vs1': VecRegOp('vc', 'VS1', 'IsVector', 2),
     'Vs2': VecRegOp('vc', 'VS2', 'IsVector', 3),
     'Vs3': VecRegOp('vc', 'VS3', 'IsVector', 4),
+
+#Capability Operands
+    'Cd': CapReg('ud', 'CD', 'IsCapability', 1),
+    'Cs1': CapReg('ud', 'CS1', 'IsCapability', 2),
+    'Cs2': CapReg('ud', 'CS2', 'IsCapability', 3),
+    'Ct': CapReg('ud', 'AMOTempCap', 'IsCapability', 4),
+    'Cc1': CapReg('ud', 'CC1', 'IsCapability', 2),
+    'Cc2': CapReg('ud', 'CC2', 'IsCapability', 3),
+    'Cp1': CapReg('ud', 'CP1 + 8', 'IsCapability', 2),
+    'Cp2': CapReg('ud', 'CP2 + 8', 'IsCapability', 3),
+    'Cra': CapReg('ud', 'ReturnAddrCap', 'IsCapability', 1),
+    'Csp': CapReg('ud', 'StackPointerCap', 'IsCapability', 2),
+
+    'Ca0': CapReg('ud', '10', 'IsCapability', 1),
+    'Ca1': CapReg('ud', '11', 'IsCapability', 2),
 
 #Memory Operand
     'Mem': MemOp('ud', None, (None, 'IsLoad', 'IsStore'), 5),
