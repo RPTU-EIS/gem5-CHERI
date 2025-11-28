@@ -104,8 +104,11 @@ def operands {{
 
 #Capability Operands
     'Cd': CapReg('ud', 'CD', 'IsCapability', 1),
+    'CdMeta': CapReg('ud', 'CD + 32', 'IsCapability', 1),
     'Cs1': CapReg('ud', 'CS1', 'IsCapability', 2),
     'Cs2': CapReg('ud', 'CS2', 'IsCapability', 3),
+    'Cs1Meta': CapReg('ud', 'CS1 + 32', 'IsCapability', 2),
+    'Cs2Meta': CapReg('ud', 'CS2 + 32', 'IsCapability', 3),
     'Ct': CapReg('ud', 'AMOTempCap', 'IsCapability', 4),
     'Cc1': CapReg('ud', 'CC1', 'IsCapability', 2),
     'Cc2': CapReg('ud', 'CC2', 'IsCapability', 3),

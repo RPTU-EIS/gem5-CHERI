@@ -4863,8 +4863,8 @@ decode QUADRANT default Unknown::unknown() {
 
         0x16: decode FUNCT3 {
             format COp {
-                0x0: decode FUNCT7 {  
-		    	    0x01: cspecialrw({{
+                0x0: decode FUNCT7 {
+                    0x01: cspecialrw({{
                         using namespace gem5::CHERIRiscvISA;
 
                         uint8_t scr = (machInst >> 25) & 0x1F;
@@ -5045,32 +5045,41 @@ decode QUADRANT default Unknown::unknown() {
                         uint64_t c2_base  = xc->getRegOperand(this, cs2BaseIdx);
                         uint64_t c2_top   = xc->getRegOperand(this, cs2TopIdx);
                         uint64_t c2_off   = xc->getRegOperand(this, cs2OffIdx);
-                        uint64_t c2_cur   = c2_base + c2_off;                  
-                        auto get_otype = [](uint64_t raw){ return (raw >> 27) & 0x3FFFFULL; };
-                            auto set_otype = [](uint64_t raw, uint64_t ot){
-                                return (raw & ~(0x3FFFFULL << 27)) | ((ot & 0x3FFFFULL) << 27);
-                            };
-                            auto get_perms = [](uint64_t raw){ return (raw >> 48) & 0xFFFFULL; };
-                            auto has_perm  = [](uint64_t perms, unsigned bit){ return (perms >> bit) & 1ULL; };
-                            auto get_global= [](uint64_t perms){ return (perms & 0x1ULL); };       // bit 0
-                            auto set_global= [](uint64_t raw, uint64_t g){ 
-                                uint64_t perms = (raw >> 48) & 0xFFFFULL;
-                                perms = (perms & ~1ULL) | (g & 1ULL);
-                                return (raw & ~(0xFFFFULL << 48)) | (perms << 48);
-                            };
+                        uint64_t c2_cur   = c2_base + c2_off;
+                        auto get_otype = [](uint64_t raw){
+                            return (raw >> 27) & 0x3FFFFULL;
+                         };
+                        auto set_otype = [](uint64_t raw, uint64_t ot){
+                            return (raw & ~(0x3FFFFULL << 27))
+                                | ((ot & 0x3FFFFULL) << 27);
+                        };
+                        auto get_perms = [](uint64_t raw){
+                            return (raw >> 48) & 0xFFFFULL;
+                         };
+                        auto has_perm  = [](uint64_t perms, unsigned bit){
+                            return (perms >> bit) & 1ULL;
+                         };
+                        auto get_global= [](uint64_t perms){
+                            return (perms & 0x1ULL);
+                         };       // bit 0
+                        auto set_global= [](uint64_t raw, uint64_t g){
+                            uint64_t perms = (raw >> 48) & 0xFFFFULL;
+                            perms = (perms & ~1ULL) | (g & 1ULL);
+                            return (raw & ~(0xFFFFULL << 48)) | (perms << 48);
+                        };
 
-                            uint64_t c1_otype  = get_otype(c1_raw);
-                            bool c1_sealed     = (c1_otype != 0);
-                            uint64_t c2_otype  = get_otype(c2_raw);
-                            bool c2_sealed     = (c2_otype != 0);
-                            uint64_t c2_perms  = get_perms(c2_raw);
+                        uint64_t c1_otype  = get_otype(c1_raw);
+                        bool c1_sealed     = (c1_otype != 0);
+                        uint64_t c2_otype  = get_otype(c2_raw);
+                        bool c2_sealed     = (c2_otype != 0);
+                        uint64_t c2_perms  = get_perms(c2_raw);
 
-                            bool permitted = (c2_tag != 0) &&
-                                            c1_sealed &&
-                                            !c2_sealed &&
-                                            has_perm(c2_perms, 9) &&           // PERMIT_UNSEAL
-                                            (c2_cur == c1_otype) &&
-                                            (c2_cur >= c2_base) && (c2_cur < c2_top);
+                        bool permitted = (c2_tag != 0) &&
+                            c1_sealed &&
+                            !c2_sealed &&
+                            has_perm(c2_perms, 9) &&  // PERMIT_UNSEAL
+                            (c2_cur == c1_otype) &&
+                            (c2_cur >= c2_base) && (c2_cur < c2_top);
 
                             // Unseal = set otype to 0; GLOBAL bit becomes c1.global & c2.global (spec)
                             uint64_t new_raw = set_otype(c1_raw, 0);
@@ -5373,7 +5382,7 @@ decode QUADRANT default Unknown::unknown() {
 
                         // tag is set only if both inputs were tagged
                         xc->setRegOperand(this, dTag, (t1 & t2) ? 1ULL : 0ULL);
-                    }});                   
+                    }});
 
                     0x1e: ccopytype({{
                         using namespace gem5::CHERIRiscvISA;
@@ -5413,7 +5422,7 @@ decode QUADRANT default Unknown::unknown() {
                         uint64_t s1 = xc->getRegOperand(this, cs1Idx);
                         uint64_t s2 = xc->getRegOperand(this, cs2Idx);
 
-                    
+
                         RegIndex cs2OffIdx = CS2 + cap_reg::_CNullDataIdx + 2;
                         uint64_t cursor2 = xc->getRegOperand(this, cs2OffIdx) & 0x3FFFFull; // 18b mask
 
@@ -5471,9 +5480,11 @@ decode QUADRANT default Unknown::unknown() {
 
                     0x7f: decode CAPFUN {
                         0x00: cgetperm({{
-                            uint64_t raw = xc->getRegOperand(this, CS1 + gem5::CHERIRiscvISA::cap_reg::NumArchCapRegs);
+                            std::cout << "CS1 " << CS1 << " Cs1 " << Cs1;
+                            std::cout << " meta: " << Cs1Meta << std::endl;
+                            uint64_t raw = Cs1Meta;
                             uint64_t perms = (raw >> 48) & 0xFFFF;
-                            xc->setRegOperand(this, RD, perms);
+                            Rd =  perms;
                         }});
 
                         0x01: cgettype({{
@@ -5784,7 +5795,7 @@ decode QUADRANT default Unknown::unknown() {
                             NPC = newPC;
                         }});
 
-                    }                       
+                    }
                 }
 
                 0x1: cincoffsetimm({{
@@ -5873,7 +5884,7 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setRegOperand(this, tagDstIdx, newTag);
                 }});
 
-                
+
             }
         }
 
