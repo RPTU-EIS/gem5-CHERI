@@ -254,10 +254,59 @@ class IntRegOperandDesc(RegOperandDesc):
     def __init__(self, *args, **kwargs):
         super().__init__("intRegClass", RegValOperand, *args, **kwargs)
 
+class CapRegOperand(RegOperand):
+    reg_class = "capRegClass"
+
+    def __init__(self, parser, full_name, ext, is_src, is_dest):
+        super().__init__(parser, full_name, ext, is_src, is_dest)
+
+    def makeDecl(self):
+        # Capabilities don't need element declarations like vectors
+        return ""
+
+    def makeReadW(self):
+        # Read destination register for writing
+        tmp_name = f"tmp_d{self.dest_reg_idx}"
+        c_readw = (
+            f"\t\tauto &{tmp_name} = \n"
+            f"\t\t    *({self.parser.namespace}::CapRegContainer *)\n"
+            f"\t\t    xc->getWritableRegOperand(\n"
+            f"\t\t        this, {self.dest_reg_idx});\n"
+            f"\t\tauto &{self.base_name} = {tmp_name};\n"
+        )
+        return c_readw
+
+    def makeRead(self):
+        # Read source register
+        name = self.base_name
+        if self.is_dest and self.is_src:
+            name += "_merger"
+
+        tmp_name = f"tmp_s{self.src_reg_idx}"
+        c_read = (
+            f"\t\t{self.parser.namespace}::CapRegContainer {tmp_name};\n"
+            f"\t\txc->getRegOperand(this, {self.src_reg_idx},\n"
+            f"\t\t    &{tmp_name});\n"
+            f"\t\tauto {name} = {tmp_name};\n"
+        )
+        return c_read
+
+    def makeWrite(self):
+        return f"""
+        if (traceData) {{
+            traceData->setData({self.reg_class}, &tmp_d{self.dest_reg_idx});
+        }}
+        """
+
+    def finalize(self):
+        super().finalize()
+        if self.is_dest:
+            self.op_rd = self.makeReadW() + self.op_rd
+
 
 class CapRegOperandDesc(RegOperandDesc):
     def __init__(self, *args, **kwargs):
-        super().__init__("capRegClass", RegValOperand, *args, **kwargs)
+        super().__init__("capRegClass", CapRegOperand, *args, **kwargs)
 
 
 class FloatRegOperandDesc(RegOperandDesc):

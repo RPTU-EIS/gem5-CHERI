@@ -46,6 +46,7 @@
 #include <string>
 
 #include "arch/generic/vec_reg.hh"
+#include "arch/generic/cap_reg.hh"
 #include "base/cprintf.hh"
 #include "base/debug.hh"
 #include "base/intmath.hh"
@@ -232,6 +233,7 @@ class RegClass
         RegClass reg_class = *this;
         reg_class._regBytes = sizeof(RegType);
         reg_class._regShift = ceilLog2(reg_class._regBytes);
+        
         return reg_class;
     }
 
@@ -369,6 +371,13 @@ struct is_vec_reg_container : std::false_type {};
 template<std::size_t SIZE>
 struct is_vec_reg_container<gem5::VecRegContainer<SIZE>> : std::true_type {};
 
+// Type matching for gem5::CapRegContainer class
+// This is used in TypedRegClassOps.
+template<typename>
+struct is_cap_reg_container : std::false_type {};
+template<>
+struct is_cap_reg_container<gem5::CapRegContainer> : std::true_type {};
+
 template <typename ValueType>
 class TypedRegClassOps : public RegClassOps
 {
@@ -382,7 +391,16 @@ class TypedRegClassOps : public RegClassOps
             } else {
                 return ((const ValueType *)val)->getString(size);
             }
-        } else {
+        } 
+        else if constexpr (is_cap_reg_container<ValueType>::value) {
+            // CapRegContainer always has fixed size, so just print it
+            if (size == sizeof(ValueType)) {
+                return csprintf("%s", *(const ValueType *)val);
+            } else {
+                return ((const ValueType *)val)->getString();
+            }
+        } 
+        else {
             assert(size == sizeof(ValueType));
             return csprintf("%s", *(const ValueType *)val);
         }

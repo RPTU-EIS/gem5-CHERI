@@ -297,8 +297,11 @@ ISA::copyRegsFrom(ThreadContext *src)
         tc->setReg(id, src->getReg(id));
 
     // Second loop through the capability registers.
-    for (auto &id: capRegClass)
-        tc->setReg(id, src->getReg(id));
+    CHERIRiscvISA::CapRegContainer capc;
+    for (auto &id: capRegClass) {
+        src->getReg(id, &capc);
+        tc->setReg(id, &capc);
+    }
 
     // Third loop through the float registers.
     for (auto &id: floatRegClass)

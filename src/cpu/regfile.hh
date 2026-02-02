@@ -32,6 +32,7 @@
 #include <cassert>
 #include <cstring>
 #include <vector>
+#include <iostream>
 
 #include "cpu/reg_class.hh"
 
@@ -65,6 +66,7 @@ class RegFile
     Reg &
     reg(size_t idx)
     {
+        // std::cout << "1. Size of Reg = " << sizeof(Reg) << " _regBytes = " << _regBytes << " idx = " << idx << " _size = " << _size << " Name = " << regClass.name() << std::endl;
         assert(sizeof(Reg) == _regBytes && idx < _size);
         return *reinterpret_cast<Reg *>(data.data() + (idx << _regShift));
     }
@@ -72,6 +74,7 @@ class RegFile
     const Reg &
     reg(size_t idx) const
     {
+        // std::cout << "2. Size of Reg = " << sizeof(Reg) << " _regBytes = " << _regBytes << " idx = " << idx << " _size = " << _size << " Name = " << regClass.name() << std::endl;
         assert(sizeof(Reg) == _regBytes && idx < _size);
         return *reinterpret_cast<const Reg *>(
                 data.data() + (idx << _regShift));

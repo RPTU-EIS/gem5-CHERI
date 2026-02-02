@@ -4865,1023 +4865,1040 @@ decode QUADRANT default Unknown::unknown() {
             format COp {
                 0x0: decode FUNCT7 {
                     0x01: cspecialrw({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        uint8_t scr = (machInst >> 25) & 0x1F;
+                        // uint8_t scr = (machInst >> 25) & 0x1F;
 
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
 
-                        RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-                        RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                        // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
 
-                        // Special capability register indices start after NumArchCapRegs
-                        constexpr int specialCapBase = cap_reg::NumArchCapRegs;
+                        // // Special capability register indices start after NumArchCapRegs
+                        // constexpr int specialCapBase = cap_reg::NumArchCapRegs;
 
-                        int scrIndex = specialCapBase + scr;
+                        // int scrIndex = specialCapBase + scr;
 
-                        // ---- Read from special capability register to cd ----
-                        uint64_t scrVal = xc->getRegOperand(this, scrIndex);
-                        xc->setRegOperand(this, dstIdx, scrVal);
-                        xc->setRegOperand(this, dstTagIdx, 1);  // Assume tag valid
+                        // // ---- Read from special capability register to cd ----
+                        // uint64_t scrVal = xc->getRegOperand(this, scrIndex);
+                        // xc->setRegOperand(this, dstIdx, scrVal);
+                        // xc->setRegOperand(this, dstTagIdx, 1);  // Assume tag valid
 
-                        // ---- Optional: write to scr from cs1, if cs1 != c0 ----
-                        if (CS1 != 0) {
-                        uint64_t cs1Val = xc->getRegOperand(this, cs1Idx);
-                        uint64_t cs1Tag = xc->getRegOperand(this, cs1TagIdx);
+                        // // ---- Optional: write to scr from cs1, if cs1 != c0 ----
+                        // if (CS1 != 0) {
+                        // uint64_t cs1Val = xc->getRegOperand(this, cs1Idx);
+                        // uint64_t cs1Tag = xc->getRegOperand(this, cs1TagIdx);
 
-                        xc->setRegOperand(this, scrIndex, cs1Val);
-                        // optionally write tag (if tag registers exist)
-                        //xc->setRegOperand(this, scrTagIndex, cs1Tag);
-                        }
+                        // xc->setRegOperand(this, scrIndex, cs1Val);
+                        // // optionally write tag (if tag registers exist)
+                        // //xc->setRegOperand(this, scrTagIndex, cs1Tag);
+                        // }
                     }});
 
 			        0x08: csetbounds({{
-					    using namespace gem5::CHERIRiscvISA;
+					    // using namespace gem5::CHERIRiscvISA;
 
-					    RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-					    RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-					    RegIndex cs1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
+					    // RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+					    // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
+					    // RegIndex cs1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
 
-					    RegIndex rs2Idx = RS2;
+					    // RegIndex rs2Idx = RS2;
 
-					    RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-					    RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+					    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+					    // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
 
-					    uint64_t capVal = xc->getRegOperand(this, cs1Idx);
-					    uint64_t tagVal = xc->getRegOperand(this, cs1TagIdx);
-					    uint64_t base = xc->getRegOperand(this, cs1BaseIdx);
-					    uint64_t length = xc->getRegOperand(this, rs2Idx);
+					    // uint64_t capVal = xc->getRegOperand(this, cs1Idx);
+					    // uint64_t tagVal = xc->getRegOperand(this, cs1TagIdx);
+					    // uint64_t base = xc->getRegOperand(this, cs1BaseIdx);
+					    // uint64_t length = xc->getRegOperand(this, rs2Idx);
 
-					    // Extract otype = bits 44:27
-					    uint64_t otype = (capVal >> 27) & 0x3FFFF;
-					    bool sealed = (otype != 0);
+					    // // Extract otype = bits 44:27
+					    // uint64_t otype = (capVal >> 27) & 0x3FFFF;
+					    // bool sealed = (otype != 0);
 
-					    // Update bounds (replace B = bits [13:3])
-					    uint64_t newCap = (capVal & ~(0x7FFULL << 3)) | ((length & 0x7FF) << 3);
+					    // // Update bounds (replace B = bits [13:3])
+					    // uint64_t newCap = (capVal & ~(0x7FFULL << 3)) | ((length & 0x7FF) << 3);
 
-					    // Determine in-bounds (simplified): keep tag if new length ≤ old length
-					    uint64_t oldLength = (capVal >> 3) & 0x7FF;
-					    bool inBounds = (length <= oldLength);
+					    // // Determine in-bounds (simplified): keep tag if new length ≤ old length
+					    // uint64_t oldLength = (capVal >> 3) & 0x7FF;
+					    // bool inBounds = (length <= oldLength);
 
-					    uint64_t resultTag = (!sealed && inBounds) ? tagVal : 0;
+					    // uint64_t resultTag = (!sealed && inBounds) ? tagVal : 0;
 
-					    xc->setRegOperand(this, dstIdx, newCap);
-					    xc->setRegOperand(this, dstTagIdx, resultTag);
+					    // xc->setRegOperand(this, dstIdx, newCap);
+					    // xc->setRegOperand(this, dstTagIdx, resultTag);
 					}});
 
 
 					0x09: csetboundsexact({{
-					    using namespace gem5::CHERIRiscvISA;
+					    // using namespace gem5::CHERIRiscvISA;
 
-					    RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-					    RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-					    RegIndex cs1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
+					    // RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+					    // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
+					    // RegIndex cs1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
 
-					    RegIndex rs2Idx = RS2;
+					    // RegIndex rs2Idx = RS2;
 
-					    RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-					    RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+					    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+					    // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
 
-					    uint64_t capVal = xc->getRegOperand(this, cs1Idx);
-					    uint64_t tagVal = xc->getRegOperand(this, cs1TagIdx);
-					    uint64_t base = xc->getRegOperand(this, cs1BaseIdx);
-					    uint64_t length = xc->getRegOperand(this, rs2Idx);
+					    // uint64_t capVal = xc->getRegOperand(this, cs1Idx);
+					    // uint64_t tagVal = xc->getRegOperand(this, cs1TagIdx);
+					    // uint64_t base = xc->getRegOperand(this, cs1BaseIdx);
+					    // uint64_t length = xc->getRegOperand(this, rs2Idx);
 
-					    uint64_t otype = (capVal >> 27) & 0x3FFFF;
-					    bool sealed = (otype != 0);
+					    // uint64_t otype = (capVal >> 27) & 0x3FFFF;
+					    // bool sealed = (otype != 0);
 
-					    uint64_t oldLength = (capVal >> 3) & 0x7FF;
+					    // uint64_t oldLength = (capVal >> 3) & 0x7FF;
 
-					    // Replace B = bits [13:3]
-					    uint64_t newCap = (capVal & ~(0x7FFULL << 3)) | ((length & 0x7FF) << 3);
+					    // // Replace B = bits [13:3]
+					    // uint64_t newCap = (capVal & ~(0x7FFULL << 3)) | ((length & 0x7FF) << 3);
 
-					    bool inBounds = (length <= oldLength);
-					    bool exact = true;  // assume success — no compression model
+					    // bool inBounds = (length <= oldLength);
+					    // bool exact = true;  // assume success — no compression model
 
-					    uint64_t resultTag = (!sealed && inBounds && exact) ? tagVal : 0;
+					    // uint64_t resultTag = (!sealed && inBounds && exact) ? tagVal : 0;
 
-					    xc->setRegOperand(this, dstIdx, newCap);
-					    xc->setRegOperand(this, dstTagIdx, resultTag);
+					    // xc->setRegOperand(this, dstIdx, newCap);
+					    // xc->setRegOperand(this, dstTagIdx, resultTag);
 					}});
 
                     0x0b: cseal({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // Source operands
-                        RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        // // Source operands
+                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
 
-                        RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
-                        RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
-                        RegIndex cs2BaseIdx = CS2 + cap_reg::_CNullDataIdx;        // base
-                        RegIndex cs2TopIdx  = CS2 + cap_reg::_CNullDataIdx + 1;    // top
-                        RegIndex cs2OffIdx  = CS2 + cap_reg::_CNullDataIdx + 2;    // offset
+                        // RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
+                        // RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
+                        // RegIndex cs2BaseIdx = CS2 + cap_reg::_CNullDataIdx;        // base
+                        // RegIndex cs2TopIdx  = CS2 + cap_reg::_CNullDataIdx + 1;    // top
+                        // RegIndex cs2OffIdx  = CS2 + cap_reg::_CNullDataIdx + 2;    // offset
 
-                        // Dest
-                        RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
-                        RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
+                        // // Dest
+                        // RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
+                        // RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
 
-                        // Read values
-                        uint64_t cs1_raw    = xc->getRegOperand(this, cs1Idx);
-                        uint64_t cs1_tag    = xc->getRegOperand(this, cs1TagIdx);
+                        // // Read values
+                        // uint64_t cs1_raw    = xc->getRegOperand(this, cs1Idx);
+                        // uint64_t cs1_tag    = xc->getRegOperand(this, cs1TagIdx);
 
-                        uint64_t cs2_raw    = xc->getRegOperand(this, cs2Idx);
-                        uint64_t cs2_tag    = xc->getRegOperand(this, cs2TagIdx);
-                        uint64_t cs2_base   = xc->getRegOperand(this, cs2BaseIdx);
-                        uint64_t cs2_top    = xc->getRegOperand(this, cs2TopIdx);
-                        uint64_t cs2_off    = xc->getRegOperand(this, cs2OffIdx);
-                        uint64_t cs2_cursor = cs2_base + cs2_off;
+                        // uint64_t cs2_raw    = xc->getRegOperand(this, cs2Idx);
+                        // uint64_t cs2_tag    = xc->getRegOperand(this, cs2TagIdx);
+                        // uint64_t cs2_base   = xc->getRegOperand(this, cs2BaseIdx);
+                        // uint64_t cs2_top    = xc->getRegOperand(this, cs2TopIdx);
+                        // uint64_t cs2_off    = xc->getRegOperand(this, cs2OffIdx);
+                        // uint64_t cs2_cursor = cs2_base + cs2_off;
 
-                        // Extract fields
-                        auto get_otype = [](uint64_t raw){ return (raw >> 27) & 0x3FFFFULL; }; // [44:27]
-                        auto set_otype = [](uint64_t raw, uint64_t ot){
-                            return (raw & ~(0x3FFFFULL << 27)) | ((ot & 0x3FFFFULL) << 27);
-                        };
-                        auto get_perms = [](uint64_t raw){ return (raw >> 48) & 0xFFFFULL; };  // [63:48]
-                        auto has_perm  = [](uint64_t perms, unsigned bit){ return (perms >> bit) & 1ULL; };
+                        // // Extract fields
+                        // auto get_otype = [](uint64_t raw){ return (raw >> 27) & 0x3FFFFULL; }; // [44:27]
+                        // auto set_otype = [](uint64_t raw, uint64_t ot){
+                        //     return (raw & ~(0x3FFFFULL << 27)) | ((ot & 0x3FFFFULL) << 27);
+                        // };
+                        // auto get_perms = [](uint64_t raw){ return (raw >> 48) & 0xFFFFULL; };  // [63:48]
+                        // auto has_perm  = [](uint64_t perms, unsigned bit){ return (perms >> bit) & 1ULL; };
 
-                        bool cs1_sealed = (get_otype(cs1_raw) != 0);
-                        bool cs2_sealed = (get_otype(cs2_raw) != 0);
-                        uint64_t cs2_perms = get_perms(cs2_raw);
+                        // bool cs1_sealed = (get_otype(cs1_raw) != 0);
+                        // bool cs2_sealed = (get_otype(cs2_raw) != 0);
+                        // uint64_t cs2_perms = get_perms(cs2_raw);
 
-                        // PERMIT_SEAL is perms bit 7 (Table 3.1)
-                        bool permitted = (cs2_tag != 0) &&
-                                        !cs2_sealed &&
-                                        has_perm(cs2_perms, 7) &&
-                                        (cs2_cursor >= cs2_base) &&
-                                        (cs2_cursor <  cs2_top) &&
-                                        (cs2_cursor <= 0x3FFFFULL); // cap_max_otype in our 18-bit model
+                        // // PERMIT_SEAL is perms bit 7 (Table 3.1)
+                        // bool permitted = (cs2_tag != 0) &&
+                        //                 !cs2_sealed &&
+                        //                 has_perm(cs2_perms, 7) &&
+                        //                 (cs2_cursor >= cs2_base) &&
+                        //                 (cs2_cursor <  cs2_top) &&
+                        //                 (cs2_cursor <= 0x3FFFFULL); // cap_max_otype in our 18-bit model
 
-                        // Sealing always clears tag if cs1 is already sealed or permission check fails.
-                        uint64_t new_raw = set_otype(cs1_raw, (uint64_t)cs2_cursor);
-                        uint64_t new_tag = ( (!cs1_sealed) && permitted ) ? cs1_tag : 0;
+                        // // Sealing always clears tag if cs1 is already sealed or permission check fails.
+                        // uint64_t new_raw = set_otype(cs1_raw, (uint64_t)cs2_cursor);
+                        // uint64_t new_tag = ( (!cs1_sealed) && permitted ) ? cs1_tag : 0;
 
-                        xc->setRegOperand(this, dstIdx,    new_raw);
-                        xc->setRegOperand(this, dstTagIdx, new_tag);
+                        // xc->setRegOperand(this, dstIdx,    new_raw);
+                        // xc->setRegOperand(this, dstTagIdx, new_tag);
                     }});
 
                     0x0c: cunseal({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // cs1 (to be unsealed) and cs2 (authority)
-                        RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        // // cs1 (to be unsealed) and cs2 (authority)
+                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
 
-                        RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
-                        RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
-                        RegIndex cs2BaseIdx = CS2 + cap_reg::_CNullDataIdx;
-                        RegIndex cs2TopIdx  = CS2 + cap_reg::_CNullDataIdx + 1;
-                        RegIndex cs2OffIdx  = CS2 + cap_reg::_CNullDataIdx + 2;
+                        // RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
+                        // RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
+                        // RegIndex cs2BaseIdx = CS2 + cap_reg::_CNullDataIdx;
+                        // RegIndex cs2TopIdx  = CS2 + cap_reg::_CNullDataIdx + 1;
+                        // RegIndex cs2OffIdx  = CS2 + cap_reg::_CNullDataIdx + 2;
 
-                        RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
-                        RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
+                        // RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
 
-                        uint64_t c1_raw   = xc->getRegOperand(this, cs1Idx);
-                        uint64_t c1_tag   = xc->getRegOperand(this, cs1TagIdx);
+                        // uint64_t c1_raw   = xc->getRegOperand(this, cs1Idx);
+                        // uint64_t c1_tag   = xc->getRegOperand(this, cs1TagIdx);
 
-                        uint64_t c2_raw   = xc->getRegOperand(this, cs2Idx);
-                        uint64_t c2_tag   = xc->getRegOperand(this, cs2TagIdx);
-                        uint64_t c2_base  = xc->getRegOperand(this, cs2BaseIdx);
-                        uint64_t c2_top   = xc->getRegOperand(this, cs2TopIdx);
-                        uint64_t c2_off   = xc->getRegOperand(this, cs2OffIdx);
-                        uint64_t c2_cur   = c2_base + c2_off;
-                        auto get_otype = [](uint64_t raw){
-                            return (raw >> 27) & 0x3FFFFULL;
-                         };
-                        auto set_otype = [](uint64_t raw, uint64_t ot){
-                            return (raw & ~(0x3FFFFULL << 27))
-                                | ((ot & 0x3FFFFULL) << 27);
-                        };
-                        auto get_perms = [](uint64_t raw){
-                            return (raw >> 48) & 0xFFFFULL;
-                         };
-                        auto has_perm  = [](uint64_t perms, unsigned bit){
-                            return (perms >> bit) & 1ULL;
-                         };
-                        auto get_global= [](uint64_t perms){
-                            return (perms & 0x1ULL);
-                         };       // bit 0
-                        auto set_global= [](uint64_t raw, uint64_t g){
-                            uint64_t perms = (raw >> 48) & 0xFFFFULL;
-                            perms = (perms & ~1ULL) | (g & 1ULL);
-                            return (raw & ~(0xFFFFULL << 48)) | (perms << 48);
-                        };
+                        // uint64_t c2_raw   = xc->getRegOperand(this, cs2Idx);
+                        // uint64_t c2_tag   = xc->getRegOperand(this, cs2TagIdx);
+                        // uint64_t c2_base  = xc->getRegOperand(this, cs2BaseIdx);
+                        // uint64_t c2_top   = xc->getRegOperand(this, cs2TopIdx);
+                        // uint64_t c2_off   = xc->getRegOperand(this, cs2OffIdx);
+                        // uint64_t c2_cur   = c2_base + c2_off;
+                        // auto get_otype = [](uint64_t raw){
+                        //     return (raw >> 27) & 0x3FFFFULL;
+                        //  };
+                        // auto set_otype = [](uint64_t raw, uint64_t ot){
+                        //     return (raw & ~(0x3FFFFULL << 27))
+                        //         | ((ot & 0x3FFFFULL) << 27);
+                        // };
+                        // auto get_perms = [](uint64_t raw){
+                        //     return (raw >> 48) & 0xFFFFULL;
+                        //  };
+                        // auto has_perm  = [](uint64_t perms, unsigned bit){
+                        //     return (perms >> bit) & 1ULL;
+                        //  };
+                        // auto get_global= [](uint64_t perms){
+                        //     return (perms & 0x1ULL);
+                        //  };       // bit 0
+                        // auto set_global= [](uint64_t raw, uint64_t g){
+                        //     uint64_t perms = (raw >> 48) & 0xFFFFULL;
+                        //     perms = (perms & ~1ULL) | (g & 1ULL);
+                        //     return (raw & ~(0xFFFFULL << 48)) | (perms << 48);
+                        // };
 
-                        uint64_t c1_otype  = get_otype(c1_raw);
-                        bool c1_sealed     = (c1_otype != 0);
-                        uint64_t c2_otype  = get_otype(c2_raw);
-                        bool c2_sealed     = (c2_otype != 0);
-                        uint64_t c2_perms  = get_perms(c2_raw);
+                        // uint64_t c1_otype  = get_otype(c1_raw);
+                        // bool c1_sealed     = (c1_otype != 0);
+                        // uint64_t c2_otype  = get_otype(c2_raw);
+                        // bool c2_sealed     = (c2_otype != 0);
+                        // uint64_t c2_perms  = get_perms(c2_raw);
 
-                        bool permitted = (c2_tag != 0) &&
-                            c1_sealed &&
-                            !c2_sealed &&
-                            has_perm(c2_perms, 9) &&  // PERMIT_UNSEAL
-                            (c2_cur == c1_otype) &&
-                            (c2_cur >= c2_base) && (c2_cur < c2_top);
+                        // bool permitted = (c2_tag != 0) &&
+                        //     c1_sealed &&
+                        //     !c2_sealed &&
+                        //     has_perm(c2_perms, 9) &&  // PERMIT_UNSEAL
+                        //     (c2_cur == c1_otype) &&
+                        //     (c2_cur >= c2_base) && (c2_cur < c2_top);
 
-                            // Unseal = set otype to 0; GLOBAL bit becomes c1.global & c2.global (spec)
-                            uint64_t new_raw = set_otype(c1_raw, 0);
-                            uint64_t new_global = get_global((c1_raw >> 48) & 0xFFFFULL) &
-                                                get_global((c2_raw >> 48) & 0xFFFFULL);
-                            new_raw = set_global(new_raw, new_global);
+                        //     // Unseal = set otype to 0; GLOBAL bit becomes c1.global & c2.global (spec)
+                        //     uint64_t new_raw = set_otype(c1_raw, 0);
+                        //     uint64_t new_global = get_global((c1_raw >> 48) & 0xFFFFULL) &
+                        //                         get_global((c2_raw >> 48) & 0xFFFFULL);
+                        //     new_raw = set_global(new_raw, new_global);
 
-                            uint64_t new_tag = permitted ? c1_tag : 0;
+                        //     uint64_t new_tag = permitted ? c1_tag : 0;
 
-                            xc->setRegOperand(this, dstIdx,    new_raw);
-                            xc->setRegOperand(this, dstTagIdx, new_tag);
+                        //     xc->setRegOperand(this, dstIdx,    new_raw);
+                        //     xc->setRegOperand(this, dstTagIdx, new_tag);
                     }});
 
                     0x0d: candperm({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex rs2Idx    = RS2;
+                        // RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex rs2Idx    = RS2;
 
-                        RegIndex dstIdx    = RD + cap_reg::_CNullIdx;
-                        RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dstIdx    = RD + cap_reg::_CNullIdx;
+                        // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
 
-                        uint64_t c1_raw    = xc->getRegOperand(this, cs1Idx);
-                        uint64_t c1_tag    = xc->getRegOperand(this, cs1TagIdx);
-                        uint64_t mask      = xc->getRegOperand(this, rs2Idx);
+                        // uint64_t c1_raw    = xc->getRegOperand(this, cs1Idx);
+                        // uint64_t c1_tag    = xc->getRegOperand(this, cs1TagIdx);
+                        // uint64_t mask      = xc->getRegOperand(this, rs2Idx);
 
-                        // perms in [63:48]
-                        uint64_t perms     = (c1_raw >> 48) & 0xFFFFULL;
-                        uint64_t newPerms  = perms & (mask & 0xFFFFULL);
+                        // // perms in [63:48]
+                        // uint64_t perms     = (c1_raw >> 48) & 0xFFFFULL;
+                        // uint64_t newPerms  = perms & (mask & 0xFFFFULL);
 
-                        // If cs1 was sealed, cd.tag must be cleared (spec).
-                        uint64_t c1_otype  = (c1_raw >> 27) & 0x3FFFFULL;
-                        bool c1_sealed     = (c1_otype != 0);
+                        // // If cs1 was sealed, cd.tag must be cleared (spec).
+                        // uint64_t c1_otype  = (c1_raw >> 27) & 0x3FFFFULL;
+                        // bool c1_sealed     = (c1_otype != 0);
 
-                        uint64_t new_raw   = (c1_raw & ~(0xFFFFULL << 48)) | (newPerms << 48);
-                        uint64_t new_tag   = c1_sealed ? 0 : c1_tag;
+                        // uint64_t new_raw   = (c1_raw & ~(0xFFFFULL << 48)) | (newPerms << 48);
+                        // uint64_t new_tag   = c1_sealed ? 0 : c1_tag;
 
-                        xc->setRegOperand(this, dstIdx,    new_raw);
-                        xc->setRegOperand(this, dstTagIdx, new_tag);
+                        // xc->setRegOperand(this, dstIdx,    new_raw);
+                        // xc->setRegOperand(this, dstTagIdx, new_tag);
                     }});
 
-                    // NOTE: the model currently doesn't store explicit flags separately.
-                    // We keep the field in the low 8 bits of the raw word [bits 23:16] for now.
-                    // If the later model flags explicitly, adjust the bit locations here AND in CGetFlags.
                     0x0e: csetflags({{
                         using namespace gem5::CHERIRiscvISA;
 
                         RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex rs2Idx    = RS2;
+                        RegIndex rs2Idx    = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx    = CD + cap_reg::_CNullIdx;
 
-                        RegIndex dstIdx    = RD + cap_reg::_CNullIdx;
-                        RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+                        // 1-bit flag for 64 bit xlen
+                        uint64_t flag = Rs2; 
 
-                        uint64_t c1_raw    = xc->getRegOperand(this, cs1Idx);
-                        uint64_t c1_tag    = xc->getRegOperand(this, cs1TagIdx);
-                        uint64_t flags_in  = xc->getRegOperand(this, rs2Idx) & 0xFFULL; // keep 8 bits
+                        std::cout << "Setting flags for c"<< dstIdx << " with capability from c" << cs1Idx << " and flag from x"<< rs2Idx << " with value = " << flag << std::endl;
 
-                        // If sealed, tag must be cleared (spec).
-                        bool c1_sealed     = (((c1_raw >> 27) & 0x3FFFFULL) != 0);
+                        Cd = Cs1;
 
-                        // Store flags into bits [23:16] (temporary placement for this model).
-                        uint64_t new_raw   = (c1_raw & ~(0xFFULL << 16)) | (flags_in << 16);
-                        uint64_t new_tag   = c1_sealed ? 0 : c1_tag;
+                        // Get metadata as uint64_t, modify via BitUnion, write back as uint64_t
+                        uint64_t metaValue = Cd.getMetadata();
+                        CAPTYPE metaBits = metaValue;  // BitUnion overlay
+                        metaBits.flag = flag;           // Modify the flag bit
+                        Cd.setMetadata(metaBits);       // BitUnion implicitly converts to uint64_t
 
-                        xc->setRegOperand(this, dstIdx,    new_raw);
-                        xc->setRegOperand(this, dstTagIdx, new_tag);
+                        std::cout << "Set flag for c" << dstIdx 
+                                << " with value = " << (uint64_t)metaBits.flag << std::endl;
+
                     }});
 
                     0x0f: csetoffset({{
-                        using namespace gem5::CHERIRiscvISA;
-                        RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                            RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                            RegIndex baseIdx    = CS1 + cap_reg::_CNullDataIdx;        // base
-                            RegIndex topIdx     = CS1 + cap_reg::_CNullDataIdx + 1;    // top
-                            RegIndex offIdx     = CS1 + cap_reg::_CNullDataIdx + 2;    // offset
+                        // using namespace gem5::CHERIRiscvISA;
+                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
+                        //     RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        //     RegIndex baseIdx    = CS1 + cap_reg::_CNullDataIdx;        // base
+                        //     RegIndex topIdx     = CS1 + cap_reg::_CNullDataIdx + 1;    // top
+                        //     RegIndex offIdx     = CS1 + cap_reg::_CNullDataIdx + 2;    // offset
 
-                            RegIndex rs2Idx     = RS2;
+                        //     RegIndex rs2Idx     = RS2;
 
-                            RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
-                            RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
+                        //     RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
+                        //     RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
 
-                            uint64_t c1_raw   = xc->getRegOperand(this, cs1Idx);
-                            uint64_t c1_tag   = xc->getRegOperand(this, cs1TagIdx);
-                            uint64_t base     = xc->getRegOperand(this, baseIdx);
-                            uint64_t top      = xc->getRegOperand(this, topIdx);
-                            uint64_t new_off  = xc->getRegOperand(this, rs2Idx);
+                        //     uint64_t c1_raw   = xc->getRegOperand(this, cs1Idx);
+                        //     uint64_t c1_tag   = xc->getRegOperand(this, cs1TagIdx);
+                        //     uint64_t base     = xc->getRegOperand(this, baseIdx);
+                        //     uint64_t top      = xc->getRegOperand(this, topIdx);
+                        //     uint64_t new_off  = xc->getRegOperand(this, rs2Idx);
 
-                            // If sealed, tag cleared (spec). Otherwise, write new offset.
-                            bool c1_sealed  = (((c1_raw >> 27) & 0x3FFFFULL) != 0);
+                        //     // If sealed, tag cleared (spec). Otherwise, write new offset.
+                        //     bool c1_sealed  = (((c1_raw >> 27) & 0x3FFFFULL) != 0);
 
-                            //check representability of base+new_off.
-                            // now simple and accept any offset;can tighten later.
-                            uint64_t new_tag = c1_sealed ? 0 : c1_tag;
+                        //     //check representability of base+new_off.
+                        //     // now simple and accept any offset;can tighten later.
+                        //     uint64_t new_tag = c1_sealed ? 0 : c1_tag;
 
-                            // Write back raw unchanged and store the new decoded offset.
-                            xc->setRegOperand(this, dstIdx,    c1_raw);
-                            xc->setRegOperand(this, dstTagIdx, new_tag);
-                            xc->setRegOperand(this, RD + cap_reg::_CNullDataIdx + 2, new_off);
+                        //     // Write back raw unchanged and store the new decoded offset.
+                        //     xc->setRegOperand(this, dstIdx,    c1_raw);
+                        //     xc->setRegOperand(this, dstTagIdx, new_tag);
+                        //     xc->setRegOperand(this, RD + cap_reg::_CNullDataIdx + 2, new_off);
                     }});
 
                     0x10: csetaddr({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // cs1 pieces
-                        RegIndex c1RawIdx   = CS1 + cap_reg::_CNullIdx;
-                        RegIndex c1TagIdx   = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex c1BaseIdx  = CS1 + cap_reg::_CNullDataIdx;        // base
-                        RegIndex c1TopIdx   = CS1 + cap_reg::_CNullDataIdx + 1;    // top (unused here)
-                        RegIndex c1OffIdx   = CS1 + cap_reg::_CNullDataIdx + 2;    // offset (read-only)
+                        // // cs1 pieces
+                        // RegIndex c1RawIdx   = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex c1TagIdx   = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex c1BaseIdx  = CS1 + cap_reg::_CNullDataIdx;        // base
+                        // RegIndex c1TopIdx   = CS1 + cap_reg::_CNullDataIdx + 1;    // top (unused here)
+                        // RegIndex c1OffIdx   = CS1 + cap_reg::_CNullDataIdx + 2;    // offset (read-only)
 
-                        // rs2 holds the *address* we want (base + new_offset)
-                        RegIndex rs2Idx     = RS2;
+                        // // rs2 holds the *address* we want (base + new_offset)
+                        // RegIndex rs2Idx     = RS2;
 
-                        // destination triplet
-                        RegIndex dRawIdx    = RD + cap_reg::_CNullIdx;
-                        RegIndex dTagIdx    = RD + cap_reg::_CNullTagIdx;
-                        RegIndex dBaseIdx   = RD + cap_reg::_CNullDataIdx;
-                        RegIndex dOffIdx    = RD + cap_reg::_CNullDataIdx + 2;
+                        // // destination triplet
+                        // RegIndex dRawIdx    = RD + cap_reg::_CNullIdx;
+                        // RegIndex dTagIdx    = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dBaseIdx   = RD + cap_reg::_CNullDataIdx;
+                        // RegIndex dOffIdx    = RD + cap_reg::_CNullDataIdx + 2;
 
-                        uint64_t raw   = xc->getRegOperand(this, c1RawIdx);
-                        uint64_t tag   = xc->getRegOperand(this, c1TagIdx);
-                        uint64_t base  = xc->getRegOperand(this, c1BaseIdx);
-                        uint64_t addr  = xc->getRegOperand(this, rs2Idx);
+                        // uint64_t raw   = xc->getRegOperand(this, c1RawIdx);
+                        // uint64_t tag   = xc->getRegOperand(this, c1TagIdx);
+                        // uint64_t base  = xc->getRegOperand(this, c1BaseIdx);
+                        // uint64_t addr  = xc->getRegOperand(this, rs2Idx);
 
-                        // sealed? (otype != 0)
-                        bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
+                        // // sealed? (otype != 0)
+                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
 
-                        // Compute new offset = addr - base
-                        uint64_t newOff = addr - base;
+                        // // Compute new offset = addr - base
+                        // uint64_t newOff = addr - base;
 
-                        // Copy raw, update decoded offset; in this simple model we keep base unchanged
-                        xc->setRegOperand(this, dRawIdx,  raw);
-                        xc->setRegOperand(this, dBaseIdx, base);
-                        xc->setRegOperand(this, dOffIdx,  newOff);
+                        // // Copy raw, update decoded offset; in this simple model we keep base unchanged
+                        // xc->setRegOperand(this, dRawIdx,  raw);
+                        // xc->setRegOperand(this, dBaseIdx, base);
+                        // xc->setRegOperand(this, dOffIdx,  newOff);
 
-                        // Policy: clear tag if input was sealed; otherwise preserve
-                        xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
+                        // // Policy: clear tag if input was sealed; otherwise preserve
+                        // xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
                     }});
 
                     0x11: cincoffset({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // Source capability (cs1)
-                        RegIndex c1RawIdx   = CS1 + cap_reg::_CNullIdx;
-                        RegIndex c1TagIdx   = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex c1BaseIdx  = CS1 + cap_reg::_CNullDataIdx;
-                        RegIndex c1OffIdx   = CS1 + cap_reg::_CNullDataIdx + 2;
+                        // // Source capability (cs1)
+                        // RegIndex c1RawIdx   = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex c1TagIdx   = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex c1BaseIdx  = CS1 + cap_reg::_CNullDataIdx;
+                        // RegIndex c1OffIdx   = CS1 + cap_reg::_CNullDataIdx + 2;
 
-                        // rs2 is the signed increment
-                        RegIndex rs2Idx     = RS2;
+                        // // rs2 is the signed increment
+                        // RegIndex rs2Idx     = RS2;
 
-                        // Destination triplet (cd)
-                        RegIndex dRawIdx    = RD + cap_reg::_CNullIdx;
-                        RegIndex dTagIdx    = RD + cap_reg::_CNullTagIdx;
-                        RegIndex dBaseIdx   = RD + cap_reg::_CNullDataIdx;
-                        RegIndex dOffIdx    = RD + cap_reg::_CNullDataIdx + 2;
+                        // // Destination triplet (cd)
+                        // RegIndex dRawIdx    = RD + cap_reg::_CNullIdx;
+                        // RegIndex dTagIdx    = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dBaseIdx   = RD + cap_reg::_CNullDataIdx;
+                        // RegIndex dOffIdx    = RD + cap_reg::_CNullDataIdx + 2;
 
-                        uint64_t raw     = xc->getRegOperand(this, c1RawIdx);
-                        uint64_t tag     = xc->getRegOperand(this, c1TagIdx);
-                        uint64_t base    = xc->getRegOperand(this, c1BaseIdx);
-                        uint64_t offset  = xc->getRegOperand(this, c1OffIdx);
-                        int64_t  inc     = (int64_t)xc->getRegOperand(this, rs2Idx);
+                        // uint64_t raw     = xc->getRegOperand(this, c1RawIdx);
+                        // uint64_t tag     = xc->getRegOperand(this, c1TagIdx);
+                        // uint64_t base    = xc->getRegOperand(this, c1BaseIdx);
+                        // uint64_t offset  = xc->getRegOperand(this, c1OffIdx);
+                        // int64_t  inc     = (int64_t)xc->getRegOperand(this, rs2Idx);
 
-                        bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
+                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
 
-                        uint64_t newOff = (uint64_t)((int64_t)offset + inc);
+                        // uint64_t newOff = (uint64_t)((int64_t)offset + inc);
 
-                        // Copy raw, base; update offset
-                        xc->setRegOperand(this, dRawIdx,  raw);
-                        xc->setRegOperand(this, dBaseIdx, base);
-                        xc->setRegOperand(this, dOffIdx,  newOff);
+                        // // Copy raw, base; update offset
+                        // xc->setRegOperand(this, dRawIdx,  raw);
+                        // xc->setRegOperand(this, dBaseIdx, base);
+                        // xc->setRegOperand(this, dOffIdx,  newOff);
 
-                        // Same policy as cincoffsetimm: clear tag if sealed; else preserve
-                        xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
+                        // // Same policy as cincoffsetimm: clear tag if sealed; else preserve
+                        // xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
                     }});
 
                     0x12: ctoptr({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // capability pieces
-                        RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                        RegIndex offIdx  = CS1 + cap_reg::_CNullDataIdx + 2;
-                        RegIndex rs2Idx  = RS2;
+                        // // capability pieces
+                        // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
+                        // RegIndex offIdx  = CS1 + cap_reg::_CNullDataIdx + 2;
+                        // RegIndex rs2Idx  = RS2;
 
-                        uint64_t base   = xc->getRegOperand(this, baseIdx);
-                        uint64_t off    = xc->getRegOperand(this, offIdx);
-                        int64_t  addend = (int64_t)xc->getRegOperand(this, rs2Idx);
+                        // uint64_t base   = xc->getRegOperand(this, baseIdx);
+                        // uint64_t off    = xc->getRegOperand(this, offIdx);
+                        // int64_t  addend = (int64_t)xc->getRegOperand(this, rs2Idx);
 
-                        uint64_t addr = (uint64_t)((int64_t)(base + off) + addend);
-                        xc->setRegOperand(this, RD, addr);
+                        // uint64_t addr = (uint64_t)((int64_t)(base + off) + addend);
+                        // xc->setRegOperand(this, RD, addr);
                     }});
 
                     0x13: cfromptr({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // source capability
-                        RegIndex c1RawIdx  = CS1 + cap_reg::_CNullIdx;
-                        RegIndex c1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex c1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
+                        // // source capability
+                        // RegIndex c1RawIdx  = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex c1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex c1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
 
-                        // integer pointer
-                        RegIndex rs2Idx    = RS2;
+                        // // integer pointer
+                        // RegIndex rs2Idx    = RS2;
 
-                        // destination triplet
-                        RegIndex dRawIdx   = RD + cap_reg::_CNullIdx;
-                        RegIndex dTagIdx   = RD + cap_reg::_CNullTagIdx;
-                        RegIndex dBaseIdx  = RD + cap_reg::_CNullDataIdx;
-                        RegIndex dTopIdx   = RD + cap_reg::_CNullDataIdx + 1;
-                        RegIndex dOffIdx   = RD + cap_reg::_CNullDataIdx + 2;
+                        // // destination triplet
+                        // RegIndex dRawIdx   = RD + cap_reg::_CNullIdx;
+                        // RegIndex dTagIdx   = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dBaseIdx  = RD + cap_reg::_CNullDataIdx;
+                        // RegIndex dTopIdx   = RD + cap_reg::_CNullDataIdx + 1;
+                        // RegIndex dOffIdx   = RD + cap_reg::_CNullDataIdx + 2;
 
-                        uint64_t raw   = xc->getRegOperand(this, c1RawIdx);
-                        uint64_t tag   = xc->getRegOperand(this, c1TagIdx) & 1ULL;
-                        uint64_t base  = xc->getRegOperand(this, c1BaseIdx);
-                        uint64_t iptr  = xc->getRegOperand(this, rs2Idx);
+                        // uint64_t raw   = xc->getRegOperand(this, c1RawIdx);
+                        // uint64_t tag   = xc->getRegOperand(this, c1TagIdx) & 1ULL;
+                        // uint64_t base  = xc->getRegOperand(this, c1BaseIdx);
+                        // uint64_t iptr  = xc->getRegOperand(this, rs2Idx);
 
-                        bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
+                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
 
-                        // new offset = iptr - base
-                        uint64_t newOff = iptr - base;
+                        // // new offset = iptr - base
+                        // uint64_t newOff = iptr - base;
 
-                        // copy raw unchanged; copy bounds; set new offset
-                        xc->setRegOperand(this, dRawIdx,  raw);
-                        xc->setRegOperand(this, dBaseIdx, xc->getRegOperand(this, CS1 + cap_reg::_CNullDataIdx + 0));
-                        xc->setRegOperand(this, dTopIdx,  xc->getRegOperand(this, CS1 + cap_reg::_CNullDataIdx + 1));
-                        xc->setRegOperand(this, dOffIdx,  newOff);
+                        // // copy raw unchanged; copy bounds; set new offset
+                        // xc->setRegOperand(this, dRawIdx,  raw);
+                        // xc->setRegOperand(this, dBaseIdx, xc->getRegOperand(this, CS1 + cap_reg::_CNullDataIdx + 0));
+                        // xc->setRegOperand(this, dTopIdx,  xc->getRegOperand(this, CS1 + cap_reg::_CNullDataIdx + 1));
+                        // xc->setRegOperand(this, dOffIdx,  newOff);
 
-                        // tag cleared if sealed; otherwise preserved
-                        xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
+                        // // tag cleared if sealed; otherwise preserved
+                        // xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
                     }});
 
                     0x16: csethigh({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // source pieces
-                        RegIndex c1RawIdx  = CS1 + cap_reg::_CNullIdx;
-                        RegIndex c1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex c1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
-                        RegIndex c1OffIdx  = CS1 + cap_reg::_CNullDataIdx + 2;
+                        // // source pieces
+                        // RegIndex c1RawIdx  = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex c1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex c1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
+                        // RegIndex c1OffIdx  = CS1 + cap_reg::_CNullDataIdx + 2;
 
-                        // rs2 holds the 32-bit value to put in offset[63:32]
-                        RegIndex rs2Idx    = RS2;
+                        // // rs2 holds the 32-bit value to put in offset[63:32]
+                        // RegIndex rs2Idx    = RS2;
 
-                        // dest triplet
-                        RegIndex dRawIdx   = RD + cap_reg::_CNullIdx;
-                        RegIndex dTagIdx   = RD + cap_reg::_CNullTagIdx;
-                        RegIndex dBaseIdx  = RD + cap_reg::_CNullDataIdx;
-                        RegIndex dOffIdx   = RD + cap_reg::_CNullDataIdx + 2;
+                        // // dest triplet
+                        // RegIndex dRawIdx   = RD + cap_reg::_CNullIdx;
+                        // RegIndex dTagIdx   = RD + cap_reg::_CNullTagIdx;
+                        // RegIndex dBaseIdx  = RD + cap_reg::_CNullDataIdx;
+                        // RegIndex dOffIdx   = RD + cap_reg::_CNullDataIdx + 2;
 
-                        uint64_t raw    = xc->getRegOperand(this, c1RawIdx);
-                        uint64_t tag    = xc->getRegOperand(this, c1TagIdx);
-                        uint64_t base   = xc->getRegOperand(this, c1BaseIdx);
-                        uint64_t offset = xc->getRegOperand(this, c1OffIdx);
-                        uint64_t hi     = xc->getRegOperand(this, rs2Idx) & 0xFFFFFFFFULL;
+                        // uint64_t raw    = xc->getRegOperand(this, c1RawIdx);
+                        // uint64_t tag    = xc->getRegOperand(this, c1TagIdx);
+                        // uint64_t base   = xc->getRegOperand(this, c1BaseIdx);
+                        // uint64_t offset = xc->getRegOperand(this, c1OffIdx);
+                        // uint64_t hi     = xc->getRegOperand(this, rs2Idx) & 0xFFFFFFFFULL;
 
-                        bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
+                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
 
-                        // new offset = {rs2[31:0], offset[31:0]}
-                        uint64_t newOff = (hi << 32) | (offset & 0xFFFFFFFFULL);
+                        // // new offset = {rs2[31:0], offset[31:0]}
+                        // uint64_t newOff = (hi << 32) | (offset & 0xFFFFFFFFULL);
 
-                        // write back: raw unchanged, base copied, offset replaced
-                        xc->setRegOperand(this, dRawIdx,  raw);
-                        xc->setRegOperand(this, dBaseIdx, base);
-                        xc->setRegOperand(this, dOffIdx,  newOff);
-                        xc->setRegOperand(this, dTagIdx,  sealed ? 0ULL : (tag & 1ULL));
+                        // // write back: raw unchanged, base copied, offset replaced
+                        // xc->setRegOperand(this, dRawIdx,  raw);
+                        // xc->setRegOperand(this, dBaseIdx, base);
+                        // xc->setRegOperand(this, dOffIdx,  newOff);
+                        // xc->setRegOperand(this, dTagIdx,  sealed ? 0ULL : (tag & 1ULL));
                     }});
 
                     0x1d: cbuildcap({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        // raw words + tags
-                        RegIndex s1Raw = CS1 + cap_reg::_CNullIdx;
-                        RegIndex s2Raw = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dRaw  = RD  + cap_reg::_CNullIdx;
+                        // // raw words + tags
+                        // RegIndex s1Raw = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex s2Raw = CS2 + cap_reg::_CNullIdx;
+                        // RegIndex dRaw  = RD  + cap_reg::_CNullIdx;
 
-                        RegIndex s1Tag = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex s2Tag = CS2 + cap_reg::_CNullTagIdx;
-                        RegIndex dTag  = RD  + cap_reg::_CNullTagIdx;
+                        // RegIndex s1Tag = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex s2Tag = CS2 + cap_reg::_CNullTagIdx;
+                        // RegIndex dTag  = RD  + cap_reg::_CNullTagIdx;
 
-                        // bounds+offset taken from cs1
-                        RegIndex s1B = CS1 + cap_reg::_CNullDataIdx;
-                        RegIndex dB  = RD  + cap_reg::_CNullDataIdx;
+                        // // bounds+offset taken from cs1
+                        // RegIndex s1B = CS1 + cap_reg::_CNullDataIdx;
+                        // RegIndex dB  = RD  + cap_reg::_CNullDataIdx;
 
-                        uint64_t v1 = xc->getRegOperand(this, s1Raw);
-                        uint64_t v2 = xc->getRegOperand(this, s2Raw);
-                        uint64_t t1 = xc->getRegOperand(this, s1Tag) & 1ULL;
-                        uint64_t t2 = xc->getRegOperand(this, s2Tag) & 1ULL;
+                        // uint64_t v1 = xc->getRegOperand(this, s1Raw);
+                        // uint64_t v2 = xc->getRegOperand(this, s2Raw);
+                        // uint64_t t1 = xc->getRegOperand(this, s1Tag) & 1ULL;
+                        // uint64_t t2 = xc->getRegOperand(this, s2Tag) & 1ULL;
 
-                        // mix: keep cs1 then overwrite perms/flag/otype from cs2
-                        uint64_t out = v1;
-                        out &= ~((0xFFFFULL << 48) | (1ULL << 47) | (0x3FFFFULL << 27));
-                        out |=  ( (v2 & (0xFFFFULL << 48)) | (v2 & (1ULL << 47)) | (v2 & (0x3FFFFULL << 27)) );
+                        // // mix: keep cs1 then overwrite perms/flag/otype from cs2
+                        // uint64_t out = v1;
+                        // out &= ~((0xFFFFULL << 48) | (1ULL << 47) | (0x3FFFFULL << 27));
+                        // out |=  ( (v2 & (0xFFFFULL << 48)) | (v2 & (1ULL << 47)) | (v2 & (0x3FFFFULL << 27)) );
 
-                        // copy bounds+offset from cs1
-                        xc->setRegOperand(this, dRaw, out);
-                        xc->setRegOperand(this, dB + 0, xc->getRegOperand(this, s1B + 0)); // base
-                        xc->setRegOperand(this, dB + 1, xc->getRegOperand(this, s1B + 1)); // top
-                        xc->setRegOperand(this, dB + 2, xc->getRegOperand(this, s1B + 2)); // offset
+                        // // copy bounds+offset from cs1
+                        // xc->setRegOperand(this, dRaw, out);
+                        // xc->setRegOperand(this, dB + 0, xc->getRegOperand(this, s1B + 0)); // base
+                        // xc->setRegOperand(this, dB + 1, xc->getRegOperand(this, s1B + 1)); // top
+                        // xc->setRegOperand(this, dB + 2, xc->getRegOperand(this, s1B + 2)); // offset
 
-                        // tag is set only if both inputs were tagged
-                        xc->setRegOperand(this, dTag, (t1 & t2) ? 1ULL : 0ULL);
+                        // // tag is set only if both inputs were tagged
+                        // xc->setRegOperand(this, dTag, (t1 & t2) ? 1ULL : 0ULL);
                     }});
 
                     0x1e: ccopytype({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        RegIndex s1Raw = CS1 + cap_reg::_CNullIdx;
-                        RegIndex s2Raw = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dRaw  = RD  + cap_reg::_CNullIdx;
+                        // RegIndex s1Raw = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex s2Raw = CS2 + cap_reg::_CNullIdx;
+                        // RegIndex dRaw  = RD  + cap_reg::_CNullIdx;
 
-                        RegIndex s1Tag = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex s2Tag = CS2 + cap_reg::_CNullTagIdx;
-                        RegIndex dTag  = RD  + cap_reg::_CNullTagIdx;
+                        // RegIndex s1Tag = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex s2Tag = CS2 + cap_reg::_CNullTagIdx;
+                        // RegIndex dTag  = RD  + cap_reg::_CNullTagIdx;
 
-                        uint64_t v1 = xc->getRegOperand(this, s1Raw);
-                        uint64_t v2 = xc->getRegOperand(this, s2Raw);
+                        // uint64_t v1 = xc->getRegOperand(this, s1Raw);
+                        // uint64_t v2 = xc->getRegOperand(this, s2Raw);
 
-                        // replace only otype [44:27]
-                        uint64_t out = (v1 & ~(0x3FFFFULL << 27)) | ( (v2 & (0x3FFFFULL << 27)) );
+                        // // replace only otype [44:27]
+                        // uint64_t out = (v1 & ~(0x3FFFFULL << 27)) | ( (v2 & (0x3FFFFULL << 27)) );
 
-                        // tag only if both input tags are set
-                        uint64_t t = (xc->getRegOperand(this, s1Tag) & 1ULL) & (xc->getRegOperand(this, s2Tag) & 1ULL);
+                        // // tag only if both input tags are set
+                        // uint64_t t = (xc->getRegOperand(this, s1Tag) & 1ULL) & (xc->getRegOperand(this, s2Tag) & 1ULL);
 
-                        xc->setRegOperand(this, dRaw, out);
-                        xc->setRegOperand(this, dTag, t);
+                        // xc->setRegOperand(this, dRaw, out);
+                        // xc->setRegOperand(this, dTag, t);
                     }});
 
                     0x1f: ccseal({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
-                        RegIndex cdIdx      = RD  + cap_reg::_CNullIdx;
+                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
+                        // RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
+                        // RegIndex cdIdx      = RD  + cap_reg::_CNullIdx;
 
-                        RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
-                        RegIndex cdTagIdx   = RD  + cap_reg::_CNullTagIdx;
+                        // RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        // RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
+                        // RegIndex cdTagIdx   = RD  + cap_reg::_CNullTagIdx;
 
-                        uint64_t s1 = xc->getRegOperand(this, cs1Idx);
-                        uint64_t s2 = xc->getRegOperand(this, cs2Idx);
+                        // uint64_t s1 = xc->getRegOperand(this, cs1Idx);
+                        // uint64_t s2 = xc->getRegOperand(this, cs2Idx);
 
 
-                        RegIndex cs2OffIdx = CS2 + cap_reg::_CNullDataIdx + 2;
-                        uint64_t cursor2 = xc->getRegOperand(this, cs2OffIdx) & 0x3FFFFull; // 18b mask
+                        // RegIndex cs2OffIdx = CS2 + cap_reg::_CNullDataIdx + 2;
+                        // uint64_t cursor2 = xc->getRegOperand(this, cs2OffIdx) & 0x3FFFFull; // 18b mask
 
-                        uint64_t out = s1 & ~(0x3FFFFull << 27);
-                        out |= (cursor2 << 27);
+                        // uint64_t out = s1 & ~(0x3FFFFull << 27);
+                        // out |= (cursor2 << 27);
 
-                        uint64_t ok = (xc->getRegOperand(this, cs1TagIdx) & 1) &
-                                    (xc->getRegOperand(this, cs2TagIdx) & 1);
+                        // uint64_t ok = (xc->getRegOperand(this, cs1TagIdx) & 1) &
+                        //             (xc->getRegOperand(this, cs2TagIdx) & 1);
 
-                        xc->setRegOperand(this, cdIdx, out);
-                        xc->setRegOperand(this, cdTagIdx, ok ? 1 : 0);
+                        // xc->setRegOperand(this, cdIdx, out);
+                        // xc->setRegOperand(this, cdTagIdx, ok ? 1 : 0);
                     }});
 
                     0x20: ctestsubset({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        RegIndex s1Base = CS1 + cap_reg::_CNullDataIdx;
-                        RegIndex s1Top  = s1Base + 1;
-                        RegIndex s2Base = CS2 + cap_reg::_CNullDataIdx;
-                        RegIndex s2Top  = s2Base + 1;
+                        // RegIndex s1Base = CS1 + cap_reg::_CNullDataIdx;
+                        // RegIndex s1Top  = s1Base + 1;
+                        // RegIndex s2Base = CS2 + cap_reg::_CNullDataIdx;
+                        // RegIndex s2Top  = s2Base + 1;
 
-                        uint64_t b1 = xc->getRegOperand(this, s1Base);
-                        uint64_t t1 = xc->getRegOperand(this, s1Top);
-                        uint64_t b2 = xc->getRegOperand(this, s2Base);
-                        uint64_t t2 = xc->getRegOperand(this, s2Top);
+                        // uint64_t b1 = xc->getRegOperand(this, s1Base);
+                        // uint64_t t1 = xc->getRegOperand(this, s1Top);
+                        // uint64_t b2 = xc->getRegOperand(this, s2Base);
+                        // uint64_t t2 = xc->getRegOperand(this, s2Top);
 
-                        uint64_t v1 = xc->getRegOperand(this, CS1 + cap_reg::_CNullIdx);
-                        uint64_t v2 = xc->getRegOperand(this, CS2 + cap_reg::_CNullIdx);
+                        // uint64_t v1 = xc->getRegOperand(this, CS1 + cap_reg::_CNullIdx);
+                        // uint64_t v2 = xc->getRegOperand(this, CS2 + cap_reg::_CNullIdx);
 
-                        uint64_t p1 = (v1 >> 48) & 0xFFFF;
-                        uint64_t p2 = (v2 >> 48) & 0xFFFF;
+                        // uint64_t p1 = (v1 >> 48) & 0xFFFF;
+                        // uint64_t p2 = (v2 >> 48) & 0xFFFF;
 
-                        bool bounds_ok = (b1 >= b2) && (t1 <= t2);
-                        bool perms_ok  = ((p1 & ~p2) == 0);
-                        Rd = (bounds_ok && perms_ok) ? 1 : 0;
+                        // bool bounds_ok = (b1 >= b2) && (t1 <= t2);
+                        // bool perms_ok  = ((p1 & ~p2) == 0);
+                        // Rd = (bounds_ok && perms_ok) ? 1 : 0;
                     }});
 
                     0x21: csetequalexact({{
-                        using namespace gem5::CHERIRiscvISA;
+                        // using namespace gem5::CHERIRiscvISA;
 
-                        auto eq = [&](RegIndex a, RegIndex b) {
-                            return xc->getRegOperand(this, a) == xc->getRegOperand(this, b);
-                        };
-                        bool same_val = eq(CS1 + cap_reg::_CNullIdx,     CS2 + cap_reg::_CNullIdx);
-                        bool same_tag = (xc->getRegOperand(this, CS1 + cap_reg::_CNullTagIdx) & 1) ==
-                                        (xc->getRegOperand(this, CS2 + cap_reg::_CNullTagIdx) & 1);
-                        RegIndex s1B = CS1 + cap_reg::_CNullDataIdx;
-                        RegIndex s2B = CS2 + cap_reg::_CNullDataIdx;
-                        bool same_base   = eq(s1B,     s2B);
-                        bool same_top    = eq(s1B+1,   s2B+1);
-                        bool same_offset = eq(s1B+2,   s2B+2);
+                        // auto eq = [&](RegIndex a, RegIndex b) {
+                        //     return xc->getRegOperand(this, a) == xc->getRegOperand(this, b);
+                        // };
+                        // bool same_val = eq(CS1 + cap_reg::_CNullIdx,     CS2 + cap_reg::_CNullIdx);
+                        // bool same_tag = (xc->getRegOperand(this, CS1 + cap_reg::_CNullTagIdx) & 1) ==
+                        //                 (xc->getRegOperand(this, CS2 + cap_reg::_CNullTagIdx) & 1);
+                        // RegIndex s1B = CS1 + cap_reg::_CNullDataIdx;
+                        // RegIndex s2B = CS2 + cap_reg::_CNullDataIdx;
+                        // bool same_base   = eq(s1B,     s2B);
+                        // bool same_top    = eq(s1B+1,   s2B+1);
+                        // bool same_offset = eq(s1B+2,   s2B+2);
 
-                        Rd = (same_val && same_tag && same_base && same_top && same_offset) ? 1 : 0;
+                        // Rd = (same_val && same_tag && same_base && same_top && same_offset) ? 1 : 0;
                     }});
 
                     0x7f: decode CAPFUN {
                         0x00: cgetperm({{
-                            std::cout << "CS1 " << CS1 << " Cs1 " << Cs1;
-                            std::cout << " meta: " << Cs1Meta << std::endl;
-                            uint64_t raw = Cs1Meta;
-                            uint64_t perms = (raw >> 48) & 0xFFFF;
-                            Rd =  perms;
+                            // std::cout << "CS1 " << CS1 << " Cs1 " << Cs1;
+                            // std::cout << " meta: " << Cs1Meta << std::endl;
+                            // uint64_t raw = Cs1Meta; // <-- Cs1Meta.perm
+                            // uint64_t perms = (raw >> 48) & 0xFFFF
+                            // Rd = raw;
+
+                            // using namespace gem5::CHERIRiscvISA;
+
+                            // CAPTYPE cap = Cs1;
+                            // std::cout << "Capability perms: " << cap.perm; 
+                            // Rd = cap.perm;
+
                         }});
 
                         0x01: cgettype({{
-                            using namespace gem5::CHERIRiscvISA;
-
-                            RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            uint64_t raw = xc->getRegOperand(this, srcIdx);
-
+                            // uint64_t raw = Cs1Meta; 
                             // otype = bits[44:27] — 18 bits
-                            uint64_t otype = (raw >> 27) & 0x3FFFF;  // 18-bit mask
+                            // uint64_t otype = (raw >> 27) & 0x3FFFF;  // 18-bit mask
+                            // Rd = otype; 
 
-                            xc->setRegOperand(this, RD, otype);
+                            // using namespace gem5::CHERIRiscvISA;
+
+                            // CAPTYPE cap = Cs1; 
+                            // std::cout << "Capability otype: " << cap.otype;
+                            // Rd = cap.otype; 
                         }});
 
                         0x02: cgetbase({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            uint64_t base = xc->getRegOperand(this, baseIdx);
+                            // CAPTYPE cap = Cs1; 
+                            // uint64_t base; 
+                            
+                            // if (cap.IE){
+                            //    base = ((cap.B << 3) & 0b000);  
+                            //}
+                            //else{ 
+                            //    base = ((cap.B << 3) | cap.BE);
+                            //}
 
-                            xc->setRegOperand(this, RD, base);
+                            //Rd = base; 
                         }});
 
                         0x03: cgetlen({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            RegIndex topIdx  = baseIdx + 1;
+                            // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
+                            // RegIndex topIdx  = baseIdx + 1;
 
-                            uint64_t base = xc->getRegOperand(this, baseIdx);
-                            uint64_t top  = xc->getRegOperand(this, topIdx);
+                            // uint64_t base = xc->getRegOperand(this, baseIdx);
+                            // uint64_t top  = xc->getRegOperand(this, topIdx);
 
-                            uint64_t len = top - base;
+                            // uint64_t len = top - base;
 
-                            xc->setRegOperand(this, RD, len);
+                            // xc->setRegOperand(this, RD, len);
                         }});
 
                         0x04: cgettag({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            uint64_t tag = xc->getRegOperand(this, tagIdx);
+                            // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
+                            // uint64_t tag = xc->getRegOperand(this, tagIdx);
 
-                            xc->setRegOperand(this, RD, tag & 0x1);
+                            // xc->setRegOperand(this, RD, tag & 0x1);
                         }});
 
                         0x05: cgetsealed({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex capIdx = CS1 + cap_reg::_CNullIdx;
-                            uint64_t raw = xc->getRegOperand(this, capIdx);
+                            // RegIndex capIdx = CS1 + cap_reg::_CNullIdx;
+                            // uint64_t raw = xc->getRegOperand(this, capIdx);
 
-                            // otype = bits 44:27 → sealed if otype != 0
-                            uint64_t otype = (raw >> 27) & 0x3FFFF;
-                            uint64_t sealed = (otype != 0) ? 1 : 0;
+                            // // otype = bits 44:27 → sealed if otype != 0
+                            // uint64_t otype = (raw >> 27) & 0x3FFFF;
+                            // uint64_t sealed = (otype != 0) ? 1 : 0;
 
-                            xc->setRegOperand(this, RD, sealed);
+                            // xc->setRegOperand(this, RD, sealed);
                         }});
 
                         0x06: cgetoffset({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
-                            uint64_t offset = xc->getRegOperand(this, offsetIdx);
+                            // RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
+                            // uint64_t offset = xc->getRegOperand(this, offsetIdx);
 
-                            xc->setRegOperand(this, RD, offset);
+                            // xc->setRegOperand(this, RD, offset);
                         }});
 
                         0x07: cgetflags({{
                             using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            uint64_t raw = xc->getRegOperand(this, srcIdx);
+                            RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx    = RD + int_reg::_ZeroIdx;
 
-                            // the model stores flags temporarily at bits [23:16]
-                            uint64_t flags = (raw >> 16) & 0xFFULL;
-                            xc->setRegOperand(this, RD, flags);
+                            std::cout << "Getting flags for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            Rd = meta.flag;
+
+                            std::cout << " The flag value = " << meta.flag << std::endl; 
+
                         }});
 
                         0x17: cgethigh({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex topIdx = CS1 + cap_reg::_CNullDataIdx + 1;
-                            uint64_t top = xc->getRegOperand(this, topIdx);
+                            // RegIndex topIdx = CS1 + cap_reg::_CNullDataIdx + 1;
+                            // uint64_t top = xc->getRegOperand(this, topIdx);
 
-                            xc->setRegOperand(this, RD, top);
+                            // xc->setRegOperand(this, RD, top);
                         }});
 
                         0x18: cgettop({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex topIdx = CS1 + cap_reg::_CNullDataIdx + 1;
-                            uint64_t top = xc->getRegOperand(this, topIdx);
+                            // RegIndex topIdx = CS1 + cap_reg::_CNullDataIdx + 1;
+                            // uint64_t top = xc->getRegOperand(this, topIdx);
 
-                            xc->setRegOperand(this, RD, top);
+                            // xc->setRegOperand(this, RD, top);
                         }});
 
                         0x08: crounrepresentablelength({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                            // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
+                            // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
 
-                            // TODO: actual rounding logic depends on CHERI compression encoding
-                            uint64_t raw = xc->getRegOperand(this, srcIdx);
+                            // // TODO: actual rounding logic depends on CHERI compression encoding
+                            // uint64_t raw = xc->getRegOperand(this, srcIdx);
 
-                            xc->setRegOperand(this, dstIdx, raw);
+                            // xc->setRegOperand(this, dstIdx, raw);
                         }});
 
                         0x09: crepresentablealignmentmask({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            uint64_t base = xc->getRegOperand(this, baseIdx);
+                            // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
+                            // uint64_t base = xc->getRegOperand(this, baseIdx);
 
-                            // Compute alignment mask: (1 << lsb_position) - 1
-                            // e.g., base=0x1000 => mask=0xFFF
-                            uint64_t mask = (base == 0) ? 0 : ((1ULL << __builtin_ctzll(base)) - 1);
+                            // // Compute alignment mask: (1 << lsb_position) - 1
+                            // // e.g., base=0x1000 => mask=0xFFF
+                            // uint64_t mask = (base == 0) ? 0 : ((1ULL << __builtin_ctzll(base)) - 1);
 
-                            xc->setRegOperand(this, RD, mask);
+                            // xc->setRegOperand(this, RD, mask);
                         }});
 
                         0x0A: cmove({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            // Compute proper data and tag indices
-                            RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            RegIndex dstIdx = RD  + cap_reg::_CNullIdx;
-                            RegIndex srcTagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            RegIndex dstTagIdx = RD  + cap_reg::_CNullTagIdx;
+                            // // Compute proper data and tag indices
+                            // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
+                            // RegIndex dstIdx = RD  + cap_reg::_CNullIdx;
+                            // RegIndex srcTagIdx = CS1 + cap_reg::_CNullTagIdx;
+                            // RegIndex dstTagIdx = RD  + cap_reg::_CNullTagIdx;
 
-                            // Copy capability value
-                            uint64_t raw = xc->getRegOperand(this, srcIdx);
-                            xc->setRegOperand(this, dstIdx, raw);
+                            // // Copy capability value
+                            // uint64_t raw = xc->getRegOperand(this, srcIdx);
+                            // xc->setRegOperand(this, dstIdx, raw);
 
-                            // Copy tag bit
-                            uint64_t tag = xc->getRegOperand(this, srcTagIdx);
-                            xc->setRegOperand(this, dstTagIdx, tag & 0x1);
+                            // // Copy tag bit
+                            // uint64_t tag = xc->getRegOperand(this, srcTagIdx);
+                            // xc->setRegOperand(this, dstTagIdx, tag & 0x1);
                         }});
 
                         0x0b: ccleartag({{
-                            // Source capability register index
-                            RegIndex srcIdx = CS1 + gem5::CHERIRiscvISA::cap_reg::_CNullIdx;
+                            // // Source capability register index
+                            // RegIndex srcIdx = CS1 + gem5::CHERIRiscvISA::cap_reg::_CNullIdx;
 
-                            // Destination capability register index
-                            RegIndex dstIdx = RD + gem5::CHERIRiscvISA::cap_reg::_CNullIdx;
+                            // // Destination capability register index
+                            // RegIndex dstIdx = RD + gem5::CHERIRiscvISA::cap_reg::_CNullIdx;
 
-                            // Source tag register index
-                            RegIndex srcTagIdx = CS1 + gem5::CHERIRiscvISA::cap_reg::_CNullTagIdx;
+                            // // Source tag register index
+                            // RegIndex srcTagIdx = CS1 + gem5::CHERIRiscvISA::cap_reg::_CNullTagIdx;
 
-                            // Destination tag register index
-                            RegIndex dstTagIdx = RD + gem5::CHERIRiscvISA::cap_reg::_CNullTagIdx;
+                            // // Destination tag register index
+                            // RegIndex dstTagIdx = RD + gem5::CHERIRiscvISA::cap_reg::_CNullTagIdx;
 
-                            // Read capability value from source
-                            uint64_t capVal = xc->getRegOperand(this, srcIdx);
+                            // // Read capability value from source
+                            // uint64_t capVal = xc->getRegOperand(this, srcIdx);
 
-                            // Write capability value to destination
-                            xc->setRegOperand(this, dstIdx, capVal);
+                            // // Write capability value to destination
+                            // xc->setRegOperand(this, dstIdx, capVal);
 
-                            // Clear the tag bit in the destination tag register
-                            xc->setRegOperand(this, dstTagIdx, (RegVal)0);
+                            // // Clear the tag bit in the destination tag register
+                            // xc->setRegOperand(this, dstTagIdx, (RegVal)0);
                         }});
 
                         0x0c: jalr_cap({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            // Resolve source and destination indices
-                            RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
-                            RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            RegIndex linkIdx = RD + cap_reg::_CNullIdx;
-                            RegIndex linkTagIdx = RD + cap_reg::_CNullTagIdx;
+                            // // Resolve source and destination indices
+                            // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
+                            // RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
+                            // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
+                            // RegIndex linkIdx = RD + cap_reg::_CNullIdx;
+                            // RegIndex linkTagIdx = RD + cap_reg::_CNullTagIdx;
 
-                            // Read tag — must be valid
-                            uint64_t tag = xc->getRegOperand(this, tagIdx);
-                            if (!(tag & 0x1)) {
-                                return std::make_shared<IllegalInstFault>("invalid capability tag in cs1", machInst);
-                            }
+                            // // Read tag — must be valid
+                            // uint64_t tag = xc->getRegOperand(this, tagIdx);
+                            // if (!(tag & 0x1)) {
+                            //     return std::make_shared<IllegalInstFault>("invalid capability tag in cs1", machInst);
+                            // }
 
-                            // Optional: check execute permission in perm field (bits [63:48])
-                            RegIndex capValIdx = CS1 + cap_reg::_CNullIdx;
-                            uint64_t capVal = xc->getRegOperand(this, capValIdx);
-                            uint64_t perms = (capVal >> 48) & 0xFFFF;
-                            const uint64_t PERM_EXECUTE = 1 << 0;
-                            if (!(perms & PERM_EXECUTE)) {
-                                return std::make_shared<IllegalInstFault>("capability lacks execute permission", machInst);
-                            }
+                            // // Optional: check execute permission in perm field (bits [63:48])
+                            // RegIndex capValIdx = CS1 + cap_reg::_CNullIdx;
+                            // uint64_t capVal = xc->getRegOperand(this, capValIdx);
+                            // uint64_t perms = (capVal >> 48) & 0xFFFF;
+                            // const uint64_t PERM_EXECUTE = 1 << 0;
+                            // if (!(perms & PERM_EXECUTE)) {
+                            //     return std::make_shared<IllegalInstFault>("capability lacks execute permission", machInst);
+                            // }
 
-                            // Resolve jump target
-                            uint64_t base = xc->getRegOperand(this, baseIdx);
-                            uint64_t offset = xc->getRegOperand(this, offsetIdx);
-                            Addr newPC = base + offset;
+                            // // Resolve jump target
+                            // uint64_t base = xc->getRegOperand(this, baseIdx);
+                            // uint64_t offset = xc->getRegOperand(this, offsetIdx);
+                            // Addr newPC = base + offset;
 
-                            // Store return address in RD
-                            uint64_t link = PC + 4;
-                            xc->setRegOperand(this, linkIdx, link);
-                            xc->setRegOperand(this, linkTagIdx, (RegVal)1);  // Set tag
+                            // // Store return address in RD
+                            // uint64_t link = PC + 4;
+                            // xc->setRegOperand(this, linkIdx, link);
+                            // xc->setRegOperand(this, linkTagIdx, (RegVal)1);  // Set tag
 
-                            // Perform jump
-                            NPC = newPC;
+                            // // Perform jump
+                            // NPC = newPC;
                         }});
 
                         0x0e: cclear({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            // Decode fields from instruction
-                            uint8_t quarter = (machInst >> 25) & 0x7;       // bits [27:25]
-                            uint8_t mask = (machInst >> 20) & 0x1F;         // bits [24:20]
+                            // // Decode fields from instruction
+                            // uint8_t quarter = (machInst >> 25) & 0x7;       // bits [27:25]
+                            // uint8_t mask = (machInst >> 20) & 0x1F;         // bits [24:20]
 
-                            for (int i = 0; i < 8; ++i) {
-                                if ((mask >> i) & 0x1) {
-                                    int regNum = quarter * 8 + i;
+                            // for (int i = 0; i < 8; ++i) {
+                            //     if ((mask >> i) & 0x1) {
+                            //         int regNum = quarter * 8 + i;
 
-                                    // Compute full capability and tag register indices
-                                    RegIndex capIdx = cap_reg::_CNullIdx + regNum;
-                                    RegIndex tagIdx = cap_reg::_CNullTagIdx + regNum;
+                            //         // Compute full capability and tag register indices
+                            //         RegIndex capIdx = cap_reg::_CNullIdx + regNum;
+                            //         RegIndex tagIdx = cap_reg::_CNullTagIdx + regNum;
 
-                                    // Clear both capability value and tag
-                                    xc->setRegOperand(this, capIdx, uint64_t(0));
-                                    xc->setRegOperand(this, tagIdx, uint64_t(0));
-                                }
-                            }
+                            //         // Clear both capability value and tag
+                            //         xc->setRegOperand(this, capIdx, uint64_t(0));
+                            //         xc->setRegOperand(this, tagIdx, uint64_t(0));
+                            //     }
+                            // }
                         }});
 
                         0x10: fpclear({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            uint8_t quarter = (machInst >> 25) & 0x7;   // bits [27:25]
-                            uint8_t mask = (machInst >> 20) & 0x1F;     // bits [24:20]
+                            // uint8_t quarter = (machInst >> 25) & 0x7;   // bits [27:25]
+                            // uint8_t mask = (machInst >> 20) & 0x1F;     // bits [24:20]
 
-                            // FP capability registers start at index 32
-                            constexpr int fpBaseIdx = 32;
+                            // // FP capability registers start at index 32
+                            // constexpr int fpBaseIdx = 32;
 
-                            for (int i = 0; i < 8; ++i) {
-                                if ((mask >> i) & 0x1) {
-                                    int regNum = fpBaseIdx + quarter * 8 + i;
+                            // for (int i = 0; i < 8; ++i) {
+                            //     if ((mask >> i) & 0x1) {
+                            //         int regNum = fpBaseIdx + quarter * 8 + i;
 
-                                    RegIndex capIdx = cap_reg::_CNullIdx + regNum;
-                                    RegIndex tagIdx = cap_reg::_CNullTagIdx + regNum;
+                            //         RegIndex capIdx = cap_reg::_CNullIdx + regNum;
+                            //         RegIndex tagIdx = cap_reg::_CNullTagIdx + regNum;
 
-                                    xc->setRegOperand(this, capIdx, uint64_t(0));
-                                    xc->setRegOperand(this, tagIdx, uint64_t(0));
-                                }
-                            }
+                            //         xc->setRegOperand(this, capIdx, uint64_t(0));
+                            //         xc->setRegOperand(this, tagIdx, uint64_t(0));
+                            //     }
+                            // }
                         }});
 
                         0x11: csealentry({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            // Read raw capability bits from source
-                            RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                            // // Read raw capability bits from source
+                            // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
+                            // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
 
-                            uint64_t raw = xc->getRegOperand(this, srcIdx);
+                            // uint64_t raw = xc->getRegOperand(this, srcIdx);
 
-                            // Interpret it as a CAPTYPE struct
-                            union CAPTYPE {
-                            uint64_t val;
-                            struct {
-                                uint64_t BE : 3;
-                                uint64_t B  : 11;
-                                uint64_t TE : 3;
-                                uint64_t T  : 9;
-                                uint64_t IE : 1;
-                                uint64_t otype : 18;     // Bits [44:27]
-                                uint64_t reserved : 2;
-                                uint64_t flag : 1;
-                                uint64_t perm : 16;
-                            };
-                            };
+                            // // Interpret it as a CAPTYPE struct
+                            // union CAPTYPE {
+                            // uint64_t val;
+                            // struct {
+                            //     uint64_t BE : 3;
+                            //     uint64_t B  : 11;
+                            //     uint64_t TE : 3;
+                            //     uint64_t T  : 9;
+                            //     uint64_t IE : 1;
+                            //     uint64_t otype : 18;     // Bits [44:27]
+                            //     uint64_t reserved : 2;
+                            //     uint64_t flag : 1;
+                            //     uint64_t perm : 16;
+                            // };
+                            // };
 
-                            CAPTYPE cap;
-                            cap.val = raw;
+                            // CAPTYPE cap;
+                            // cap.val = raw;
 
-                            // Seal it: assign a non-zero object type, e.g., 1
-                            cap.otype = 1;
+                            // // Seal it: assign a non-zero object type, e.g., 1
+                            // cap.otype = 1;
 
-                            // Optionally, clear offset and IE if required by spec
-                            cap.IE = 0;
+                            // // Optionally, clear offset and IE if required by spec
+                            // cap.IE = 0;
 
-                            // Write sealed capability
-                            xc->setRegOperand(this, dstIdx, cap.val);
+                            // // Write sealed capability
+                            // xc->setRegOperand(this, dstIdx, cap.val);
                         }});
 
                         0x12: cloadtags({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            uint64_t tag = xc->getRegOperand(this, tagIdx) & 0x1;
+                            // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
+                            // uint64_t tag = xc->getRegOperand(this, tagIdx) & 0x1;
 
-                            xc->setRegOperand(this, RD, tag);
+                            // xc->setRegOperand(this, RD, tag);
                         }});
 
                         0x14: jalr_pcc({{
-                            using namespace gem5::CHERIRiscvISA;
+                            // using namespace gem5::CHERIRiscvISA;
 
-                            Addr newPC = xc->getRegOperand(this, RS1);  // integer jump target
+                            // Addr newPC = xc->getRegOperand(this, RS1);  // integer jump target
 
-                            // Store PC + 4 in capability register (as raw integer capability)
-                            RegIndex capIdx = RD + cap_reg::_CNullIdx;
-                            RegIndex tagIdx = RD + cap_reg::_CNullTagIdx;
+                            // // Store PC + 4 in capability register (as raw integer capability)
+                            // RegIndex capIdx = RD + cap_reg::_CNullIdx;
+                            // RegIndex tagIdx = RD + cap_reg::_CNullTagIdx;
 
-                            uint64_t linkVal = PC + 4;
+                            // uint64_t linkVal = PC + 4;
 
-                            xc->setRegOperand(this, capIdx, linkVal);  // store as raw value
-                            xc->setRegOperand(this, tagIdx, (RegVal)1);  // valid capability
+                            // xc->setRegOperand(this, capIdx, linkVal);  // store as raw value
+                            // xc->setRegOperand(this, tagIdx, (RegVal)1);  // valid capability
 
-                            NPC = newPC;
+                            // NPC = newPC;
                         }});
 
                     }
                 }
 
                 0x1: cincoffsetimm({{
-                    using namespace gem5::CHERIRiscvISA;
+                    // using namespace gem5::CHERIRiscvISA;
 
-                    // Decode signed 12-bit immediate from bits 31–20
-                    int64_t imm = sext<12>((machInst >> 20) & 0xFFF);
+                    // // Decode signed 12-bit immediate from bits 31–20
+                    // int64_t imm = sext<12>((machInst >> 20) & 0xFFF);
 
-                    RegIndex capIdx = CS1 + cap_reg::_CNullIdx;
-                    RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                    RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                    RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
+                    // RegIndex capIdx = CS1 + cap_reg::_CNullIdx;
+                    // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
+                    // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
+                    // RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
 
-                    RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-                    RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
-                    RegIndex dstBaseIdx = RD + cap_reg::_CNullDataIdx;
-                    RegIndex dstOffsetIdx = RD + cap_reg::_CNullDataIdx + 2;
+                    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                    // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+                    // RegIndex dstBaseIdx = RD + cap_reg::_CNullDataIdx;
+                    // RegIndex dstOffsetIdx = RD + cap_reg::_CNullDataIdx + 2;
 
-                    uint64_t tag = xc->getRegOperand(this, tagIdx);
-                    uint64_t capVal = xc->getRegOperand(this, capIdx);
-                    uint64_t base = xc->getRegOperand(this, baseIdx);
-                    uint64_t offset = xc->getRegOperand(this, offsetIdx);
+                    // uint64_t tag = xc->getRegOperand(this, tagIdx);
+                    // uint64_t capVal = xc->getRegOperand(this, capIdx);
+                    // uint64_t base = xc->getRegOperand(this, baseIdx);
+                    // uint64_t offset = xc->getRegOperand(this, offsetIdx);
 
-                    bool sealed = ((capVal >> 27) & 0x3FFFF) != 0;  // otype ≠ 0 ⇒ sealed
-                    bool valid = !sealed;  // default: clear if sealed
+                    // bool sealed = ((capVal >> 27) & 0x3FFFF) != 0;  // otype ≠ 0 ⇒ sealed
+                    // bool valid = !sealed;  // default: clear if sealed
 
-                    // Increment offset and compute new address
-                    uint64_t newOffset = offset + imm;
-                    uint64_t newAddr = base + newOffset;
+                    // // Increment offset and compute new address
+                    // uint64_t newOffset = offset + imm;
+                    // uint64_t newAddr = base + newOffset;
 
-                    // Optional: bounds/representability check can go here
-                    // e.g., if newAddr < base or > top, then valid = false;
+                    // // Optional: bounds/representability check can go here
+                    // // e.g., if newAddr < base or > top, then valid = false;
 
-                    xc->setRegOperand(this, dstIdx, capVal);               // copy capability
-                    xc->setRegOperand(this, dstBaseIdx, base);             // keep base
-                    xc->setRegOperand(this, dstOffsetIdx, newOffset);      // update offset
-                    xc->setRegOperand(this, dstTagIdx, valid ? tag : 0);   // preserve or clear tag
+                    // xc->setRegOperand(this, dstIdx, capVal);               // copy capability
+                    // xc->setRegOperand(this, dstBaseIdx, base);             // keep base
+                    // xc->setRegOperand(this, dstOffsetIdx, newOffset);      // update offset
+                    // xc->setRegOperand(this, dstTagIdx, valid ? tag : 0);   // preserve or clear tag
                 }});
 
                 0x2: csetboundsimm({{
-                    using namespace gem5::CHERIRiscvISA;
+                    // using namespace gem5::CHERIRiscvISA;
 
-                    // Decode 12-bit unsigned immediate from bits 31–20
-                    uint64_t uimm = (machInst >> 20) & 0xFFF;
+                    // // Decode 12-bit unsigned immediate from bits 31–20
+                    // uint64_t uimm = (machInst >> 20) & 0xFFF;
 
-                    // Register indices
-                    RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                    RegIndex tagSrcIdx = CS1 + cap_reg::_CNullTagIdx;
-                    RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-                    RegIndex tagDstIdx = RD + cap_reg::_CNullTagIdx;
+                    // // Register indices
+                    // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
+                    // RegIndex tagSrcIdx = CS1 + cap_reg::_CNullTagIdx;
+                    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                    // RegIndex tagDstIdx = RD + cap_reg::_CNullTagIdx;
 
-                    // Load source capability and tag
-                    uint64_t capVal = xc->getRegOperand(this, srcIdx);
-                    uint64_t tagVal = xc->getRegOperand(this, tagSrcIdx);
+                    // // Load source capability and tag
+                    // uint64_t capVal = xc->getRegOperand(this, srcIdx);
+                    // uint64_t tagVal = xc->getRegOperand(this, tagSrcIdx);
 
-                    // Decode capability fields from capVal
-                    union CAPTYPE {
-                    uint64_t val;
-                    struct {
-                        uint64_t BE : 3;
-                        uint64_t B  : 11;
-                        uint64_t TE : 3;
-                        uint64_t T  : 9;
-                        uint64_t IE : 1;
-                        uint64_t otype : 18;
-                        uint64_t reserved : 2;
-                        uint64_t flag : 1;
-                        uint64_t perm : 16;
-                    };
-                    };
+                    // // Decode capability fields from capVal
+                    // union CAPTYPE {
+                    // uint64_t val;
+                    // struct {
+                    //     uint64_t BE : 3;
+                    //     uint64_t B  : 11;
+                    //     uint64_t TE : 3;
+                    //     uint64_t T  : 9;
+                    //     uint64_t IE : 1;
+                    //     uint64_t otype : 18;
+                    //     uint64_t reserved : 2;
+                    //     uint64_t flag : 1;
+                    //     uint64_t perm : 16;
+                    // };
+                    // };
 
-                    CAPTYPE cap;
-                    cap.val = capVal;
+                    // CAPTYPE cap;
+                    // cap.val = capVal;
 
-                    // Fail if capability is sealed
-                    bool isSealed = (cap.otype != 0);
-                    bool inBounds = (uimm <= cap.B);  // if new length fits in original bounds
+                    // // Fail if capability is sealed
+                    // bool isSealed = (cap.otype != 0);
+                    // bool inBounds = (uimm <= cap.B);  // if new length fits in original bounds
 
-                    // Replace bounds (B is length)
-                    cap.B = uimm;
+                    // // Replace bounds (B is length)
+                    // cap.B = uimm;
 
-                    // Clear tag if sealed or out of bounds
-                    uint64_t newTag = (!isSealed && inBounds) ? tagVal : 0;
+                    // // Clear tag if sealed or out of bounds
+                    // uint64_t newTag = (!isSealed && inBounds) ? tagVal : 0;
 
-                    xc->setRegOperand(this, dstIdx, cap.val);
-                    xc->setRegOperand(this, tagDstIdx, newTag);
+                    // xc->setRegOperand(this, dstIdx, cap.val);
+                    // xc->setRegOperand(this, tagDstIdx, newTag);
                 }});
 
 
