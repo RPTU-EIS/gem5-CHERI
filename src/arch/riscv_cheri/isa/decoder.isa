@@ -40,6 +40,9 @@
 // full MXLEN register, but that will cause memory address out of range as it
 // is always regarded as uint64. So we'll zero extend PC related registers and
 // memory address, and sign extend others.
+
+
+
 decode QUADRANT default Unknown::unknown() {
     0x0: decode COPCODE {
         0x0: CIAddi4spnOp::c_addi4spn({{
@@ -4865,704 +4868,1303 @@ decode QUADRANT default Unknown::unknown() {
             format COp {
                 0x0: decode FUNCT7 {
                     0x01: cspecialrw({{
-                        // using namespace gem5::CHERIRiscvISA;
-
-                        // uint8_t scr = (machInst >> 25) & 0x1F;
-
-                        // RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-
-                        // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-                        // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
-
-                        // // Special capability register indices start after NumArchCapRegs
-                        // constexpr int specialCapBase = cap_reg::NumArchCapRegs;
-
-                        // int scrIndex = specialCapBase + scr;
-
-                        // // ---- Read from special capability register to cd ----
-                        // uint64_t scrVal = xc->getRegOperand(this, scrIndex);
-                        // xc->setRegOperand(this, dstIdx, scrVal);
-                        // xc->setRegOperand(this, dstTagIdx, 1);  // Assume tag valid
-
-                        // // ---- Optional: write to scr from cs1, if cs1 != c0 ----
-                        // if (CS1 != 0) {
-                        // uint64_t cs1Val = xc->getRegOperand(this, cs1Idx);
-                        // uint64_t cs1Tag = xc->getRegOperand(this, cs1TagIdx);
-
-                        // xc->setRegOperand(this, scrIndex, cs1Val);
-                        // // optionally write tag (if tag registers exist)
-                        // //xc->setRegOperand(this, scrTagIndex, cs1Tag);
-                        // }
+                        // to be implemented
                     }});
 
 			        0x08: csetbounds({{
-					    // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-					    // RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-					    // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-					    // RegIndex cs1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-					    // RegIndex rs2Idx = RS2;
 
-					    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-					    // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+                        DPRINTF(CheriDecode, "CSetBounds: Setting bounds of c%d with address from c%d and length from x%d\n", dstIdx, cs1Idx, rs2Idx);
 
-					    // uint64_t capVal = xc->getRegOperand(this, cs1Idx);
-					    // uint64_t tagVal = xc->getRegOperand(this, cs1TagIdx);
-					    // uint64_t base = xc->getRegOperand(this, cs1BaseIdx);
-					    // uint64_t length = xc->getRegOperand(this, rs2Idx);
-
-					    // // Extract otype = bits 44:27
-					    // uint64_t otype = (capVal >> 27) & 0x3FFFF;
-					    // bool sealed = (otype != 0);
-
-					    // // Update bounds (replace B = bits [13:3])
-					    // uint64_t newCap = (capVal & ~(0x7FFULL << 3)) | ((length & 0x7FF) << 3);
-
-					    // // Determine in-bounds (simplified): keep tag if new length ≤ old length
-					    // uint64_t oldLength = (capVal >> 3) & 0x7FF;
-					    // bool inBounds = (length <= oldLength);
-
-					    // uint64_t resultTag = (!sealed && inBounds) ? tagVal : 0;
-
-					    // xc->setRegOperand(this, dstIdx, newCap);
-					    // xc->setRegOperand(this, dstTagIdx, resultTag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            uint64_t new_base = Cs1.getAddress();
+                            uint64_t req_length = Rs2;
+                            uint64_t new_top = new_base + req_length;
+                            
+                            // Get original bounds to check if new bounds fit
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            // Decode original bounds
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
+                            }
+                            
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                            
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
+                            
+                            // Calculate base correction
+                            int64_t c_b;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
+                            
+                            // Calculate top correction
+                            int64_t c_t;
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Check if new bounds are within original bounds
+                            if (new_base < orig_base || new_top > orig_top) {
+                                Cd.setTag(false);
+                                std::cout << "New bounds out of range, clearing tag" << std::endl;
+                            } else {
+                                // Calculate exponent E needed for compression
+                                // Find minimum E such that length fits in 14 bits when shifted right by E
+                                uint64_t new_E = 0;
+                                if (req_length > (1ULL << 14)) {
+                                    // Need compression - find appropriate E
+                                    uint64_t temp = req_length >> 14;
+                                    while (temp > 0) {
+                                        new_E++;
+                                        temp >>= 1;
+                                    }
+                                }
+                                
+                                // Cap E at maximum value
+                                if (new_E > 63) new_E = 63;
+                                
+                                // Encode base and top
+                                uint64_t new_B = (new_base >> new_E) & ((1ULL << 14) - 1);
+                                uint64_t new_T = (new_top >> new_E) & ((1ULL << 14) - 1);
+                                
+                                // Update metadata
+                                CAPTYPE new_meta = meta;
+                                
+                                if (new_E == 0) {
+                                    // Exact representation possible
+                                    new_meta.IE = 0;
+                                    new_meta.BE = new_B & 0x7;
+                                    new_meta.TE = new_T & 0x7;
+                                    new_meta.B = (new_B >> 3) & 0x7FF;
+                                    new_meta.T = (new_T >> 3) & 0x1FF;
+                                } else {
+                                    // Compressed representation
+                                    new_meta.IE = 1;
+                                    new_meta.BE = new_E & 0x7;
+                                    new_meta.TE = (new_E >> 3) & 0x7;
+                                    new_meta.B = (new_B >> 3) & 0x7FF;
+                                    new_meta.T = (new_T >> 3) & 0x1FF;
+                                }
+                                
+                                Cd.setMetadata(new_meta);
+                                Cd.setAddress(new_base);
+                                
+                                std::cout << "Set bounds: base = " << std::hex << new_base 
+                                        << ", length = " << req_length 
+                                        << ", E = " << new_E << std::endl;
+                            }
+                        }
 					}});
 
-
 					0x09: csetboundsexact({{
-					    // using namespace gem5::CHERIRiscvISA;
+					    using namespace gem5::CHERIRiscvISA;
 
-					    // RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-					    // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-					    // RegIndex cs1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-					    // RegIndex rs2Idx = RS2;
+                        std::cout << "Setting exact bounds for c" << dstIdx << " from c" << cs1Idx 
+                                << " with length from x" << rs2Idx << std::endl;
 
-					    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-					    // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
-
-					    // uint64_t capVal = xc->getRegOperand(this, cs1Idx);
-					    // uint64_t tagVal = xc->getRegOperand(this, cs1TagIdx);
-					    // uint64_t base = xc->getRegOperand(this, cs1BaseIdx);
-					    // uint64_t length = xc->getRegOperand(this, rs2Idx);
-
-					    // uint64_t otype = (capVal >> 27) & 0x3FFFF;
-					    // bool sealed = (otype != 0);
-
-					    // uint64_t oldLength = (capVal >> 3) & 0x7FF;
-
-					    // // Replace B = bits [13:3]
-					    // uint64_t newCap = (capVal & ~(0x7FFULL << 3)) | ((length & 0x7FF) << 3);
-
-					    // bool inBounds = (length <= oldLength);
-					    // bool exact = true;  // assume success — no compression model
-
-					    // uint64_t resultTag = (!sealed && inBounds && exact) ? tagVal : 0;
-
-					    // xc->setRegOperand(this, dstIdx, newCap);
-					    // xc->setRegOperand(this, dstTagIdx, resultTag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            uint64_t new_base = Cs1.getAddress();
+                            uint64_t req_length = Rs2;
+                            uint64_t new_top = new_base + req_length;
+                            
+                            // Get original bounds (same decoding as CSetBounds)
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
+                            }
+                            
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                            
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
+                            
+                            int64_t c_b, c_t;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
+                            
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Check if new bounds are within original bounds
+                            if (new_base < orig_base || new_top > orig_top) {
+                                Cd.setTag(false);
+                                std::cout << "New bounds out of range, clearing tag" << std::endl;
+                            } else {
+                                // For exact bounds, check if representable without compression
+                                // Max representable length without compression is 2^14
+                                if (req_length > (1ULL << 14) || (new_base & ((1ULL << E) - 1)) != 0) {
+                                    // Cannot represent exactly
+                                    Cd.setTag(false);
+                                    std::cout << "Cannot represent bounds exactly, clearing tag" << std::endl;
+                                } else {
+                                    // Can represent exactly with E=0
+                                    uint64_t new_B = new_base & ((1ULL << 14) - 1);
+                                    uint64_t new_T = new_top & ((1ULL << 14) - 1);
+                                    
+                                    CAPTYPE new_meta = meta;
+                                    new_meta.IE = 0;
+                                    new_meta.BE = new_B & 0x7;
+                                    new_meta.TE = new_T & 0x7;
+                                    new_meta.B = (new_B >> 3) & 0x7FF;
+                                    new_meta.T = (new_T >> 3) & 0x1FF;
+                                    
+                                    Cd.setMetadata(new_meta);
+                                    Cd.setAddress(new_base);
+                                    
+                                    std::cout << "Set exact bounds: base = " << std::hex << new_base 
+                                            << ", length = " << req_length << std::endl;
+                                }
+                            }
+                        }
 					}});
 
                     0x0b: cseal({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // // Source operands
-                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
-                        // RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
-                        // RegIndex cs2BaseIdx = CS2 + cap_reg::_CNullDataIdx;        // base
-                        // RegIndex cs2TopIdx  = CS2 + cap_reg::_CNullDataIdx + 1;    // top
-                        // RegIndex cs2OffIdx  = CS2 + cap_reg::_CNullDataIdx + 2;    // offset
+                        std::cout << "Sealing c" << dstIdx << " from c" << cs1Idx 
+                                << " with otype from c" << cs2Idx << std::endl;
 
-                        // // Dest
-                        // RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
-                        // RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
-
-                        // // Read values
-                        // uint64_t cs1_raw    = xc->getRegOperand(this, cs1Idx);
-                        // uint64_t cs1_tag    = xc->getRegOperand(this, cs1TagIdx);
-
-                        // uint64_t cs2_raw    = xc->getRegOperand(this, cs2Idx);
-                        // uint64_t cs2_tag    = xc->getRegOperand(this, cs2TagIdx);
-                        // uint64_t cs2_base   = xc->getRegOperand(this, cs2BaseIdx);
-                        // uint64_t cs2_top    = xc->getRegOperand(this, cs2TopIdx);
-                        // uint64_t cs2_off    = xc->getRegOperand(this, cs2OffIdx);
-                        // uint64_t cs2_cursor = cs2_base + cs2_off;
-
-                        // // Extract fields
-                        // auto get_otype = [](uint64_t raw){ return (raw >> 27) & 0x3FFFFULL; }; // [44:27]
-                        // auto set_otype = [](uint64_t raw, uint64_t ot){
-                        //     return (raw & ~(0x3FFFFULL << 27)) | ((ot & 0x3FFFFULL) << 27);
-                        // };
-                        // auto get_perms = [](uint64_t raw){ return (raw >> 48) & 0xFFFFULL; };  // [63:48]
-                        // auto has_perm  = [](uint64_t perms, unsigned bit){ return (perms >> bit) & 1ULL; };
-
-                        // bool cs1_sealed = (get_otype(cs1_raw) != 0);
-                        // bool cs2_sealed = (get_otype(cs2_raw) != 0);
-                        // uint64_t cs2_perms = get_perms(cs2_raw);
-
-                        // // PERMIT_SEAL is perms bit 7 (Table 3.1)
-                        // bool permitted = (cs2_tag != 0) &&
-                        //                 !cs2_sealed &&
-                        //                 has_perm(cs2_perms, 7) &&
-                        //                 (cs2_cursor >= cs2_base) &&
-                        //                 (cs2_cursor <  cs2_top) &&
-                        //                 (cs2_cursor <= 0x3FFFFULL); // cap_max_otype in our 18-bit model
-
-                        // // Sealing always clears tag if cs1 is already sealed or permission check fails.
-                        // uint64_t new_raw = set_otype(cs1_raw, (uint64_t)cs2_cursor);
-                        // uint64_t new_tag = ( (!cs1_sealed) && permitted ) ? cs1_tag : 0;
-
-                        // xc->setRegOperand(this, dstIdx,    new_raw);
-                        // xc->setRegOperand(this, dstTagIdx, new_tag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability cs1 invalid, clearing tag" << std::endl;
+                        } else if (!Cs2.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Sealing capability cs2 invalid, clearing tag" << std::endl;
+                        } else {
+                            CAPTYPE meta1 = Cs1.getMetadata();
+                            CAPTYPE meta2 = Cs2.getMetadata();
+                            
+                            // Check if cs1 is already sealed (otype != unsealed value)
+                            const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
+                            if (meta1.otype != OTYPE_UNSEALED) {
+                                Cd.setTag(false);
+                                std::cout << "Source capability already sealed, clearing tag" << std::endl;
+                            } else {
+                                // Get otype from cs2's address (lower bits used as otype)
+                                uint64_t new_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                
+                                // Check if new_otype is in valid range (not the unsealed value)
+                                if (new_otype >= OTYPE_UNSEALED) {
+                                    Cd.setTag(false);
+                                    std::cout << "Invalid otype value, clearing tag" << std::endl;
+                                } else {
+                                    // Set the new otype
+                                    CAPTYPE new_meta = meta1;
+                                    new_meta.otype = new_otype;
+                                    Cd.setMetadata(new_meta);
+                                    
+                                    std::cout << "Sealed capability with otype = " << std::hex << new_otype << std::endl;
+                                }
+                            }
+                        }
+                        
                     }});
 
                     0x0c: cunseal({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // // cs1 (to be unsealed) and cs2 (authority)
-                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
-                        // RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
-                        // RegIndex cs2BaseIdx = CS2 + cap_reg::_CNullDataIdx;
-                        // RegIndex cs2TopIdx  = CS2 + cap_reg::_CNullDataIdx + 1;
-                        // RegIndex cs2OffIdx  = CS2 + cap_reg::_CNullDataIdx + 2;
+                        std::cout << "Unsealing c" << dstIdx << " from c" << cs1Idx 
+                                << " with otype from c" << cs2Idx << std::endl;
 
-                        // RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
-                        // RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
-
-                        // uint64_t c1_raw   = xc->getRegOperand(this, cs1Idx);
-                        // uint64_t c1_tag   = xc->getRegOperand(this, cs1TagIdx);
-
-                        // uint64_t c2_raw   = xc->getRegOperand(this, cs2Idx);
-                        // uint64_t c2_tag   = xc->getRegOperand(this, cs2TagIdx);
-                        // uint64_t c2_base  = xc->getRegOperand(this, cs2BaseIdx);
-                        // uint64_t c2_top   = xc->getRegOperand(this, cs2TopIdx);
-                        // uint64_t c2_off   = xc->getRegOperand(this, cs2OffIdx);
-                        // uint64_t c2_cur   = c2_base + c2_off;
-                        // auto get_otype = [](uint64_t raw){
-                        //     return (raw >> 27) & 0x3FFFFULL;
-                        //  };
-                        // auto set_otype = [](uint64_t raw, uint64_t ot){
-                        //     return (raw & ~(0x3FFFFULL << 27))
-                        //         | ((ot & 0x3FFFFULL) << 27);
-                        // };
-                        // auto get_perms = [](uint64_t raw){
-                        //     return (raw >> 48) & 0xFFFFULL;
-                        //  };
-                        // auto has_perm  = [](uint64_t perms, unsigned bit){
-                        //     return (perms >> bit) & 1ULL;
-                        //  };
-                        // auto get_global= [](uint64_t perms){
-                        //     return (perms & 0x1ULL);
-                        //  };       // bit 0
-                        // auto set_global= [](uint64_t raw, uint64_t g){
-                        //     uint64_t perms = (raw >> 48) & 0xFFFFULL;
-                        //     perms = (perms & ~1ULL) | (g & 1ULL);
-                        //     return (raw & ~(0xFFFFULL << 48)) | (perms << 48);
-                        // };
-
-                        // uint64_t c1_otype  = get_otype(c1_raw);
-                        // bool c1_sealed     = (c1_otype != 0);
-                        // uint64_t c2_otype  = get_otype(c2_raw);
-                        // bool c2_sealed     = (c2_otype != 0);
-                        // uint64_t c2_perms  = get_perms(c2_raw);
-
-                        // bool permitted = (c2_tag != 0) &&
-                        //     c1_sealed &&
-                        //     !c2_sealed &&
-                        //     has_perm(c2_perms, 9) &&  // PERMIT_UNSEAL
-                        //     (c2_cur == c1_otype) &&
-                        //     (c2_cur >= c2_base) && (c2_cur < c2_top);
-
-                        //     // Unseal = set otype to 0; GLOBAL bit becomes c1.global & c2.global (spec)
-                        //     uint64_t new_raw = set_otype(c1_raw, 0);
-                        //     uint64_t new_global = get_global((c1_raw >> 48) & 0xFFFFULL) &
-                        //                         get_global((c2_raw >> 48) & 0xFFFFULL);
-                        //     new_raw = set_global(new_raw, new_global);
-
-                        //     uint64_t new_tag = permitted ? c1_tag : 0;
-
-                        //     xc->setRegOperand(this, dstIdx,    new_raw);
-                        //     xc->setRegOperand(this, dstTagIdx, new_tag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability cs1 invalid, clearing tag" << std::endl;
+                        } else if (!Cs2.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Unsealing capability cs2 invalid, clearing tag" << std::endl;
+                        } else {
+                            CAPTYPE meta1 = Cs1.getMetadata();
+                            CAPTYPE meta2 = Cs2.getMetadata();
+                            
+                            const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
+                            
+                            // Check if cs1 is sealed
+                            if (meta1.otype == OTYPE_UNSEALED) {
+                                Cd.setTag(false);
+                                std::cout << "Source capability not sealed, clearing tag" << std::endl;
+                            } else {
+                                // Get otype from cs2's address
+                                uint64_t unseal_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                
+                                // Check if otypes match
+                                if (meta1.otype != unseal_otype) {
+                                    Cd.setTag(false);
+                                    std::cout << "Otype mismatch (sealed=" << std::hex << meta1.otype 
+                                            << ", unsealing=" << unseal_otype << "), clearing tag" << std::endl;
+                                } else {
+                                    // Unseal by setting otype to unsealed value
+                                    CAPTYPE new_meta = meta1;
+                                    new_meta.otype = OTYPE_UNSEALED;
+                                    Cd.setMetadata(new_meta);
+                                    
+                                    std::cout << "Unsealed capability (otype was " << std::hex << unseal_otype << ")" << std::endl;
+                                }
+                            }
+                        }
                     }});
 
                     0x0d: candperm({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex cs1TagIdx = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex rs2Idx    = RS2;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // RegIndex dstIdx    = RD + cap_reg::_CNullIdx;
-                        // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
+                        std::cout << "Masking permissions for c" << dstIdx << " from c" << cs1Idx 
+                                << " with mask from x" << rs2Idx << std::endl;
 
-                        // uint64_t c1_raw    = xc->getRegOperand(this, cs1Idx);
-                        // uint64_t c1_tag    = xc->getRegOperand(this, cs1TagIdx);
-                        // uint64_t mask      = xc->getRegOperand(this, rs2Idx);
-
-                        // // perms in [63:48]
-                        // uint64_t perms     = (c1_raw >> 48) & 0xFFFFULL;
-                        // uint64_t newPerms  = perms & (mask & 0xFFFFULL);
-
-                        // // If cs1 was sealed, cd.tag must be cleared (spec).
-                        // uint64_t c1_otype  = (c1_raw >> 27) & 0x3FFFFULL;
-                        // bool c1_sealed     = (c1_otype != 0);
-
-                        // uint64_t new_raw   = (c1_raw & ~(0xFFFFULL << 48)) | (newPerms << 48);
-                        // uint64_t new_tag   = c1_sealed ? 0 : c1_tag;
-
-                        // xc->setRegOperand(this, dstIdx,    new_raw);
-                        // xc->setRegOperand(this, dstTagIdx, new_tag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            // Get permission mask (16 bits for permissions)
+                            uint64_t perm_mask = Rs2 & 0xFFFF;
+                            
+                            // AND current permissions with mask
+                            uint64_t new_perms = meta.perm & perm_mask;
+                            
+                            // Update metadata
+                            CAPTYPE new_meta = meta;
+                            new_meta.perm = new_perms;
+                            Cd.setMetadata(new_meta);
+                            
+                            std::cout << "Old permissions = " << std::hex << meta.perm 
+                                    << ", mask = " << perm_mask 
+                                    << ", new permissions = " << new_perms << std::endl;
+                        }
                     }});
 
                     0x0e: csetflags({{
                         using namespace gem5::CHERIRiscvISA;
 
-                        RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx    = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx    = CD + cap_reg::_CNullIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // 1-bit flag for 64 bit xlen
-                        uint64_t flag = Rs2; 
 
-                        std::cout << "Setting flags for c"<< dstIdx << " with capability from c" << cs1Idx << " and flag from x"<< rs2Idx << " with value = " << flag << std::endl;
+                        DPRINTF(CheriDecode, "CSetFlags: Setting flags of c%d with capability from c%d and flags from x%d\n", dstIdx, cs1Idx, rs2Idx);
+                        // std::cout << "Setting flags for c" << dstIdx << " with capability from c" << cs1Idx 
+                        //        << " and flag from x" << rs2Idx << " with value = " << (Rs2 & 0x1) << std::endl;
 
+                        // Copy source capability
                         Cd = Cs1;
-
-                        // Get metadata as uint64_t, modify via BitUnion, write back as uint64_t
-                        uint64_t metaValue = Cd.getMetadata();
-                        CAPTYPE metaBits = metaValue;  // BitUnion overlay
-                        metaBits.flag = flag;           // Modify the flag bit
-                        Cd.setMetadata(metaBits);       // BitUnion implicitly converts to uint64_t
-
-                        std::cout << "Set flag for c" << dstIdx 
-                                << " with value = " << (uint64_t)metaBits.flag << std::endl;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            // Get metadata, modify flag, write back
+                            CAPTYPE meta = Cs1.getMetadata();
+                            meta.flag = Rs2 & 0x1;  // 1-bit flag
+                            Cd.setMetadata(meta);
+                            
+                            std::cout << "Set flag for c" << dstIdx << " with value = " << (uint64_t)meta.flag << std::endl;
+                        }
 
                     }});
 
                     0x0f: csetoffset({{
-                        // using namespace gem5::CHERIRiscvISA;
-                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        //     RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        //     RegIndex baseIdx    = CS1 + cap_reg::_CNullDataIdx;        // base
-                        //     RegIndex topIdx     = CS1 + cap_reg::_CNullDataIdx + 1;    // top
-                        //     RegIndex offIdx     = CS1 + cap_reg::_CNullDataIdx + 2;    // offset
+                        using namespace gem5::CHERIRiscvISA;
 
-                        //     RegIndex rs2Idx     = RS2;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        //     RegIndex dstIdx     = RD + cap_reg::_CNullIdx;
-                        //     RegIndex dstTagIdx  = RD + cap_reg::_CNullTagIdx;
+                        std::cout << "Setting offset for c" << dstIdx << " from c" << cs1Idx 
+                                << " with offset from x" << rs2Idx << std::endl;
 
-                        //     uint64_t c1_raw   = xc->getRegOperand(this, cs1Idx);
-                        //     uint64_t c1_tag   = xc->getRegOperand(this, cs1TagIdx);
-                        //     uint64_t base     = xc->getRegOperand(this, baseIdx);
-                        //     uint64_t top      = xc->getRegOperand(this, topIdx);
-                        //     uint64_t new_off  = xc->getRegOperand(this, rs2Idx);
-
-                        //     // If sealed, tag cleared (spec). Otherwise, write new offset.
-                        //     bool c1_sealed  = (((c1_raw >> 27) & 0x3FFFFULL) != 0);
-
-                        //     //check representability of base+new_off.
-                        //     // now simple and accept any offset;can tighten later.
-                        //     uint64_t new_tag = c1_sealed ? 0 : c1_tag;
-
-                        //     // Write back raw unchanged and store the new decoded offset.
-                        //     xc->setRegOperand(this, dstIdx,    c1_raw);
-                        //     xc->setRegOperand(this, dstTagIdx, new_tag);
-                        //     xc->setRegOperand(this, RD + cap_reg::_CNullDataIdx + 2, new_off);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            // Decode base to calculate new address from offset
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
+                            }
+                            
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                            
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
+                            
+                            // Calculate base correction
+                            int64_t c_b;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
+                            
+                            // Calculate top correction
+                            int64_t c_t;
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Calculate new address from offset
+                            uint64_t offset = Rs2;
+                            uint64_t new_addr = base + offset;
+                            
+                            // Check bounds
+                            if (new_addr < base || new_addr >= top) {
+                                Cd.setTag(false);
+                                std::cout << "New address out of bounds, clearing tag" << std::endl;
+                            } else {
+                                Cd.setAddress(new_addr);
+                                std::cout << "Set address to " << std::hex << new_addr 
+                                        << " (base=" << base << ", offset=" << offset << ")" << std::endl;
+                            }
+                        }
                     }});
 
                     0x10: csetaddr({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // // cs1 pieces
-                        // RegIndex c1RawIdx   = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex c1TagIdx   = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex c1BaseIdx  = CS1 + cap_reg::_CNullDataIdx;        // base
-                        // RegIndex c1TopIdx   = CS1 + cap_reg::_CNullDataIdx + 1;    // top (unused here)
-                        // RegIndex c1OffIdx   = CS1 + cap_reg::_CNullDataIdx + 2;    // offset (read-only)
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // // rs2 holds the *address* we want (base + new_offset)
-                        // RegIndex rs2Idx     = RS2;
+                        std::cout << "Setting address for c" << dstIdx << " from c" << cs1Idx 
+                                << " with address from x" << rs2Idx << std::endl;
 
-                        // // destination triplet
-                        // RegIndex dRawIdx    = RD + cap_reg::_CNullIdx;
-                        // RegIndex dTagIdx    = RD + cap_reg::_CNullTagIdx;
-                        // RegIndex dBaseIdx   = RD + cap_reg::_CNullDataIdx;
-                        // RegIndex dOffIdx    = RD + cap_reg::_CNullDataIdx + 2;
-
-                        // uint64_t raw   = xc->getRegOperand(this, c1RawIdx);
-                        // uint64_t tag   = xc->getRegOperand(this, c1TagIdx);
-                        // uint64_t base  = xc->getRegOperand(this, c1BaseIdx);
-                        // uint64_t addr  = xc->getRegOperand(this, rs2Idx);
-
-                        // // sealed? (otype != 0)
-                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
-
-                        // // Compute new offset = addr - base
-                        // uint64_t newOff = addr - base;
-
-                        // // Copy raw, update decoded offset; in this simple model we keep base unchanged
-                        // xc->setRegOperand(this, dRawIdx,  raw);
-                        // xc->setRegOperand(this, dBaseIdx, base);
-                        // xc->setRegOperand(this, dOffIdx,  newOff);
-
-                        // // Policy: clear tag if input was sealed; otherwise preserve
-                        // xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } 
+                        else {
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            // Decode bounds
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
+                            }
+                            
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                            
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
+                            
+                            int64_t c_b;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
+                            
+                            int64_t c_t;
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Set new address
+                            uint64_t new_addr = Rs2;
+                            
+                            // Check bounds
+                            if (new_addr < base || new_addr >= top) {
+                                Cd.setTag(false);
+                                std::cout << "New address " << std::hex << new_addr 
+                                        << " out of bounds (" << base << ", " << top << "), clearing tag" << std::endl;
+                            } else {
+                                Cd.setAddress(new_addr);
+                                std::cout << "Set address to " << std::hex << new_addr << std::endl;
+                            }
+                        }
                     }});
 
                     0x11: cincoffset({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // // Source capability (cs1)
-                        // RegIndex c1RawIdx   = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex c1TagIdx   = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex c1BaseIdx  = CS1 + cap_reg::_CNullDataIdx;
-                        // RegIndex c1OffIdx   = CS1 + cap_reg::_CNullDataIdx + 2;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // // rs2 is the signed increment
-                        // RegIndex rs2Idx     = RS2;
+                        std::cout << "Incrementing offset for c" << dstIdx << " from c" << cs1Idx 
+                                << " with increment from x" << rs2Idx << std::endl;
 
-                        // // Destination triplet (cd)
-                        // RegIndex dRawIdx    = RD + cap_reg::_CNullIdx;
-                        // RegIndex dTagIdx    = RD + cap_reg::_CNullTagIdx;
-                        // RegIndex dBaseIdx   = RD + cap_reg::_CNullDataIdx;
-                        // RegIndex dOffIdx    = RD + cap_reg::_CNullDataIdx + 2;
-
-                        // uint64_t raw     = xc->getRegOperand(this, c1RawIdx);
-                        // uint64_t tag     = xc->getRegOperand(this, c1TagIdx);
-                        // uint64_t base    = xc->getRegOperand(this, c1BaseIdx);
-                        // uint64_t offset  = xc->getRegOperand(this, c1OffIdx);
-                        // int64_t  inc     = (int64_t)xc->getRegOperand(this, rs2Idx);
-
-                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
-
-                        // uint64_t newOff = (uint64_t)((int64_t)offset + inc);
-
-                        // // Copy raw, base; update offset
-                        // xc->setRegOperand(this, dRawIdx,  raw);
-                        // xc->setRegOperand(this, dBaseIdx, base);
-                        // xc->setRegOperand(this, dOffIdx,  newOff);
-
-                        // // Same policy as cincoffsetimm: clear tag if sealed; else preserve
-                        // xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            // Decode bounds
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
+                            }
+                            
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                            
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
+                            
+                            int64_t c_b;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
+                            
+                            int64_t c_t;
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Increment address (Rs2 is treated as signed)
+                            int64_t increment = (int64_t)Rs2;
+                            uint64_t new_addr = a + increment;
+                            
+                            // Check bounds
+                            if (new_addr < base || new_addr >= top) {
+                                Cd.setTag(false);
+                                std::cout << "New address " << std::hex << new_addr 
+                                        << " out of bounds, clearing tag" << std::endl;
+                            } else {
+                                Cd.setAddress(new_addr);
+                                std::cout << "Incremented address by " << std::dec << increment 
+                                        << " to " << std::hex << new_addr << std::endl;
+                            }
+                        }
                     }});
 
                     0x12: ctoptr({{
-                        // using namespace gem5::CHERIRiscvISA;
-
-                        // // capability pieces
-                        // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                        // RegIndex offIdx  = CS1 + cap_reg::_CNullDataIdx + 2;
-                        // RegIndex rs2Idx  = RS2;
-
-                        // uint64_t base   = xc->getRegOperand(this, baseIdx);
-                        // uint64_t off    = xc->getRegOperand(this, offIdx);
-                        // int64_t  addend = (int64_t)xc->getRegOperand(this, rs2Idx);
-
-                        // uint64_t addr = (uint64_t)((int64_t)(base + off) + addend);
-                        // xc->setRegOperand(this, RD, addr);
+                        // to be implemented
                     }});
 
                     0x13: cfromptr({{
-                        // using namespace gem5::CHERIRiscvISA;
-
-                        // // source capability
-                        // RegIndex c1RawIdx  = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex c1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex c1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
-
-                        // // integer pointer
-                        // RegIndex rs2Idx    = RS2;
-
-                        // // destination triplet
-                        // RegIndex dRawIdx   = RD + cap_reg::_CNullIdx;
-                        // RegIndex dTagIdx   = RD + cap_reg::_CNullTagIdx;
-                        // RegIndex dBaseIdx  = RD + cap_reg::_CNullDataIdx;
-                        // RegIndex dTopIdx   = RD + cap_reg::_CNullDataIdx + 1;
-                        // RegIndex dOffIdx   = RD + cap_reg::_CNullDataIdx + 2;
-
-                        // uint64_t raw   = xc->getRegOperand(this, c1RawIdx);
-                        // uint64_t tag   = xc->getRegOperand(this, c1TagIdx) & 1ULL;
-                        // uint64_t base  = xc->getRegOperand(this, c1BaseIdx);
-                        // uint64_t iptr  = xc->getRegOperand(this, rs2Idx);
-
-                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
-
-                        // // new offset = iptr - base
-                        // uint64_t newOff = iptr - base;
-
-                        // // copy raw unchanged; copy bounds; set new offset
-                        // xc->setRegOperand(this, dRawIdx,  raw);
-                        // xc->setRegOperand(this, dBaseIdx, xc->getRegOperand(this, CS1 + cap_reg::_CNullDataIdx + 0));
-                        // xc->setRegOperand(this, dTopIdx,  xc->getRegOperand(this, CS1 + cap_reg::_CNullDataIdx + 1));
-                        // xc->setRegOperand(this, dOffIdx,  newOff);
-
-                        // // tag cleared if sealed; otherwise preserved
-                        // xc->setRegOperand(this, dTagIdx, sealed ? 0ULL : tag);
+                        // to be implemented
                     }});
 
                     0x16: csethigh({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // // source pieces
-                        // RegIndex c1RawIdx  = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex c1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex c1BaseIdx = CS1 + cap_reg::_CNullDataIdx;
-                        // RegIndex c1OffIdx  = CS1 + cap_reg::_CNullDataIdx + 2;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // // rs2 holds the 32-bit value to put in offset[63:32]
-                        // RegIndex rs2Idx    = RS2;
+                        std::cout << "Setting high 64 bits for c" << dstIdx << " from c" << cs1Idx 
+                                << " with value from x" << rs2Idx << std::endl;
 
-                        // // dest triplet
-                        // RegIndex dRawIdx   = RD + cap_reg::_CNullIdx;
-                        // RegIndex dTagIdx   = RD + cap_reg::_CNullTagIdx;
-                        // RegIndex dBaseIdx  = RD + cap_reg::_CNullDataIdx;
-                        // RegIndex dOffIdx   = RD + cap_reg::_CNullDataIdx + 2;
-
-                        // uint64_t raw    = xc->getRegOperand(this, c1RawIdx);
-                        // uint64_t tag    = xc->getRegOperand(this, c1TagIdx);
-                        // uint64_t base   = xc->getRegOperand(this, c1BaseIdx);
-                        // uint64_t offset = xc->getRegOperand(this, c1OffIdx);
-                        // uint64_t hi     = xc->getRegOperand(this, rs2Idx) & 0xFFFFFFFFULL;
-
-                        // bool sealed = (((raw >> 27) & 0x3FFFFULL) != 0);
-
-                        // // new offset = {rs2[31:0], offset[31:0]}
-                        // uint64_t newOff = (hi << 32) | (offset & 0xFFFFFFFFULL);
-
-                        // // write back: raw unchanged, base copied, offset replaced
-                        // xc->setRegOperand(this, dRawIdx,  raw);
-                        // xc->setRegOperand(this, dBaseIdx, base);
-                        // xc->setRegOperand(this, dOffIdx,  newOff);
-                        // xc->setRegOperand(this, dTagIdx,  sealed ? 0ULL : (tag & 1ULL));
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        // Set metadata (high 64 bits) directly from Rs2
+                        uint64_t new_metadata = Rs2;
+                        Cd.setMetadata(new_metadata);
+                        
+                        std::cout << "Set metadata to " << std::hex << new_metadata << std::endl;
                     }});
 
                     0x1d: cbuildcap({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // // raw words + tags
-                        // RegIndex s1Raw = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex s2Raw = CS2 + cap_reg::_CNullIdx;
-                        // RegIndex dRaw  = RD  + cap_reg::_CNullIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // RegIndex s1Tag = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex s2Tag = CS2 + cap_reg::_CNullTagIdx;
-                        // RegIndex dTag  = RD  + cap_reg::_CNullTagIdx;
+                        std::cout << "Building capability c" << dstIdx << " from c" << cs1Idx 
+                                << " (permissions/otype) and c" << cs2Idx << " (bounds/address)" << std::endl;
 
-                        // // bounds+offset taken from cs1
-                        // RegIndex s1B = CS1 + cap_reg::_CNullDataIdx;
-                        // RegIndex dB  = RD  + cap_reg::_CNullDataIdx;
-
-                        // uint64_t v1 = xc->getRegOperand(this, s1Raw);
-                        // uint64_t v2 = xc->getRegOperand(this, s2Raw);
-                        // uint64_t t1 = xc->getRegOperand(this, s1Tag) & 1ULL;
-                        // uint64_t t2 = xc->getRegOperand(this, s2Tag) & 1ULL;
-
-                        // // mix: keep cs1 then overwrite perms/flag/otype from cs2
-                        // uint64_t out = v1;
-                        // out &= ~((0xFFFFULL << 48) | (1ULL << 47) | (0x3FFFFULL << 27));
-                        // out |=  ( (v2 & (0xFFFFULL << 48)) | (v2 & (1ULL << 47)) | (v2 & (0x3FFFFULL << 27)) );
-
-                        // // copy bounds+offset from cs1
-                        // xc->setRegOperand(this, dRaw, out);
-                        // xc->setRegOperand(this, dB + 0, xc->getRegOperand(this, s1B + 0)); // base
-                        // xc->setRegOperand(this, dB + 1, xc->getRegOperand(this, s1B + 1)); // top
-                        // xc->setRegOperand(this, dB + 2, xc->getRegOperand(this, s1B + 2)); // offset
-
-                        // // tag is set only if both inputs were tagged
-                        // xc->setRegOperand(this, dTag, (t1 & t2) ? 1ULL : 0ULL);
+                        // Start with cs2 (bounds and address)
+                        Cd = Cs2;
+                        
+                        if (!Cs1.getTag() || !Cs2.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            CAPTYPE meta1 = Cs1.getMetadata();
+                            CAPTYPE meta2 = Cs2.getMetadata();
+                            
+                            // Build new metadata: permissions and otype from cs1, bounds from cs2
+                            CAPTYPE new_meta = meta2;  // Keep bounds (B, T, BE, TE, IE)
+                            new_meta.perm = meta1.perm;  // Copy permissions from cs1
+                            new_meta.otype = meta1.otype;  // Copy otype from cs1
+                            new_meta.flag = meta1.flag;  // Copy flag from cs1
+                            
+                            Cd.setMetadata(new_meta);
+                            Cd.setAddress(Cs2.getAddress());  // Use address from cs2
+                            
+                            std::cout << "Built capability with perms=" << std::hex << meta1.perm 
+                                    << ", otype=" << meta1.otype << std::endl;
+                        }
                     }});
 
                     0x1e: ccopytype({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // RegIndex s1Raw = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex s2Raw = CS2 + cap_reg::_CNullIdx;
-                        // RegIndex dRaw  = RD  + cap_reg::_CNullIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // RegIndex s1Tag = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex s2Tag = CS2 + cap_reg::_CNullTagIdx;
-                        // RegIndex dTag  = RD  + cap_reg::_CNullTagIdx;
+                        std::cout << "Copying otype from c" << cs2Idx << " to c" << cs1Idx 
+                                << " and storing in c" << dstIdx << std::endl;
 
-                        // uint64_t v1 = xc->getRegOperand(this, s1Raw);
-                        // uint64_t v2 = xc->getRegOperand(this, s2Raw);
-
-                        // // replace only otype [44:27]
-                        // uint64_t out = (v1 & ~(0x3FFFFULL << 27)) | ( (v2 & (0x3FFFFULL << 27)) );
-
-                        // // tag only if both input tags are set
-                        // uint64_t t = (xc->getRegOperand(this, s1Tag) & 1ULL) & (xc->getRegOperand(this, s2Tag) & 1ULL);
-
-                        // xc->setRegOperand(this, dRaw, out);
-                        // xc->setRegOperand(this, dTag, t);
+                        // Copy source capability cs1
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag() || !Cs2.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability invalid, clearing tag" << std::endl;
+                        } else {
+                            CAPTYPE meta1 = Cs1.getMetadata();
+                            CAPTYPE meta2 = Cs2.getMetadata();
+                            
+                            // Copy otype from cs2 to cs1's capability
+                            CAPTYPE new_meta = meta1;
+                            new_meta.otype = meta2.otype;
+                            Cd.setMetadata(new_meta);
+                            
+                            std::cout << "Copied otype " << std::hex << meta2.otype 
+                                    << " from c" << cs2Idx << " to c" << dstIdx << std::endl;
+                        }
                     }});
 
                     0x1f: ccseal({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // RegIndex cs1Idx     = CS1 + cap_reg::_CNullIdx;
-                        // RegIndex cs2Idx     = CS2 + cap_reg::_CNullIdx;
-                        // RegIndex cdIdx      = RD  + cap_reg::_CNullIdx;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        // RegIndex cs1TagIdx  = CS1 + cap_reg::_CNullTagIdx;
-                        // RegIndex cs2TagIdx  = CS2 + cap_reg::_CNullTagIdx;
-                        // RegIndex cdTagIdx   = RD  + cap_reg::_CNullTagIdx;
+                        std::cout << "Conditional sealing c" << dstIdx << " from c" << cs1Idx 
+                                << " with otype from c" << cs2Idx << std::endl;
 
-                        // uint64_t s1 = xc->getRegOperand(this, cs1Idx);
-                        // uint64_t s2 = xc->getRegOperand(this, cs2Idx);
-
-
-                        // RegIndex cs2OffIdx = CS2 + cap_reg::_CNullDataIdx + 2;
-                        // uint64_t cursor2 = xc->getRegOperand(this, cs2OffIdx) & 0x3FFFFull; // 18b mask
-
-                        // uint64_t out = s1 & ~(0x3FFFFull << 27);
-                        // out |= (cursor2 << 27);
-
-                        // uint64_t ok = (xc->getRegOperand(this, cs1TagIdx) & 1) &
-                        //             (xc->getRegOperand(this, cs2TagIdx) & 1);
-
-                        // xc->setRegOperand(this, cdIdx, out);
-                        // xc->setRegOperand(this, cdTagIdx, ok ? 1 : 0);
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Source capability cs1 invalid, clearing tag" << std::endl;
+                        } else if (!Cs2.getTag()) {
+                            Cd.setTag(false);
+                            std::cout << "Sealing capability cs2 invalid, clearing tag" << std::endl;
+                        } else {
+                            CAPTYPE meta1 = Cs1.getMetadata();
+                            CAPTYPE meta2 = Cs2.getMetadata();
+                            
+                            // Check if cs2 has sealing permission (typically bit 10 of permissions)
+                            const uint64_t PERM_SEAL = (1ULL << 10);
+                            if ((meta2.perm & PERM_SEAL) == 0) {
+                                Cd.setTag(false);
+                                std::cout << "cs2 lacks sealing permission, clearing tag" << std::endl;
+                            } else {
+                                // Check if cs1 is already sealed
+                                const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
+                                if (meta1.otype != OTYPE_UNSEALED) {
+                                    Cd.setTag(false);
+                                    std::cout << "Source capability already sealed, clearing tag" << std::endl;
+                                } else {
+                                    // Get otype from cs2's address
+                                    uint64_t new_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                    
+                                    // Check if new_otype is in valid range
+                                    if (new_otype >= OTYPE_UNSEALED) {
+                                        Cd.setTag(false);
+                                        std::cout << "Invalid otype value, clearing tag" << std::endl;
+                                    } else {
+                                        // Set the new otype
+                                        CAPTYPE new_meta = meta1;
+                                        new_meta.otype = new_otype;
+                                        Cd.setMetadata(new_meta);
+                                        
+                                        std::cout << "Conditionally sealed capability with otype = " << std::hex << new_otype << std::endl;
+                                    }
+                                }
+                            }
+                        }
                     }});
 
                     0x20: ctestsubset({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // RegIndex s1Base = CS1 + cap_reg::_CNullDataIdx;
-                        // RegIndex s1Top  = s1Base + 1;
-                        // RegIndex s2Base = CS2 + cap_reg::_CNullDataIdx;
-                        // RegIndex s2Top  = s2Base + 1;
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                        // uint64_t b1 = xc->getRegOperand(this, s1Base);
-                        // uint64_t t1 = xc->getRegOperand(this, s1Top);
-                        // uint64_t b2 = xc->getRegOperand(this, s2Base);
-                        // uint64_t t2 = xc->getRegOperand(this, s2Top);
+                        std::cout << "Testing if c" << cs1Idx << " is subset of c" << cs2Idx 
+                                << " and storing result in x" << dstIdx << std::endl;
 
-                        // uint64_t v1 = xc->getRegOperand(this, CS1 + cap_reg::_CNullIdx);
-                        // uint64_t v2 = xc->getRegOperand(this, CS2 + cap_reg::_CNullIdx);
-
-                        // uint64_t p1 = (v1 >> 48) & 0xFFFF;
-                        // uint64_t p2 = (v2 >> 48) & 0xFFFF;
-
-                        // bool bounds_ok = (b1 >= b2) && (t1 <= t2);
-                        // bool perms_ok  = ((p1 & ~p2) == 0);
-                        // Rd = (bounds_ok && perms_ok) ? 1 : 0;
+                        // Both must be valid for meaningful comparison
+                        if (!Cs1.getTag() || !Cs2.getTag()) {
+                            Rd = 0;
+                            std::cout << "One or both capabilities invalid, returning 0" << std::endl;
+                        } else {
+                            CAPTYPE meta1 = Cs1.getMetadata();
+                            CAPTYPE meta2 = Cs2.getMetadata();
+                            
+                            // Decode bounds for cs1
+                            uint64_t a1 = Cs1.getAddress();
+                            uint64_t B_hi1 = meta1.B;
+                            uint64_t T_hi1 = meta1.T;
+                            uint64_t B_E1 = meta1.BE;
+                            uint64_t T_E1 = meta1.TE;
+                            uint64_t I_E1 = meta1.IE;
+                            
+                            uint64_t E1, B1, T1, L_carry_out1, L_msb1;
+                            
+                            if (I_E1 == 0) {
+                                E1 = 0;
+                                T1 = (T_hi1 << 3) | T_E1;
+                                B1 = (B_hi1 << 3) | B_E1;
+                                L_carry_out1 = (T1 < B1) ? 1 : 0;
+                                L_msb1 = 0;
+                            } else {
+                                E1 = (T_E1 << 3) | B_E1;
+                                T1 = T_hi1 << 3;
+                                B1 = B_hi1 << 3;
+                                L_carry_out1 = (T_hi1 < B_hi1) ? 1 : 0;
+                                L_msb1 = 1;
+                            }
+                            
+                            uint64_t B_top2_1 = (B1 >> 12) & 0x3;
+                            T1 |= ((B_top2_1 + L_carry_out1 + L_msb1) & 0x3) << 12;
+                            
+                            uint64_t A_3_1 = (a1 >> (E1 + 11)) & 0x7;
+                            uint64_t B_3_1 = (B1 >> 11) & 0x7;
+                            uint64_t T_3_1 = (T1 >> 11) & 0x7;
+                            uint64_t R1 = (B_3_1 - 1) & 0x7;
+                            
+                            int64_t c_b1, c_t1;
+                            bool cond1_b1 = (A_3_1 < R1);
+                            bool cond2_b1 = (B_3_1 < R1);
+                            if (!cond1_b1 && !cond2_b1) c_b1 = 0;
+                            else if (!cond1_b1 && cond2_b1) c_b1 = 1;
+                            else if (cond1_b1 && !cond2_b1) c_b1 = -1;
+                            else c_b1 = 0;
+                            
+                            bool cond1_t1 = (A_3_1 < R1);
+                            bool cond2_t1 = (T_3_1 < R1);
+                            if (!cond1_t1 && !cond2_t1) c_t1 = 0;
+                            else if (!cond1_t1 && cond2_t1) c_t1 = 1;
+                            else if (cond1_t1 && !cond2_t1) c_t1 = -1;
+                            else c_t1 = 0;
+                            
+                            uint64_t a_top1 = (a1 >> (E1 + 14));
+                            uint64_t base1 = ((a_top1 + c_b1) << (E1 + 14)) | (B1 << E1);
+                            uint64_t top1 = ((a_top1 + c_t1) << (E1 + 14)) | (T1 << E1);
+                            
+                            // Decode bounds for cs2
+                            uint64_t a2 = Cs2.getAddress();
+                            uint64_t B_hi2 = meta2.B;
+                            uint64_t T_hi2 = meta2.T;
+                            uint64_t B_E2 = meta2.BE;
+                            uint64_t T_E2 = meta2.TE;
+                            uint64_t I_E2 = meta2.IE;
+                            
+                            uint64_t E2, B2, T2, L_carry_out2, L_msb2;
+                            
+                            if (I_E2 == 0) {
+                                E2 = 0;
+                                T2 = (T_hi2 << 3) | T_E2;
+                                B2 = (B_hi2 << 3) | B_E2;
+                                L_carry_out2 = (T2 < B2) ? 1 : 0;
+                                L_msb2 = 0;
+                            } else {
+                                E2 = (T_E2 << 3) | B_E2;
+                                T2 = T_hi2 << 3;
+                                B2 = B_hi2 << 3;
+                                L_carry_out2 = (T_hi2 < B_hi2) ? 1 : 0;
+                                L_msb2 = 1;
+                            }
+                            
+                            uint64_t B_top2_2 = (B2 >> 12) & 0x3;
+                            T2 |= ((B_top2_2 + L_carry_out2 + L_msb2) & 0x3) << 12;
+                            
+                            uint64_t A_3_2 = (a2 >> (E2 + 11)) & 0x7;
+                            uint64_t B_3_2 = (B2 >> 11) & 0x7;
+                            uint64_t T_3_2 = (T2 >> 11) & 0x7;
+                            uint64_t R2 = (B_3_2 - 1) & 0x7;
+                            
+                            int64_t c_b2, c_t2;
+                            bool cond1_b2 = (A_3_2 < R2);
+                            bool cond2_b2 = (B_3_2 < R2);
+                            if (!cond1_b2 && !cond2_b2) c_b2 = 0;
+                            else if (!cond1_b2 && cond2_b2) c_b2 = 1;
+                            else if (cond1_b2 && !cond2_b2) c_b2 = -1;
+                            else c_b2 = 0;
+                            
+                            bool cond1_t2 = (A_3_2 < R2);
+                            bool cond2_t2 = (T_3_2 < R2);
+                            if (!cond1_t2 && !cond2_t2) c_t2 = 0;
+                            else if (!cond1_t2 && cond2_t2) c_t2 = 1;
+                            else if (cond1_t2 && !cond2_t2) c_t2 = -1;
+                            else c_t2 = 0;
+                            
+                            uint64_t a_top2 = (a2 >> (E2 + 14));
+                            uint64_t base2 = ((a_top2 + c_b2) << (E2 + 14)) | (B2 << E2);
+                            uint64_t top2 = ((a_top2 + c_t2) << (E2 + 14)) | (T2 << E2);
+                            
+                            // Check if cs1 is subset of cs2
+                            // Bounds: cs1's bounds must be within cs2's bounds
+                            bool bounds_subset = (base1 >= base2) && (top1 <= top2);
+                            
+                            // Permissions: cs1's permissions must be subset of cs2's permissions
+                            bool perms_subset = ((meta1.perm & ~meta2.perm) == 0);
+                            
+                            // Check otype compatibility
+                            bool otype_compatible = (meta1.otype == meta2.otype);
+                            
+                            if (bounds_subset && perms_subset && otype_compatible) {
+                                Rd = 1;
+                                std::cout << "c" << cs1Idx << " is subset of c" << cs2Idx << std::endl;
+                            } else {
+                                Rd = 0;
+                                std::cout << "c" << cs1Idx << " is NOT subset of c" << cs2Idx 
+                                        << " (bounds=" << bounds_subset 
+                                        << ", perms=" << perms_subset 
+                                        << ", otype=" << otype_compatible << ")" << std::endl;
+                            }
+                        }
                     }});
 
                     0x21: csetequalexact({{
-                        // using namespace gem5::CHERIRiscvISA;
+                        using namespace gem5::CHERIRiscvISA;
 
-                        // auto eq = [&](RegIndex a, RegIndex b) {
-                        //     return xc->getRegOperand(this, a) == xc->getRegOperand(this, b);
-                        // };
-                        // bool same_val = eq(CS1 + cap_reg::_CNullIdx,     CS2 + cap_reg::_CNullIdx);
-                        // bool same_tag = (xc->getRegOperand(this, CS1 + cap_reg::_CNullTagIdx) & 1) ==
-                        //                 (xc->getRegOperand(this, CS2 + cap_reg::_CNullTagIdx) & 1);
-                        // RegIndex s1B = CS1 + cap_reg::_CNullDataIdx;
-                        // RegIndex s2B = CS2 + cap_reg::_CNullDataIdx;
-                        // bool same_base   = eq(s1B,     s2B);
-                        // bool same_top    = eq(s1B+1,   s2B+1);
-                        // bool same_offset = eq(s1B+2,   s2B+2);
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                        // Rd = (same_val && same_tag && same_base && same_top && same_offset) ? 1 : 0;
+                        std::cout << "Testing exact equality of c" << cs1Idx << " and c" << cs2Idx 
+                                << " and storing result in x" << dstIdx << std::endl;
+
+                        // Check if tags match
+                        bool tags_equal = (Cs1.getTag() == Cs2.getTag());
+                        
+                        // Check if addresses match
+                        bool addrs_equal = (Cs1.getAddress() == Cs2.getAddress());
+                        
+                        // Check if metadata matches
+                        bool meta_equal = (Cs1.getMetadata() == Cs2.getMetadata());
+                        
+                        if (tags_equal && addrs_equal && meta_equal) {
+                            Rd = 1;
+                            std::cout << "Capabilities are exactly equal" << std::endl;
+                        } else {
+                            Rd = 0;
+                            std::cout << "Capabilities are NOT equal (tag=" << tags_equal 
+                                    << ", addr=" << addrs_equal 
+                                    << ", meta=" << meta_equal << ")" << std::endl;
+                        }
                     }});
 
                     0x7f: decode CAPFUN {
                         0x00: cgetperm({{
-                            // std::cout << "CS1 " << CS1 << " Cs1 " << Cs1;
-                            // std::cout << " meta: " << Cs1Meta << std::endl;
-                            // uint64_t raw = Cs1Meta; // <-- Cs1Meta.perm
-                            // uint64_t perms = (raw >> 48) & 0xFFFF
-                            // Rd = raw;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // using namespace gem5::CHERIRiscvISA;
+                            RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx    = RD + int_reg::_ZeroIdx;
 
-                            // CAPTYPE cap = Cs1;
-                            // std::cout << "Capability perms: " << cap.perm; 
-                            // Rd = cap.perm;
+                            std::cout << "Getting permissions for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
 
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            Rd = meta.perm;
+
+                            std::cout << " The permissions are = " << meta.perm << std::endl;
                         }});
 
                         0x01: cgettype({{
-                            // uint64_t raw = Cs1Meta; 
-                            // otype = bits[44:27] — 18 bits
-                            // uint64_t otype = (raw >> 27) & 0x3FFFF;  // 18-bit mask
-                            // Rd = otype; 
+                            // Haven't taken care of the reserved otype
+                            // Did not understand what it was 
 
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // CAPTYPE cap = Cs1; 
-                            // std::cout << "Capability otype: " << cap.otype;
-                            // Rd = cap.otype; 
+                            RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx    = RD + int_reg::_ZeroIdx;
+
+                            std::cout << "Getting otype for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            Rd = meta.otype;
+
+                            std::cout << " The otype value = " << meta.otype << std::endl;
                         }});
 
                         0x02: cgetbase({{
-                            // using namespace gem5::CHERIRiscvISA;
 
-                            // CAPTYPE cap = Cs1; 
-                            // uint64_t base; 
-                            
-                            // if (cap.IE){
-                            //    base = ((cap.B << 3) & 0b000);  
-                            //}
-                            //else{ 
-                            //    base = ((cap.B << 3) | cap.BE);
-                            //}
+                            using namespace gem5::CHERIRiscvISA;
 
-                            //Rd = base; 
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
+
+
+                            DPRINTF(CheriDecode, "CGetBase: c%d -> x%d\n", cs1Idx, dstIdx);
+                            // std::cout << "Getting base for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            if (!Cs1.getTag()) {
+                                Rd = 0;
+                                std::cout << "Capability is invalid, base = 0" << std::endl;
+                            } else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Extract fields from capability
+                                uint64_t B_hi = meta.B;      // B[13:3] - 11 bits
+                                uint64_t T_hi = meta.T;      // T[11:3] - 9 bits
+                                uint64_t B_E = meta.BE;      // B_E - 3 bits
+                                uint64_t T_E = meta.TE;      // T_E - 3 bits
+                                uint64_t I_E = meta.IE;      // I_E - 1 bit
+                                
+                                // Reconstruct full B and T based on I_E
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;  // T[11:3] | T[2:0]
+                                    B = (B_hi << 3) | B_E;  // B[13:3] | B[2:0]
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;   // {T_E, B_E}
+                                    T = T_hi << 3;          // T[11:3] | 0
+                                    B = B_hi << 3;          // B[13:3] | 0
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                // Reconstruct T[13:12]
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                // Calculate corrections c_b using truth table
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                int64_t c_b;
+                                bool cond1 = (A_3 < R);
+                                bool cond2 = (B_3 < R);
+                                
+                                if (!cond1 && !cond2) {
+                                    c_b = 0;
+                                } else if (!cond1 && cond2) {
+                                    c_b = 1;
+                                } else if (cond1 && !cond2) {
+                                    c_b = -1;
+                                } else { // cond1 && cond2
+                                    c_b = 0;
+                                }
+                                
+                                // Decode base
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                
+                                Rd = base;
+                                
+                                std::cout << "The base = " << std::hex << base << std::endl;
+                            }
+
                         }});
 
                         0x03: cgetlen({{
-                            // using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            // RegIndex topIdx  = baseIdx + 1;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // uint64_t base = xc->getRegOperand(this, baseIdx);
-                            // uint64_t top  = xc->getRegOperand(this, topIdx);
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                            // uint64_t len = top - base;
+                            std::cout << "Getting length for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
 
-                            // xc->setRegOperand(this, RD, len);
+                            if (!Cs1.getTag()) {
+                                Rd = 0;
+                                std::cout << "Capability is invalid, length = 0" << std::endl;
+                            } else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Extract and reconstruct fields (same as cgetbase)
+                                uint64_t B_hi = meta.B;
+                                uint64_t T_hi = meta.T;
+                                uint64_t B_E = meta.BE;
+                                uint64_t T_E = meta.TE;
+                                uint64_t I_E = meta.IE;
+                                
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;
+                                    B = (B_hi << 3) | B_E;
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;
+                                    T = T_hi << 3;
+                                    B = B_hi << 3;
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                // Calculate corrections
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                // Correction for base
+                                int64_t c_b;
+                                bool cond1_b = (A_3 < R);
+                                bool cond2_b = (B_3 < R);
+                                
+                                if (!cond1_b && !cond2_b) c_b = 0;
+                                else if (!cond1_b && cond2_b) c_b = 1;
+                                else if (cond1_b && !cond2_b) c_b = -1;
+                                else c_b = 0;
+                                
+                                // Correction for top
+                                int64_t c_t;
+                                bool cond1_t = (A_3 < R);
+                                bool cond2_t = (T_3 < R);
+                                
+                                if (!cond1_t && !cond2_t) c_t = 0;
+                                else if (!cond1_t && cond2_t) c_t = 1;
+                                else if (cond1_t && !cond2_t) c_t = -1;
+                                else c_t = 0;
+                                
+                                // Decode base and top
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                uint64_t length = top - base;
+                                Rd = length;
+                                
+                                std::cout << "The length = " << std::hex << length << std::endl;
+                            } 
+
                         }});
 
                         0x04: cgettag({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            // uint64_t tag = xc->getRegOperand(this, tagIdx);
+                            RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx    = RD + int_reg::_ZeroIdx;
 
-                            // xc->setRegOperand(this, RD, tag & 0x1);
+                            std::cout << "Getting tag for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            bool tag = Cs1.getTag();
+                            
+                            Rd = tag;
+
+                            std::cout << " The tag value = " << tag << std::endl;
                         }});
 
                         0x05: cgetsealed({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex capIdx = CS1 + cap_reg::_CNullIdx;
-                            // uint64_t raw = xc->getRegOperand(this, capIdx);
+                            RegIndex cs1Idx    = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx    = RD + int_reg::_ZeroIdx;
 
-                            // // otype = bits 44:27 → sealed if otype != 0
-                            // uint64_t otype = (raw >> 27) & 0x3FFFF;
-                            // uint64_t sealed = (otype != 0) ? 1 : 0;
+                            std::cout << "Getting seal for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
 
-                            // xc->setRegOperand(this, RD, sealed);
+                            CAPTYPE meta = Cs1.getMetadata();
+                            uint64_t otype = meta.otype; 
+
+                            // A capability is sealed if otype is not the reserved "unsealed" value
+                            // For 18-bit otype field, unsealed is 0x3FFFF (all 1s) 
+
+                            const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;
+
+                            if (otype == OTYPE_UNSEALED) { 
+                                Rd = 0; 
+                                std::cout << "Capability is unsealed. Otype = " << std::hex << otype << std::endl; 
+                            }
+                            else { 
+                                Rd = 1; 
+                                std::cout << "Capability is sealed. Otype = " << std::hex << otype << std::endl; 
+                            }
                         }});
 
                         0x06: cgetoffset({{
-                            // using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
-                            // uint64_t offset = xc->getRegOperand(this, offsetIdx);
+                           using namespace gem5::CHERIRiscvISA;
 
-                            // xc->setRegOperand(this, RD, offset);
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
+
+                            std::cout << "Getting offset for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            if (!Cs1.getTag()) {
+                                Rd = 0;
+                                std::cout << "Capability is invalid, offset = 0" << std::endl;
+                            } else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Extract fields from capability
+                                uint64_t B_hi = meta.B;      // B[13:3] - 11 bits
+                                uint64_t T_hi = meta.T;      // T[11:3] - 9 bits
+                                uint64_t B_E = meta.BE;      // B_E - 3 bits
+                                uint64_t T_E = meta.TE;      // T_E - 3 bits
+                                uint64_t I_E = meta.IE;      // I_E - 1 bit
+                                
+                                // Reconstruct full B and T based on I_E
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;  // T[11:3] | T[2:0]
+                                    B = (B_hi << 3) | B_E;  // B[13:3] | B[2:0]
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;   // {T_E, B_E}
+                                    T = T_hi << 3;          // T[11:3] | 0
+                                    B = B_hi << 3;          // B[13:3] | 0
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                // Reconstruct T[13:12]
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                // Calculate correction c_b using truth table
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                int64_t c_b;
+                                bool cond1 = (A_3 < R);
+                                bool cond2 = (B_3 < R);
+                                
+                                if (!cond1 && !cond2) {
+                                    c_b = 0;
+                                } else if (!cond1 && cond2) {
+                                    c_b = 1;
+                                } else if (cond1 && !cond2) {
+                                    c_b = -1;
+                                } else { // cond1 && cond2
+                                    c_b = 0;
+                                }
+                                
+                                // Decode base
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                
+                                // Offset = address - base
+                                uint64_t offset = a - base;
+                                Rd = offset;
+                                
+                                std::cout << "The offset = " << std::hex << offset 
+                                        << " (addr = " << a << ", base = " << base << ")" << std::endl;
+                            }
+                            
                         }});
 
                         0x07: cgetflags({{
@@ -5582,326 +6184,655 @@ decode QUADRANT default Unknown::unknown() {
                         }});
 
                         0x17: cgethigh({{
-                            // using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex topIdx = CS1 + cap_reg::_CNullDataIdx + 1;
-                            // uint64_t top = xc->getRegOperand(this, topIdx);
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // xc->setRegOperand(this, RD, top);
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
+
+                            std::cout << "Getting high 64 bits for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            // CGetHigh returns the upper 64 bits of the capability (the metadata)
+                            uint64_t metadata = Cs1.getMetadata();
+                            Rd = metadata;
+
+                            std::cout << "The high 64 bits (metadata) = " << std::hex << metadata << std::endl;
+
                         }});
 
                         0x18: cgettop({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex topIdx = CS1 + cap_reg::_CNullDataIdx + 1;
-                            // uint64_t top = xc->getRegOperand(this, topIdx);
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                            // xc->setRegOperand(this, RD, top);
+                            std::cout << "Getting top for c" << cs1Idx << " and storing in x" << dstIdx << std::endl;
+
+                            if (!Cs1.getTag()) {
+                                Rd = 0;
+                                std::cout << "Capability is invalid, top = 0" << std::endl;
+                            } else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Extract fields from capability
+                                uint64_t B_hi = meta.B;      // B[13:3] - 11 bits
+                                uint64_t T_hi = meta.T;      // T[11:3] - 9 bits
+                                uint64_t B_E = meta.BE;      // B_E - 3 bits
+                                uint64_t T_E = meta.TE;      // T_E - 3 bits
+                                uint64_t I_E = meta.IE;      // I_E - 1 bit
+                                
+                                // Reconstruct full B and T based on I_E
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;  // T[11:3] | T[2:0]
+                                    B = (B_hi << 3) | B_E;  // B[13:3] | B[2:0]
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;   // {T_E, B_E}
+                                    T = T_hi << 3;          // T[11:3] | 0
+                                    B = B_hi << 3;          // B[13:3] | 0
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                // Reconstruct T[13:12]
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                // Calculate correction c_t using truth table for top
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                int64_t c_t;
+                                bool cond1 = (A_3 < R);
+                                bool cond2 = (T_3 < R);
+                                
+                                if (!cond1 && !cond2) {
+                                    c_t = 0;
+                                } else if (!cond1 && cond2) {
+                                    c_t = 1;
+                                } else if (cond1 && !cond2) {
+                                    c_t = -1;
+                                } else { // cond1 && cond2
+                                    c_t = 0;
+                                }
+                                
+                                // Decode top
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                Rd = top;
+                                
+                                std::cout << "The top = " << std::hex << top << std::endl;
+                            }
                         }});
 
-                        0x08: crounrepresentablelength({{
-                            // using namespace gem5::CHERIRiscvISA;
+                        0x08: croundrepresentablelength({{
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                            RegIndex rs1Idx = RS1 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                            // // TODO: actual rounding logic depends on CHERI compression encoding
-                            // uint64_t raw = xc->getRegOperand(this, srcIdx);
+                            std::cout << "Rounding length from x" << rs1Idx 
+                                    << " to representable value and storing in x" << dstIdx << std::endl;
 
-                            // xc->setRegOperand(this, dstIdx, raw);
+                            uint64_t req_length = Rs1;
+                            
+                            if (req_length == 0) {
+                                Rd = 0;
+                                std::cout << "Length is 0, returning 0" << std::endl;
+                            } else if (req_length <= (1ULL << 14)) {
+                                // Can be represented exactly without compression
+                                Rd = req_length;
+                                std::cout << "Length " << req_length << " can be represented exactly" << std::endl;
+                            } else {
+                                // Need compression - find minimum E
+                                uint64_t E = 0;
+                                uint64_t temp = req_length >> 14;
+                                while (temp > 0) {
+                                    E++;
+                                    temp >>= 1;
+                                }
+                                
+                                // Round up to nearest multiple of 2^E
+                                uint64_t alignment = (1ULL << E);
+                                uint64_t rounded_length = ((req_length + alignment - 1) >> E) << E;
+                                
+                                Rd = rounded_length;
+                                
+                                std::cout << "Rounded length from " << std::hex << req_length 
+                                        << " to " << rounded_length 
+                                        << " (E=" << std::dec << E << ", alignment=" << std::hex << alignment << ")" << std::endl;
+                            }
                         }});
 
                         0x09: crepresentablealignmentmask({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            // uint64_t base = xc->getRegOperand(this, baseIdx);
+                            RegIndex rs1Idx = RS1 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                            // // Compute alignment mask: (1 << lsb_position) - 1
-                            // // e.g., base=0x1000 => mask=0xFFF
-                            // uint64_t mask = (base == 0) ? 0 : ((1ULL << __builtin_ctzll(base)) - 1);
+                            std::cout << "Getting alignment mask for length from x" << rs1Idx 
+                                    << " and storing in x" << dstIdx << std::endl;
 
-                            // xc->setRegOperand(this, RD, mask);
+                            uint64_t req_length = Rs1;
+                            
+                            if (req_length == 0 || req_length <= (1ULL << 14)) {
+                                // No alignment required for small lengths (E=0)
+                                Rd = 0;
+                                std::cout << "No alignment required (E=0), mask = 0" << std::endl;
+                            } else {
+                                // Need compression - find minimum E
+                                uint64_t E = 0;
+                                uint64_t temp = req_length >> 14;
+                                while (temp > 0) {
+                                    E++;
+                                    temp >>= 1;
+                                }
+                                
+                                // Alignment mask has lower E bits set
+                                // Base address must have these bits as zero
+                                uint64_t mask = (1ULL << E) - 1;
+                                
+                                Rd = mask;
+                                
+                                std::cout << "Alignment mask = " << std::hex << mask 
+                                        << " (E=" << std::dec << E 
+                                        << ", base must be aligned to " << std::hex << (1ULL << E) << ")" << std::endl;
+                            }
                         }});
 
                         0x0A: cmove({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // // Compute proper data and tag indices
-                            // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            // RegIndex dstIdx = RD  + cap_reg::_CNullIdx;
-                            // RegIndex srcTagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            // RegIndex dstTagIdx = RD  + cap_reg::_CNullTagIdx;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                            // // Copy capability value
-                            // uint64_t raw = xc->getRegOperand(this, srcIdx);
-                            // xc->setRegOperand(this, dstIdx, raw);
+                            std::cout << "Moving c" << cs1Idx << " to c" << dstIdx << std::endl;
 
-                            // // Copy tag bit
-                            // uint64_t tag = xc->getRegOperand(this, srcTagIdx);
-                            // xc->setRegOperand(this, dstTagIdx, tag & 0x1);
+                            // Simple copy of capability
+                            Cd = Cs1;
+                            
+                            std::cout << "Moved capability (tag=" << Cs1.getTag() 
+                                    << ", addr=" << std::hex << Cs1.getAddress() << ")" << std::endl; 
                         }});
 
                         0x0b: ccleartag({{
-                            // // Source capability register index
-                            // RegIndex srcIdx = CS1 + gem5::CHERIRiscvISA::cap_reg::_CNullIdx;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // // Destination capability register index
-                            // RegIndex dstIdx = RD + gem5::CHERIRiscvISA::cap_reg::_CNullIdx;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                            // // Source tag register index
-                            // RegIndex srcTagIdx = CS1 + gem5::CHERIRiscvISA::cap_reg::_CNullTagIdx;
+                            std::cout << "Clearing tag of c" << cs1Idx << " and storing in c" << dstIdx << std::endl;
 
-                            // // Destination tag register index
-                            // RegIndex dstTagIdx = RD + gem5::CHERIRiscvISA::cap_reg::_CNullTagIdx;
-
-                            // // Read capability value from source
-                            // uint64_t capVal = xc->getRegOperand(this, srcIdx);
-
-                            // // Write capability value to destination
-                            // xc->setRegOperand(this, dstIdx, capVal);
-
-                            // // Clear the tag bit in the destination tag register
-                            // xc->setRegOperand(this, dstTagIdx, (RegVal)0);
+                            // Copy capability but clear the tag
+                            Cd = Cs1;
+                            Cd.setTag(false);
+                            
+                            std::cout << "Cleared tag (addr=" << std::hex << Cs1.getAddress() 
+                                    << " preserved)" << std::endl;
                         }});
 
                         0x0c: jalr_cap({{
-                            // using namespace gem5::CHERIRiscvISA;
-
-                            // // Resolve source and destination indices
-                            // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                            // RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
-                            // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            // RegIndex linkIdx = RD + cap_reg::_CNullIdx;
-                            // RegIndex linkTagIdx = RD + cap_reg::_CNullTagIdx;
-
-                            // // Read tag — must be valid
-                            // uint64_t tag = xc->getRegOperand(this, tagIdx);
-                            // if (!(tag & 0x1)) {
-                            //     return std::make_shared<IllegalInstFault>("invalid capability tag in cs1", machInst);
-                            // }
-
-                            // // Optional: check execute permission in perm field (bits [63:48])
-                            // RegIndex capValIdx = CS1 + cap_reg::_CNullIdx;
-                            // uint64_t capVal = xc->getRegOperand(this, capValIdx);
-                            // uint64_t perms = (capVal >> 48) & 0xFFFF;
-                            // const uint64_t PERM_EXECUTE = 1 << 0;
-                            // if (!(perms & PERM_EXECUTE)) {
-                            //     return std::make_shared<IllegalInstFault>("capability lacks execute permission", machInst);
-                            // }
-
-                            // // Resolve jump target
-                            // uint64_t base = xc->getRegOperand(this, baseIdx);
-                            // uint64_t offset = xc->getRegOperand(this, offsetIdx);
-                            // Addr newPC = base + offset;
-
-                            // // Store return address in RD
-                            // uint64_t link = PC + 4;
-                            // xc->setRegOperand(this, linkIdx, link);
-                            // xc->setRegOperand(this, linkTagIdx, (RegVal)1);  // Set tag
-
-                            // // Perform jump
-                            // NPC = newPC;
+                            // to be implemented
                         }});
 
                         0x0e: cclear({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // // Decode fields from instruction
-                            // uint8_t quarter = (machInst >> 25) & 0x7;       // bits [27:25]
-                            // uint8_t mask = (machInst >> 20) & 0x1F;         // bits [24:20]
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                            // for (int i = 0; i < 8; ++i) {
-                            //     if ((mask >> i) & 0x1) {
-                            //         int regNum = quarter * 8 + i;
+                            std::cout << "Clearing c" << dstIdx << std::endl;
 
-                            //         // Compute full capability and tag register indices
-                            //         RegIndex capIdx = cap_reg::_CNullIdx + regNum;
-                            //         RegIndex tagIdx = cap_reg::_CNullTagIdx + regNum;
-
-                            //         // Clear both capability value and tag
-                            //         xc->setRegOperand(this, capIdx, uint64_t(0));
-                            //         xc->setRegOperand(this, tagIdx, uint64_t(0));
-                            //     }
-                            // }
+                            // Clear capability - set to NULL (all zeros with tag cleared)
+                            Cd.setTag(false);
+                            Cd.setAddress(0);
+                            Cd.setMetadata(0);
+                            
+                            std::cout << "Cleared capability to NULL" << std::endl;
                         }});
 
                         0x10: fpclear({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // uint8_t quarter = (machInst >> 25) & 0x7;   // bits [27:25]
-                            // uint8_t mask = (machInst >> 20) & 0x1F;     // bits [24:20]
+                            RegIndex rs1Idx = RS1 + int_reg::_ZeroIdx;
 
-                            // // FP capability registers start at index 32
-                            // constexpr int fpBaseIdx = 32;
+                            std::cout << "Clearing floating point registers based on mask in x" << rs1Idx << std::endl;
 
-                            // for (int i = 0; i < 8; ++i) {
-                            //     if ((mask >> i) & 0x1) {
-                            //         int regNum = fpBaseIdx + quarter * 8 + i;
-
-                            //         RegIndex capIdx = cap_reg::_CNullIdx + regNum;
-                            //         RegIndex tagIdx = cap_reg::_CNullTagIdx + regNum;
-
-                            //         xc->setRegOperand(this, capIdx, uint64_t(0));
-                            //         xc->setRegOperand(this, tagIdx, uint64_t(0));
-                            //     }
-                            // }
+                            // Get mask of which FP registers to clear
+                            uint64_t mask = Rs1;
+                            
+                            // Clear floating point registers according to mask
+                            // Each bit in mask corresponds to one FP register (bits 0-31)
+                            for (int i = 0; i < 32; i++) {
+                                if (mask & (1ULL << i)) {
+                                    // Clear FP register i
+                                    RegId fp_reg = floatRegClass[i];
+                                    xc->setRegOperand(this, 0, (RegVal)0);  // Set to zero
+                                    std::cout << "Cleared f" << i << std::endl;
+                                }
+                            }
+                            
+                            std::cout << "Cleared FP registers with mask " << std::hex << mask << std::endl;
                         }});
 
                         0x11: csealentry({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // // Read raw capability bits from source
-                            // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                            // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                            // uint64_t raw = xc->getRegOperand(this, srcIdx);
+                            std::cout << "Sealing c" << cs1Idx << " as entry capability and storing in c" << dstIdx << std::endl;
 
-                            // // Interpret it as a CAPTYPE struct
-                            // union CAPTYPE {
-                            // uint64_t val;
-                            // struct {
-                            //     uint64_t BE : 3;
-                            //     uint64_t B  : 11;
-                            //     uint64_t TE : 3;
-                            //     uint64_t T  : 9;
-                            //     uint64_t IE : 1;
-                            //     uint64_t otype : 18;     // Bits [44:27]
-                            //     uint64_t reserved : 2;
-                            //     uint64_t flag : 1;
-                            //     uint64_t perm : 16;
-                            // };
-                            // };
-
-                            // CAPTYPE cap;
-                            // cap.val = raw;
-
-                            // // Seal it: assign a non-zero object type, e.g., 1
-                            // cap.otype = 1;
-
-                            // // Optionally, clear offset and IE if required by spec
-                            // cap.IE = 0;
-
-                            // // Write sealed capability
-                            // xc->setRegOperand(this, dstIdx, cap.val);
+                            // Copy source capability
+                            Cd = Cs1;
+                            
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                std::cout << "Source capability invalid, clearing tag" << std::endl;
+                            } else {
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Check if already sealed
+                                const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
+                                const uint64_t OTYPE_SENTRY = OTYPE_UNSEALED - 1;  // 0x3FFFE (reserved for sentries)
+                                
+                                if (meta.otype != OTYPE_UNSEALED) {
+                                    Cd.setTag(false);
+                                    std::cout << "Capability already sealed, clearing tag" << std::endl;
+                                } else {
+                                    // Seal with sentry otype
+                                    CAPTYPE new_meta = meta;
+                                    new_meta.otype = OTYPE_SENTRY;
+                                    Cd.setMetadata(new_meta);
+                                    
+                                    std::cout << "Sealed as entry capability (otype=" << std::hex << OTYPE_SENTRY << ")" << std::endl;
+                                }
+                            }
                         }});
 
                         0x12: cloadtags({{
-                            // using namespace gem5::CHERIRiscvISA;
+ 
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                            // uint64_t tag = xc->getRegOperand(this, tagIdx) & 0x1;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                            // xc->setRegOperand(this, RD, tag);
+                            std::cout << "Loading tags from memory at c" << cs1Idx 
+                                    << " and storing in x" << dstIdx << std::endl;
+
+                            // Check if cs1 tag is set
+                            if (!Cs1.getTag()) {
+                                std::cout << "cs1 tag not set, raising CapEx_TagViolation" << std::endl;
+                                // fault = std::make_shared<CheriCapException>(CapEx_TagViolation);
+                                Rd = 0;
+                            } else {
+                                uint64_t vaddr = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Check if cs1 is sealed
+                                const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;
+                                if (meta.otype != OTYPE_UNSEALED) {
+                                    std::cout << "cs1 is sealed, raising CapEx_SealViolation" << std::endl;
+                                    // fault = std::make_shared<CheriCapException>(CapEx_SealViolation);
+                                    Rd = 0;
+                                } else {
+                                    // Check load permission (bit 0)
+                                    const uint64_t PERM_LOAD = (1ULL << 0);
+                                    if ((meta.perm & PERM_LOAD) == 0) {
+                                        std::cout << "No load permission, raising CapEx_PermitLoadViolation" << std::endl;
+                                        // fault = std::make_shared<CheriCapException>(CapEx_PermitLoadViolation);
+                                        Rd = 0;
+                                    } else {
+                                        // Check load capability permission (bit 2)
+                                        const uint64_t PERM_LOAD_CAP = (1ULL << 2);
+                                        if ((meta.perm & PERM_LOAD_CAP) == 0) {
+                                            std::cout << "No load cap permission, raising CapEx_PermitLoadCapViolation" << std::endl;
+                                            // fault = std::make_shared<CheriCapException>(CapEx_PermitLoadCapViolation);
+                                            Rd = 0;
+                                        } else {
+                                            // Decode bounds
+                                            uint64_t B_hi = meta.B;
+                                            uint64_t T_hi = meta.T;
+                                            uint64_t B_E = meta.BE;
+                                            uint64_t T_E = meta.TE;
+                                            uint64_t I_E = meta.IE;
+                                            
+                                            uint64_t E, B, T, L_carry_out, L_msb;
+                                            
+                                            if (I_E == 0) {
+                                                E = 0;
+                                                T = (T_hi << 3) | T_E;
+                                                B = (B_hi << 3) | B_E;
+                                                L_carry_out = (T < B) ? 1 : 0;
+                                                L_msb = 0;
+                                            } else {
+                                                E = (T_E << 3) | B_E;
+                                                T = T_hi << 3;
+                                                B = B_hi << 3;
+                                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                                L_msb = 1;
+                                            }
+                                            
+                                            uint64_t B_top2 = (B >> 12) & 0x3;
+                                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                            
+                                            uint64_t A_3 = (vaddr >> (E + 11)) & 0x7;
+                                            uint64_t B_3 = (B >> 11) & 0x7;
+                                            uint64_t T_3 = (T >> 11) & 0x7;
+                                            uint64_t R = (B_3 - 1) & 0x7;
+                                            
+                                            int64_t c_b, c_t;
+                                            bool cond1_b = (A_3 < R);
+                                            bool cond2_b = (B_3 < R);
+                                            if (!cond1_b && !cond2_b) c_b = 0;
+                                            else if (!cond1_b && cond2_b) c_b = 1;
+                                            else if (cond1_b && !cond2_b) c_b = -1;
+                                            else c_b = 0;
+                                            
+                                            bool cond1_t = (A_3 < R);
+                                            bool cond2_t = (T_3 < R);
+                                            if (!cond1_t && !cond2_t) c_t = 0;
+                                            else if (!cond1_t && cond2_t) c_t = 1;
+                                            else if (cond1_t && !cond2_t) c_t = -1;
+                                            else c_t = 0;
+                                            
+                                            uint64_t a_top = (vaddr >> (E + 14));
+                                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                            
+                                            // Check bounds - typical implementations load 8 tags (8 caps * 16 bytes)
+                                            const uint64_t caps_per_cache_line = 8;
+                                            const uint64_t cap_size = 16;  // 128 bits
+                                            uint64_t access_length = caps_per_cache_line * cap_size;
+                                            
+                                            if (vaddr < base || (vaddr + access_length) > top) {
+                                                std::cout << "Address out of bounds, raising CapEx_LengthViolation" << std::endl;
+                                                // fault = std::make_shared<CheriCapException>(CapEx_LengthViolation, cs1Idx);
+                                                Rd = 0;
+                                            } else {
+                                                // Check alignment - must be aligned to (caps_per_cache_line * cap_size)
+                                                if ((vaddr % access_length) != 0) {
+                                                    std::cout << "Address misaligned, raising E_Load_Addr_Align" << std::endl;
+                                                    // fault = std::make_shared<AddressAlignmentFault>(vaddr, E_Load_Addr_Align);
+                                                    Rd = 0;
+                                                } else {
+                                                    // Load tags from memory
+                                                    // TODO: Actually access memory tag table
+                                                    // For now, placeholder returns 0
+                                                    uint64_t tag_bits = 0;
+                                                    
+                                                    std::cout << "Loaded tag bits = " << std::hex << tag_bits 
+                                                            << " from address " << vaddr << std::endl;
+                                                    
+                                                    Rd = tag_bits;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                         }});
 
                         0x14: jalr_pcc({{
-                            // using namespace gem5::CHERIRiscvISA;
+                            using namespace gem5::CHERIRiscvISA;
 
-                            // Addr newPC = xc->getRegOperand(this, RS1);  // integer jump target
+                            RegIndex rs1Idx = RS1 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
 
-                            // // Store PC + 4 in capability register (as raw integer capability)
-                            // RegIndex capIdx = RD + cap_reg::_CNullIdx;
-                            // RegIndex tagIdx = RD + cap_reg::_CNullTagIdx;
+                            std::cout << "JALR.PCC: rd=x" << dstIdx << " rs1=x" << rs1Idx << std::endl;
 
-                            // uint64_t linkVal = PC + 4;
-
-                            // xc->setRegOperand(this, capIdx, linkVal);  // store as raw value
-                            // xc->setRegOperand(this, tagIdx, (RegVal)1);  // valid capability
-
-                            // NPC = newPC;
+                            // Get current PCC (placeholder - would read from special register)
+                            // CapRegContainer pcc = readSpecialCapReg(SCR_PCC);
+                            uint64_t pcc_addr = 0x80000000;  // Placeholder current PC
+                            uint64_t pcc_base = 0x80000000;  // Placeholder
+                            uint64_t pcc_top = 0x90000000;   // Placeholder
+                            
+                            // rd gets the next instruction's PCC.offset (return address)
+                            uint64_t next_pc = pcc_addr + 4;  // Assuming 4-byte instruction
+                            Rd = next_pc;
+                            
+                            // Calculate new target address (with bit 0 cleared for alignment)
+                            uint64_t target_addr = (Rs1 & ~1ULL);
+                            
+                            // Check bounds
+                            if (target_addr < pcc_base) {
+                                std::cout << "Target address < PCC.base, raising exception" << std::endl;
+                                // Should raise exception
+                            } else if (target_addr + 4 > pcc_top) {  // min_instruction_bytes = 4
+                                std::cout << "Target address + 4 > PCC.top, raising exception" << std::endl;
+                                // Should raise exception
+                            } else if ((target_addr & 0x1) != 0) {  // Check alignment (should be impossible due to & ~1)
+                                std::cout << "Target address misaligned" << std::endl;
+                                // Should raise exception
+                            } else {
+                                // Update PCC.offset to target_addr
+                                std::cout << "Jumping to " << std::hex << target_addr 
+                                        << ", return address in x" << dstIdx << " = " << next_pc << std::endl;
+                                
+                                // TODO: Actually update PC through PC state
+                                // PCState pc = xc->pcState();
+                                // pc.set(target_addr);
+                                // xc->pcState(pc);
+                            }
                         }});
 
                     }
                 }
 
                 0x1: cincoffsetimm({{
-                    // using namespace gem5::CHERIRiscvISA;
+                    using namespace gem5::CHERIRiscvISA;
 
-                    // // Decode signed 12-bit immediate from bits 31–20
-                    // int64_t imm = sext<12>((machInst >> 20) & 0xFFF);
+                    RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                    RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                    int64_t imm = IMM12;  // 12-bit signed immediate
 
-                    // RegIndex capIdx = CS1 + cap_reg::_CNullIdx;
-                    // RegIndex tagIdx = CS1 + cap_reg::_CNullTagIdx;
-                    // RegIndex baseIdx = CS1 + cap_reg::_CNullDataIdx;
-                    // RegIndex offsetIdx = CS1 + cap_reg::_CNullDataIdx + 2;
+                    std::cout << "Incrementing offset for c" << dstIdx << " from c" << cs1Idx 
+                            << " with immediate " << std::dec << imm << std::endl;
 
-                    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-                    // RegIndex dstTagIdx = RD + cap_reg::_CNullTagIdx;
-                    // RegIndex dstBaseIdx = RD + cap_reg::_CNullDataIdx;
-                    // RegIndex dstOffsetIdx = RD + cap_reg::_CNullDataIdx + 2;
-
-                    // uint64_t tag = xc->getRegOperand(this, tagIdx);
-                    // uint64_t capVal = xc->getRegOperand(this, capIdx);
-                    // uint64_t base = xc->getRegOperand(this, baseIdx);
-                    // uint64_t offset = xc->getRegOperand(this, offsetIdx);
-
-                    // bool sealed = ((capVal >> 27) & 0x3FFFF) != 0;  // otype ≠ 0 ⇒ sealed
-                    // bool valid = !sealed;  // default: clear if sealed
-
-                    // // Increment offset and compute new address
-                    // uint64_t newOffset = offset + imm;
-                    // uint64_t newAddr = base + newOffset;
-
-                    // // Optional: bounds/representability check can go here
-                    // // e.g., if newAddr < base or > top, then valid = false;
-
-                    // xc->setRegOperand(this, dstIdx, capVal);               // copy capability
-                    // xc->setRegOperand(this, dstBaseIdx, base);             // keep base
-                    // xc->setRegOperand(this, dstOffsetIdx, newOffset);      // update offset
-                    // xc->setRegOperand(this, dstTagIdx, valid ? tag : 0);   // preserve or clear tag
+                    // Copy source capability
+                    Cd = Cs1;
+                    
+                    if (!Cs1.getTag()) {
+                        Cd.setTag(false);
+                        std::cout << "Source capability invalid, clearing tag" << std::endl;
+                    } else {
+                        uint64_t a = Cs1.getAddress();
+                        CAPTYPE meta = Cs1.getMetadata();
+                        
+                        // Decode bounds
+                        uint64_t B_hi = meta.B;
+                        uint64_t T_hi = meta.T;
+                        uint64_t B_E = meta.BE;
+                        uint64_t T_E = meta.TE;
+                        uint64_t I_E = meta.IE;
+                        
+                        uint64_t E, B, T, L_carry_out, L_msb;
+                        
+                        if (I_E == 0) {
+                            E = 0;
+                            T = (T_hi << 3) | T_E;
+                            B = (B_hi << 3) | B_E;
+                            L_carry_out = (T < B) ? 1 : 0;
+                            L_msb = 0;
+                        } else {
+                            E = (T_E << 3) | B_E;
+                            T = T_hi << 3;
+                            B = B_hi << 3;
+                            L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                            L_msb = 1;
+                        }
+                        
+                        uint64_t B_top2 = (B >> 12) & 0x3;
+                        T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                        
+                        uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                        uint64_t B_3 = (B >> 11) & 0x7;
+                        uint64_t T_3 = (T >> 11) & 0x7;
+                        uint64_t R = (B_3 - 1) & 0x7;
+                        
+                        int64_t c_b;
+                        bool cond1_b = (A_3 < R);
+                        bool cond2_b = (B_3 < R);
+                        if (!cond1_b && !cond2_b) c_b = 0;
+                        else if (!cond1_b && cond2_b) c_b = 1;
+                        else if (cond1_b && !cond2_b) c_b = -1;
+                        else c_b = 0;
+                        
+                        int64_t c_t;
+                        bool cond1_t = (A_3 < R);
+                        bool cond2_t = (T_3 < R);
+                        if (!cond1_t && !cond2_t) c_t = 0;
+                        else if (!cond1_t && cond2_t) c_t = 1;
+                        else if (cond1_t && !cond2_t) c_t = -1;
+                        else c_t = 0;
+                        
+                        uint64_t a_top = (a >> (E + 14));
+                        uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                        uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                        
+                        // Increment address by immediate (signed)
+                        uint64_t new_addr = a + imm;
+                        
+                        // Check bounds
+                        if (new_addr < base || new_addr >= top) {
+                            Cd.setTag(false);
+                            std::cout << "New address " << std::hex << new_addr 
+                                    << " out of bounds, clearing tag" << std::endl;
+                        } else {
+                            Cd.setAddress(new_addr);
+                            std::cout << "Incremented address by " << std::dec << imm 
+                                    << " to " << std::hex << new_addr << std::endl;
+                        }
+                    }
                 }});
 
                 0x2: csetboundsimm({{
-                    // using namespace gem5::CHERIRiscvISA;
+                    using namespace gem5::CHERIRiscvISA;
 
-                    // // Decode 12-bit unsigned immediate from bits 31–20
-                    // uint64_t uimm = (machInst >> 20) & 0xFFF;
+                    RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                    RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                    uint64_t imm = IMM12 & 0xFFF;  // 12-bit unsigned immediate
 
-                    // // Register indices
-                    // RegIndex srcIdx = CS1 + cap_reg::_CNullIdx;
-                    // RegIndex tagSrcIdx = CS1 + cap_reg::_CNullTagIdx;
-                    // RegIndex dstIdx = RD + cap_reg::_CNullIdx;
-                    // RegIndex tagDstIdx = RD + cap_reg::_CNullTagIdx;
+                    std::cout << "Setting bounds for c" << dstIdx << " from c" << cs1Idx 
+                            << " with immediate length " << std::dec << imm << std::endl;
 
-                    // // Load source capability and tag
-                    // uint64_t capVal = xc->getRegOperand(this, srcIdx);
-                    // uint64_t tagVal = xc->getRegOperand(this, tagSrcIdx);
-
-                    // // Decode capability fields from capVal
-                    // union CAPTYPE {
-                    // uint64_t val;
-                    // struct {
-                    //     uint64_t BE : 3;
-                    //     uint64_t B  : 11;
-                    //     uint64_t TE : 3;
-                    //     uint64_t T  : 9;
-                    //     uint64_t IE : 1;
-                    //     uint64_t otype : 18;
-                    //     uint64_t reserved : 2;
-                    //     uint64_t flag : 1;
-                    //     uint64_t perm : 16;
-                    // };
-                    // };
-
-                    // CAPTYPE cap;
-                    // cap.val = capVal;
-
-                    // // Fail if capability is sealed
-                    // bool isSealed = (cap.otype != 0);
-                    // bool inBounds = (uimm <= cap.B);  // if new length fits in original bounds
-
-                    // // Replace bounds (B is length)
-                    // cap.B = uimm;
-
-                    // // Clear tag if sealed or out of bounds
-                    // uint64_t newTag = (!isSealed && inBounds) ? tagVal : 0;
-
-                    // xc->setRegOperand(this, dstIdx, cap.val);
-                    // xc->setRegOperand(this, tagDstIdx, newTag);
+                    // Copy source capability
+                    Cd = Cs1;
+                    
+                    if (!Cs1.getTag()) {
+                        Cd.setTag(false);
+                        std::cout << "Source capability invalid, clearing tag" << std::endl;
+                    } else {
+                        uint64_t new_base = Cs1.getAddress();
+                        uint64_t req_length = imm;
+                        uint64_t new_top = new_base + req_length;
+                        
+                        // Get original bounds to check if new bounds fit
+                        uint64_t a = Cs1.getAddress();
+                        CAPTYPE meta = Cs1.getMetadata();
+                        
+                        uint64_t B_hi = meta.B;
+                        uint64_t T_hi = meta.T;
+                        uint64_t B_E = meta.BE;
+                        uint64_t T_E = meta.TE;
+                        uint64_t I_E = meta.IE;
+                        
+                        // Decode original bounds
+                        uint64_t E, B, T, L_carry_out, L_msb;
+                        
+                        if (I_E == 0) {
+                            E = 0;
+                            T = (T_hi << 3) | T_E;
+                            B = (B_hi << 3) | B_E;
+                            L_carry_out = (T < B) ? 1 : 0;
+                            L_msb = 0;
+                        } else {
+                            E = (T_E << 3) | B_E;
+                            T = T_hi << 3;
+                            B = B_hi << 3;
+                            L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                            L_msb = 1;
+                        }
+                        
+                        uint64_t B_top2 = (B >> 12) & 0x3;
+                        T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                        
+                        uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                        uint64_t B_3 = (B >> 11) & 0x7;
+                        uint64_t T_3 = (T >> 11) & 0x7;
+                        uint64_t R = (B_3 - 1) & 0x7;
+                        
+                        // Calculate base correction
+                        int64_t c_b;
+                        bool cond1_b = (A_3 < R);
+                        bool cond2_b = (B_3 < R);
+                        if (!cond1_b && !cond2_b) c_b = 0;
+                        else if (!cond1_b && cond2_b) c_b = 1;
+                        else if (cond1_b && !cond2_b) c_b = -1;
+                        else c_b = 0;
+                        
+                        // Calculate top correction
+                        int64_t c_t;
+                        bool cond1_t = (A_3 < R);
+                        bool cond2_t = (T_3 < R);
+                        if (!cond1_t && !cond2_t) c_t = 0;
+                        else if (!cond1_t && cond2_t) c_t = 1;
+                        else if (cond1_t && !cond2_t) c_t = -1;
+                        else c_t = 0;
+                        
+                        uint64_t a_top = (a >> (E + 14));
+                        uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
+                        uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
+                        
+                        // Check if new bounds are within original bounds
+                        if (new_base < orig_base || new_top > orig_top) {
+                            Cd.setTag(false);
+                            std::cout << "New bounds out of range, clearing tag" << std::endl;
+                        } else {
+                            // Calculate exponent E needed for compression
+                            // Immediate is only 12 bits, so max value is 4096, which fits in 14 bits
+                            // Therefore E will always be 0 for immediate values
+                            uint64_t new_E = 0;
+                            if (req_length > (1ULL << 14)) {
+                                // Should not happen with 12-bit immediate (max 4096)
+                                // But handle it just in case
+                                uint64_t temp = req_length >> 14;
+                                while (temp > 0) {
+                                    new_E++;
+                                    temp >>= 1;
+                                }
+                            }
+                            
+                            // Encode base and top
+                            uint64_t new_B = (new_base >> new_E) & ((1ULL << 14) - 1);
+                            uint64_t new_T = (new_top >> new_E) & ((1ULL << 14) - 1);
+                            
+                            // Update metadata
+                            CAPTYPE new_meta = meta;
+                            
+                            // Since immediate is max 4096, E will always be 0
+                            new_meta.IE = 0;
+                            new_meta.BE = new_B & 0x7;
+                            new_meta.TE = new_T & 0x7;
+                            new_meta.B = (new_B >> 3) & 0x7FF;
+                            new_meta.T = (new_T >> 3) & 0x1FF;
+                            
+                            Cd.setMetadata(new_meta);
+                            Cd.setAddress(new_base);
+                            
+                            std::cout << "Set bounds: base = " << std::hex << new_base 
+                                    << ", length = " << std::dec << req_length << std::endl;
+                        }
+                    }
                 }});
-
-
             }
         }
 
