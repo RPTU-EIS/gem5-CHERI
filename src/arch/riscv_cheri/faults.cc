@@ -249,6 +249,18 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
     tc->getSystemPtr()->workload->syscall(tc);
 }
 
+void
+CheriCapFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
+{
+    // Try to drop into the debugger when available, otherwise fail loudly.
+    if (!tc->getSystemPtr()->trapToGdb(GDBSignal::ILL, tc->contextId())) {
+        // Report the CHERI fault type and any associated information.
+        panic("CHERI capability fault (code=%u, creg=%d, addr=%#llx) at pc %s",
+              static_cast<unsigned>(_cheri_code), _cap_reg,
+              static_cast<unsigned long long>(_addr), tc->pcState());
+    }
+}
+
 bool
 getFaultVAddr(Fault fault, Addr &va)
 {
@@ -261,6 +273,12 @@ getFaultVAddr(Fault fault, Addr &va)
     auto pgt_fault = dynamic_cast<GenericPageTableFault *>(fault.get());
     if (pgt_fault) {
         va = pgt_fault->getFaultVAddr();
+        return true;
+    }
+
+    auto cheri_fault = dynamic_cast<CheriCapFault *>(fault.get());
+    if (cheri_fault) {
+        va = static_cast<Addr>(cheri_fault->trap_value());
         return true;
     }
 

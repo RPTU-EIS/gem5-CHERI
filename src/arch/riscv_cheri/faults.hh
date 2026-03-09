@@ -330,6 +330,47 @@ class SyscallFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
+// CHERI capability exception codes
+enum CheriCapException : uint64_t
+{
+    None = 0,
+    LengthViolation, 
+    TagViolation,
+    SealViolation,
+    TypeViolation,
+    SoftwareDefinedPermissionViolation = 0x7,
+    GlobalViolation, 
+    PermitExecuteViolation,
+    PermitLoadViolation,
+    PermitStoreViolation,
+    PermitLoadCapViolation,
+    PermitStoreCapViolation,
+    PermitStoreLocalViolation,
+    PermitAccessSystemRegistersViolation,
+    PermitInvokeViolation,
+    PermitSetCIDViolation
+};
+
+class CheriCapFault : public RiscvFault
+{
+  private:
+    const CheriCapException _cheri_code;
+    const int _cap_reg; // index of capability register involved (-1 if N/A)
+    const Addr _addr;   // faulting address (if applicable)
+
+  public:
+    CheriCapFault(CheriCapException code, int capReg = -1, Addr addr = 0)
+        : RiscvFault("cheri_cap", FaultType::OTHERS, INST_ILLEGAL),
+          _cheri_code(code), _cap_reg(capReg), _addr(addr)
+    {}
+
+    CheriCapException cheriCode() const { return _cheri_code; }
+    int capReg() const { return _cap_reg; }
+
+    RegVal trap_value() const override { return _addr; }
+    void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
+};
+
 /**
  * Returns true if the fault passed as a first argument was triggered
  * by a memory access, false otherwise.

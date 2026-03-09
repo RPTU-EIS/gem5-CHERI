@@ -46,6 +46,7 @@
 #include "arch/riscv_cheri/regs/vector.hh"
 #include "enums/CHERIPrivilegeModeSet.hh"
 #include "enums/CHERIRiscvType.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
 
 namespace gem5
 {
@@ -69,19 +70,52 @@ class PCState : public GenericISA::UPCState<4>
     VTYPE _vtype = (1ULL << 63); // vtype.vill = 1 at initial;
     uint32_t _vl = 0;
 
+    CapRegContainer _pcc; 
+    bool _capMode = true; 
+
   public:
     PCState(const PCState &other) : Base(other),
         _rvType(other._rvType), _vlenb(other._vlenb),
-        _vtype(other._vtype), _vl(other._vl)
+        _vtype(other._vtype), _vl(other._vl), _pcc(other._pcc), _capMode(other._capMode)
     {}
     PCState &operator=(const PCState &other) = default;
-    PCState() = default;
-    explicit PCState(Addr addr) { set(addr); }
+    PCState(){
+        _pcc.setTag(true);
+        _pcc.setAddress(0);
+
+        CAPTYPE meta = 0; 
+        meta.perm = 0xFFFF;
+        meta.otype = (1ULL << 18) - 1;
+        meta.IE = 0; 
+        meta.BE = 0; 
+        meta.T = 0; 
+        meta.TE = 0;
+        _pcc.setMetadata(meta);
+    }
+
+    explicit PCState(Addr addr) { 
+        set(addr); 
+
+        _pcc.setTag(true);
+        _pcc.setAddress(addr);
+        CAPTYPE meta = 0;
+        meta.perm = 0xFFFF;
+        meta.otype = (1ULL << 18) - 1;
+        _pcc.setMetadata(meta);
+    }
     explicit PCState(Addr addr, CHERIRiscvType rvType, uint64_t vlenb)
     {
         set(addr);
         _rvType = rvType;
         _vlenb = vlenb;
+
+        _pcc.setTag(true); 
+        _pcc.setAddress(addr);
+        CAPTYPE meta = 0;
+        meta.perm = 0xFFFF;
+        meta.otype = (1ULL << 18) - 1;
+        _pcc.setMetadata(meta);
+
     }
 
     PCStateBase *clone() const override { return new PCState(*this); }
@@ -96,6 +130,8 @@ class PCState : public GenericISA::UPCState<4>
         _vlenb = pcstate._vlenb;
         _vtype = pcstate._vtype;
         _vl = pcstate._vl;
+        _pcc = pcstate._pcc;
+        _capMode = pcstate._capMode;    
     }
 
     void compressed(bool c) { _compressed = c; }
@@ -113,6 +149,52 @@ class PCState : public GenericISA::UPCState<4>
     void vl(uint32_t v) { _vl = v; }
     uint32_t vl() const { return _vl; }
 
+    // PCC accessors
+    const CapRegContainer& pcc() const { 
+        return _pcc; 
+    }
+
+    void pcc(const CapRegContainer& newPcc) { 
+        _pcc = newPcc; 
+        // Sync the PC address with PCC address
+        Base::set(_pcc.getAddress());
+    }
+
+    // Get PCC as non-const reference (for direct modification)
+    CapRegContainer& pccRef() { 
+        return _pcc; 
+    }
+
+    bool capMode() const { 
+        return _capMode; 
+    }
+
+    void capMode(bool mode) { 
+        _capMode = mode; 
+    }
+
+    // Override set to also update PCC address
+    void set(Addr val) override {
+        Base::set(val);
+        _pcc.setAddress(val);
+    }
+
+    // Set PC with bounds checking against PCC
+    bool setChecked(Addr val) {
+        if (!_pcc.getTag()) {
+            // If PCC is untagged
+            return false;
+        }
+
+        // Check if the new PC value is within the bounds of the PCC
+        // TO DO: Add full bound checking logic here 
+
+        // If the check passes, update the PC and PCC address
+        set(val);
+        return true;
+    }
+
+
     uint64_t size() const { return _compressed ? 2 : 4; }
 
     bool
@@ -128,7 +210,9 @@ class PCState : public GenericISA::UPCState<4>
         return Base::equals(other) &&
             _vlenb == opc._vlenb &&
             _vtype == opc._vtype &&
-            _vl == opc._vl;
+            _vl == opc._vl &&
+            _pcc == opc._pcc &&
+            _capMode == opc._capMode;
     }
 
     void
@@ -140,6 +224,14 @@ class PCState : public GenericISA::UPCState<4>
         SERIALIZE_SCALAR(_vtype);
         SERIALIZE_SCALAR(_vl);
         SERIALIZE_SCALAR(_compressed);
+        SERIALIZE_SCALAR(_capMode);
+
+        uint64_t pccAddress = _pcc.getAddress();
+        uint64_t pccMetadata = _pcc.getMetadata();
+        bool pccTag = _pcc.getTag();
+        SERIALIZE_SCALAR(pccAddress);
+        SERIALIZE_SCALAR(pccMetadata);
+        SERIALIZE_SCALAR(pccTag);
     }
 
     void
@@ -151,6 +243,17 @@ class PCState : public GenericISA::UPCState<4>
         UNSERIALIZE_SCALAR(_vtype);
         UNSERIALIZE_SCALAR(_vl);
         UNSERIALIZE_SCALAR(_compressed);
+        UNSERIALIZE_SCALAR(_capMode);
+        
+        uint64_t pcc_addr, pcc_meta;
+        bool pcc_tag;
+        UNSERIALIZE_SCALAR(pcc_addr);
+        UNSERIALIZE_SCALAR(pcc_meta);
+        UNSERIALIZE_SCALAR(pcc_tag);
+        
+        _pcc.setAddress(pcc_addr);
+        _pcc.setMetadata(pcc_meta);
+        _pcc.setTag(pcc_tag);
     }
 };
 
