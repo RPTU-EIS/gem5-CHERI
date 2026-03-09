@@ -1169,4 +1169,41 @@ ISA::resetThread()
         cap.setAddress(0);
         cap.setMetadata(0);
     }
+
+    CAPTYPE ddc_meta = 0;
+    ddc_meta.perm = 0xFFFF;
+    ddc_meta.otype = (1ULL << 18) - 1;
+    capMiscRegFile[0].setTag(true);
+    capMiscRegFile[0].setMetadata(ddc_meta);
+    
+    DPRINTF(RiscvMisc, "Reset CHERI capability registers\n");
+}
+
+Addr
+ISA::getFaultHandlerAddr(RegIndex idx, uint64_t cause, bool intr) const
+{
+    auto vec = tc->readMiscRegNoEffect(idx);
+    Addr addr = mbits(vec, 63, 2);
+    if (intr && bits(vec, 1, 0) == 1)
+        addr += 4 * cause;
+    return addr;
+}
+
+} // namespace CHERIRiscvISA
+} // namespace gem5
+
+std::ostream &
+operator<<(std::ostream &os, gem5::CHERIRiscvISA::CHERIPrivilegeMode pm)
+{
+    switch (pm) {
+    case gem5::CHERIRiscvISA::PRV_U:
+        return os << "PRV_U";
+    case gem5::CHERIRiscvISA::PRV_S:
+        return os << "PRV_S";
+    case gem5::CHERIRiscvISA::PRV_M:
+        return os << "PRV_M";
+    }
+    return os << "PRV_<invalid>";
+}
+
  
