@@ -528,4 +528,31 @@ BaseSimpleCPU::advancePC(const Fault &fault)
     }
 }
 
+Fault
+BaseSimpleCPU::readCapMem(Addr addr, uint8_t *data, unsigned size,
+                          Request::Flags flags,
+                          const std::vector<bool>& byte_enable)
+{
+    return readMem(addr, data, size,
+                   flags | Request::CHERI_CAP_LOAD,
+                   byte_enable);
+}
+
+Fault
+BaseSimpleCPU::writeCapMem(uint8_t *data, unsigned size, Addr addr,
+                           Request::Flags flags, uint64_t *res,
+                           bool capTag,
+                           const std::vector<bool>& byte_enable)
+{
+    _pendingCapTag = capTag;
+    _hasPendingCapTag = true;
+
+    Fault fault = writeMem(data, size, addr,
+                           flags | Request::CHERI_CAP_STORE,
+                           res, byte_enable);
+
+    _hasPendingCapTag = false;
+    return fault;
+}
+
 } // namespace gem5

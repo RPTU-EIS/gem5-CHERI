@@ -50,9 +50,11 @@
 #include <vector>
 
 #include "arch/generic/cap_reg.hh"
+#include "arch/generic/cheri_defs.hh"
 #include "base/bitunion.hh"
 #include "cpu/reg_class.hh"
 #include "debug/CapRegs.hh"
+
 
 namespace gem5
 {
@@ -163,20 +165,6 @@ namespace gem5
         cap_reg::CA0, cap_reg::CA1, cap_reg::CA2, cap_reg::CA3,
         cap_reg::CA4, cap_reg::CA5, cap_reg::CA6, cap_reg::CA7
     };
-
-    //! CHERI Concentrate Register
-    BitUnion64(CAPTYPE)
-    Bitfield<63, 48> perm;
-    Bitfield<47> flag;
-    Bitfield<46, 45> reserved;
-    Bitfield<44, 27> otype;
-    Bitfield<26> IE;
-    Bitfield<25, 17> T;
-    Bitfield<16, 14> TE;
-    Bitfield<13, 3> B;
-    Bitfield<2, 0> BE;
-    EndBitUnion(CAPTYPE)
-
 
 } // namespace CHERIRiscvISA
 } // namespace gem5

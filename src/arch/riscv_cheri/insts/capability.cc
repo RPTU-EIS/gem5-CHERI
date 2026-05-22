@@ -57,5 +57,33 @@ namespace gem5 {
                 ss << ", " << registerName(srcRegIdx(2));
             return ss.str();
         }
+
+        std::string
+        CapLoad::generateDisassembly(Addr pc,
+                                    const loader::SymbolTable *symtab) const
+        {
+            // Format: lc cd, offset(cs1)
+            // destRegIdx(0) = cd (destination capability register)
+            // srcRegIdx(0)  = cs1 (base address / capability register)
+            std::stringstream ss;
+            ss << mnemonic << ' ' << registerName(destRegIdx(0))
+            << ", " << offset
+            << '(' << registerName(srcRegIdx(0)) << ')';
+            return ss.str();
+        }
+
+        std::string
+        CapStore::generateDisassembly(Addr pc,
+                                    const loader::SymbolTable *symtab) const
+        {
+            // Format: sc cs2, offset(cs1)
+            // srcRegIdx(0) = cs1 (base address / capability register)
+            // srcRegIdx(1) = cs2 (source capability to store)
+            std::stringstream ss;
+            ss << mnemonic << ' ' << registerName(srcRegIdx(1))
+            << ", " << offset
+            << '(' << registerName(srcRegIdx(0)) << ')';
+            return ss.str();
+        }
     }
 }

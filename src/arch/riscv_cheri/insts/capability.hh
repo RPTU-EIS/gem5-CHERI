@@ -35,8 +35,11 @@
 
 #include "arch/riscv_cheri/insts/static_inst.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
+#include "arch/riscv_cheri/isa.hh"
+#include "mem/request.hh"
 
 namespace gem5
 {
@@ -55,7 +58,52 @@ namespace gem5
             std::string generateDisassembly(
                     Addr pc, const loader::SymbolTable *symtab) const override;
         };
+/**
+ * Base class for CHERI capability load instructions (LC).
+ *
+ * Handles 16-byte capability loads with tag sideband.
+ * The ISA templates (CapLoadInitiateAcc, CapLoadCompleteAcc)
+ * use initiateMemRead with CHERI_CAP_LOAD flag and extract
+ * the tag from pkt->req->getCapTag() on completion.
+ *
+ * Follows the same pattern as the scalar Load base class:
+ * stores offset and memAccessFlags, provides generateDisassembly.
+ */
+        class CapLoad : public CHERIRiscvStaticInst
+        {
+        protected:
+            int64_t offset = 0;
+            Request::Flags memAccessFlags;
 
+            CapLoad(const char *mnem, ExtMachInst _machInst, OpClass __opClass)
+                : CHERIRiscvStaticInst(mnem, _machInst, __opClass)
+            {}
+
+            std::string generateDisassembly(
+                Addr pc, const loader::SymbolTable *symtab) const override;
+        };
+/**
+ * Base class for CHERI capability store instructions (SC).
+ *
+ * Handles 16-byte capability stores with tag sideband.
+ * The ISA templates (CapStoreInitiateAcc) use writeCapMem
+ * to carry both the 16 data bytes and the tag bit through
+ * the memory system to AbstractMemory::access(), which
+ * writes the tag to CheriTagTable.
+ */
+        class CapStore : public CHERIRiscvStaticInst
+        {
+        protected:
+            int64_t offset = 0;
+            Request::Flags memAccessFlags;
+
+            CapStore(const char *mnem, ExtMachInst _machInst, OpClass __opClass)
+                : CHERIRiscvStaticInst(mnem, _machInst, __opClass)
+            {}
+
+            std::string generateDisassembly(
+                Addr pc, const loader::SymbolTable *symtab) const override;
+        };
 
     } // namespace CHERIRiscvISA
 } // namespace gem5

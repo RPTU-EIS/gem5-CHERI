@@ -295,6 +295,37 @@ class SimpleExecContext : public ExecContext
     }
 
     Fault
+    readCapMem(Addr addr, uint8_t *data, unsigned int size,
+               Request::Flags flags,
+               const std::vector<bool>& byte_enable)
+    {
+        assert(byte_enable.size() == size);
+        return cpu->readCapMem(addr, data, size, flags, byte_enable);
+    }
+
+    Fault
+    initiateCapMemRead(Addr addr, unsigned int size,
+                       Request::Flags flags,
+                       const std::vector<bool>& byte_enable)
+    {
+        assert(byte_enable.size() == size);
+        return cpu->initiateMemRead(addr, size,
+                                    flags | Request::CHERI_CAP_LOAD,
+                                    byte_enable);
+    }
+
+    Fault
+    writeCapMem(uint8_t *data, unsigned int size, Addr addr,
+                Request::Flags flags, uint64_t *res,
+                bool capTag,
+                const std::vector<bool>& byte_enable)
+    {
+        assert(byte_enable.size() == size);
+        return cpu->writeCapMem(data, size, addr, flags, res,
+                                capTag, byte_enable);
+    }
+
+    Fault
     writeMem(uint8_t *data, unsigned int size, Addr addr,
              Request::Flags flags, uint64_t *res,
              const std::vector<bool>& byte_enable)

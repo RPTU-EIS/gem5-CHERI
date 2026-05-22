@@ -1466,6 +1466,39 @@ decode QUADRANT default Unknown::unknown() {
                     }});
                 }
             }
+
+            // CSC Cs2, offset(Cs1)
+            format CapStore {
+                0x4: csc({{ 
+                    // _storeCap = Cs2; 
+                }}, 
+                ea_code = {{ 
+                    EA = rvZext(Cs1.getAddress() + offset);
+                }},
+                cap_check_code = {{
+                    // auto _cf = Cs1.checkForStore(EA, 16, true);
+                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                    //     return std::make_shared<
+                    //         CHERIRiscvISA::CheriCapFault>(_cf);
+
+                    // if (Cs2.getTag() && !Cs1.hasStoreCap()) {
+                    //     return std::make_shared<
+                    //         CHERIRiscvISA::CheriCapFault>(
+                    //         CHERIRiscvISA::CheriCapException::
+                    //             PermitStoreCapViolation);
+                    // }
+                    // if (Cs2.getTag() && !Cs2.hasGlobal() &&
+                    //     !Cs1.hasPerm(CHERIPerms::STORE_LOCAL)) {
+                    //     return std::make_shared<
+                    //         CHERIRiscvISA::CheriCapFault>(
+                    //         CHERIRiscvISA::CheriCapException::
+                    //             PermitStoreLocalViolation);
+                    // }
+                }},
+                offset_code = {{
+                    offset = sext<12>(IMM5 | (IMM7 << 5));
+                }});
+            }
         }
 
         0x09: decode FUNCT3 {
@@ -4956,823 +4989,294 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x16: decode FUNCT3 {
-            format COp {
+            // format COp {
                 0x0: decode FUNCT7 {
-                    0x01: cspecialrw({{
-                        // to be implemented
-                    }});
+                    format COp {
+                        0x01:  
+                            cspecialrw({{
+                            // to be implemented
+                        }}); 
+                    }
+                     
+                    format COp {
+                        0x08: 
+                            csetbounds({{
+                            using namespace gem5::CHERIRiscvISA;
 
-			        0x08: csetbounds({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
 
-                        DPRINTF(CheriDecode, "CSetBounds: Setting bounds of c%d with address from c%d and length from x%d\n", dstIdx, cs1Idx, rs2Idx);
+                            DPRINTF(CheriDecode, "CSetBounds: Setting bounds of c%d with address from c%d and length from x%d\n", dstIdx, cs1Idx, rs2Idx);
 
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            uint64_t new_base = Cs1.getAddress();
-                            uint64_t req_length = Rs2;
-                            uint64_t new_top = new_base + req_length;
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            // Get original bounds to check if new bounds fit
-                            uint64_t a = Cs1.getAddress();
-                            CAPTYPE meta = Cs1.getMetadata();
-                            
-                            uint64_t B_hi = meta.B;
-                            uint64_t T_hi = meta.T;
-                            uint64_t B_E = meta.BE;
-                            uint64_t T_E = meta.TE;
-                            uint64_t I_E = meta.IE;
-                            
-                            // Decode original bounds
-                            uint64_t E, B, T, L_carry_out, L_msb;
-                            
-                            if (I_E == 0) {
-                                E = 0;
-                                T = (T_hi << 3) | T_E;
-                                B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
-                                L_msb = 0;
-                            } else {
-                                E = (T_E << 3) | B_E;
-                                T = T_hi << 3;
-                                B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                                L_msb = 1;
-                            }
-                            
-                            uint64_t B_top2 = (B >> 12) & 0x3;
-                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                            
-                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                            uint64_t B_3 = (B >> 11) & 0x7;
-                            uint64_t T_3 = (T >> 11) & 0x7;
-                            uint64_t R = (B_3 - 1) & 0x7;
-                            
-                            // Calculate base correction
-                            int64_t c_b;
-                            bool cond1_b = (A_3 < R);
-                            bool cond2_b = (B_3 < R);
-                            if (!cond1_b && !cond2_b) c_b = 0;
-                            else if (!cond1_b && cond2_b) c_b = 1;
-                            else if (cond1_b && !cond2_b) c_b = -1;
-                            else c_b = 0;
-                            
-                            // Calculate top correction
-                            int64_t c_t;
-                            bool cond1_t = (A_3 < R);
-                            bool cond2_t = (T_3 < R);
-                            if (!cond1_t && !cond2_t) c_t = 0;
-                            else if (!cond1_t && cond2_t) c_t = 1;
-                            else if (cond1_t && !cond2_t) c_t = -1;
-                            else c_t = 0;
-                            
-                            uint64_t a_top = (a >> (E + 14));
-                            uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
-                            uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
-                            
-                            // Check if new bounds are within original bounds
-                            if (new_base < orig_base || new_top > orig_top) {
+                            if (!Cs1.getTag()) {
                                 Cd.setTag(false);
-                                DPRINTF(CheriDecode, "New bounds out of range, clearing tag\n");
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                             } else {
-                                // Calculate exponent E needed for compression
-                                // Find minimum E such that length fits in 14 bits when shifted right by E
-                                uint64_t new_E = 0;
-                                if (req_length > (1ULL << 14)) {
-                                    // Need compression - find appropriate E
-                                    uint64_t temp = req_length >> 14;
-                                    while (temp > 0) {
-                                        new_E++;
-                                        temp >>= 1;
-                                    }
-                                }
+                                uint64_t new_base = Cs1.getAddress();
+                                uint64_t req_length = Rs2;
+                                uint64_t new_top = new_base + req_length;
                                 
-                                // Cap E at maximum value
-                                if (new_E > 63) new_E = 63;
+                                // Get original bounds to check if new bounds fit
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
                                 
-                                // Encode base and top
-                                uint64_t new_B = (new_base >> new_E) & ((1ULL << 14) - 1);
-                                uint64_t new_T = (new_top >> new_E) & ((1ULL << 14) - 1);
+                                uint64_t B_hi = meta.B;
+                                uint64_t T_hi = meta.T;
+                                uint64_t B_E = meta.BE;
+                                uint64_t T_E = meta.TE;
+                                uint64_t I_E = meta.IE;
                                 
-                                // Update metadata
-                                CAPTYPE new_meta = meta;
+                                // Decode original bounds
+                                uint64_t E, B, T, L_carry_out, L_msb;
                                 
-                                if (new_E == 0) {
-                                    // Exact representation possible
-                                    new_meta.IE = 0;
-                                    new_meta.BE = new_B & 0x7;
-                                    new_meta.TE = new_T & 0x7;
-                                    new_meta.B = (new_B >> 3) & 0x7FF;
-                                    new_meta.T = (new_T >> 3) & 0x1FF;
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;
+                                    B = (B_hi << 3) | B_E;
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
                                 } else {
-                                    // Compressed representation
-                                    new_meta.IE = 1;
-                                    new_meta.BE = new_E & 0x7;
-                                    new_meta.TE = (new_E >> 3) & 0x7;
-                                    new_meta.B = (new_B >> 3) & 0x7FF;
-                                    new_meta.T = (new_T >> 3) & 0x1FF;
+                                    E = (T_E << 3) | B_E;
+                                    T = T_hi << 3;
+                                    B = B_hi << 3;
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
                                 }
                                 
-                                Cd.setMetadata(new_meta);
-                                Cd.setAddress(new_base);
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
                                 
-                                DPRINTF(CheriDecode, "Set bounds: base = %#llx, length = %llu, E = %llu\n",
-                                    (unsigned long long)new_base,
-                                    (unsigned long long)req_length,
-                                    (unsigned long long)new_E);
-                            }
-                        }
-					}});
-
-					0x09: csetboundsexact({{
-					    using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Setting exact bounds for c%d from c%d with length from x%d\n",
-                            dstIdx, cs1Idx, rs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            uint64_t new_base = Cs1.getAddress();
-                            uint64_t req_length = Rs2;
-                            uint64_t new_top = new_base + req_length;
-                            
-                            // Get original bounds (same decoding as CSetBounds)
-                            uint64_t a = Cs1.getAddress();
-                            CAPTYPE meta = Cs1.getMetadata();
-                            
-                            uint64_t B_hi = meta.B;
-                            uint64_t T_hi = meta.T;
-                            uint64_t B_E = meta.BE;
-                            uint64_t T_E = meta.TE;
-                            uint64_t I_E = meta.IE;
-                            
-                            uint64_t E, B, T, L_carry_out, L_msb;
-                            
-                            if (I_E == 0) {
-                                E = 0;
-                                T = (T_hi << 3) | T_E;
-                                B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
-                                L_msb = 0;
-                            } else {
-                                E = (T_E << 3) | B_E;
-                                T = T_hi << 3;
-                                B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                                L_msb = 1;
-                            }
-                            
-                            uint64_t B_top2 = (B >> 12) & 0x3;
-                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                            
-                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                            uint64_t B_3 = (B >> 11) & 0x7;
-                            uint64_t T_3 = (T >> 11) & 0x7;
-                            uint64_t R = (B_3 - 1) & 0x7;
-                            
-                            int64_t c_b, c_t;
-                            bool cond1_b = (A_3 < R);
-                            bool cond2_b = (B_3 < R);
-                            if (!cond1_b && !cond2_b) c_b = 0;
-                            else if (!cond1_b && cond2_b) c_b = 1;
-                            else if (cond1_b && !cond2_b) c_b = -1;
-                            else c_b = 0;
-                            
-                            bool cond1_t = (A_3 < R);
-                            bool cond2_t = (T_3 < R);
-                            if (!cond1_t && !cond2_t) c_t = 0;
-                            else if (!cond1_t && cond2_t) c_t = 1;
-                            else if (cond1_t && !cond2_t) c_t = -1;
-                            else c_t = 0;
-                            
-                            uint64_t a_top = (a >> (E + 14));
-                            uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
-                            uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
-                            
-                            // Check if new bounds are within original bounds
-                            if (new_base < orig_base || new_top > orig_top) {
-                                Cd.setTag(false);
-                                DPRINTF(CheriDecode, "New bounds out of range, clearing tag\n");
-                            } else {
-                                // For exact bounds, check if representable without compression
-                                // Max representable length without compression is 2^14
-                                if (req_length > (1ULL << 14) || (new_base & ((1ULL << E) - 1)) != 0) {
-                                    // Cannot represent exactly
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                // Calculate base correction
+                                int64_t c_b;
+                                bool cond1_b = (A_3 < R);
+                                bool cond2_b = (B_3 < R);
+                                if (!cond1_b && !cond2_b) c_b = 0;
+                                else if (!cond1_b && cond2_b) c_b = 1;
+                                else if (cond1_b && !cond2_b) c_b = -1;
+                                else c_b = 0;
+                                
+                                // Calculate top correction
+                                int64_t c_t;
+                                bool cond1_t = (A_3 < R);
+                                bool cond2_t = (T_3 < R);
+                                if (!cond1_t && !cond2_t) c_t = 0;
+                                else if (!cond1_t && cond2_t) c_t = 1;
+                                else if (cond1_t && !cond2_t) c_t = -1;
+                                else c_t = 0;
+                                
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                // Check if new bounds are within original bounds
+                                if (new_base < orig_base || new_top > orig_top) {
                                     Cd.setTag(false);
-                                    DPRINTF(CheriDecode, "Cannot represent bounds exactly, clearing tag\n");
+                                    DPRINTF(CheriDecode, "New bounds out of range, clearing tag\n");
                                 } else {
-                                    // Can represent exactly with E=0
-                                    uint64_t new_B = new_base & ((1ULL << 14) - 1);
-                                    uint64_t new_T = new_top & ((1ULL << 14) - 1);
+                                    // Calculate exponent E needed for compression
+                                    // Find minimum E such that length fits in 14 bits when shifted right by E
+                                    uint64_t new_E = 0;
+                                    if (req_length > (1ULL << 14)) {
+                                        // Need compression - find appropriate E
+                                        uint64_t temp = req_length >> 14;
+                                        while (temp > 0) {
+                                            new_E++;
+                                            temp >>= 1;
+                                        }
+                                    }
                                     
+                                    // Cap E at maximum value
+                                    if (new_E > 63) new_E = 63;
+                                    
+                                    // Encode base and top
+                                    uint64_t new_B = (new_base >> new_E) & ((1ULL << 14) - 1);
+                                    uint64_t new_T = (new_top >> new_E) & ((1ULL << 14) - 1);
+                                    
+                                    // Update metadata
                                     CAPTYPE new_meta = meta;
-                                    new_meta.IE = 0;
-                                    new_meta.BE = new_B & 0x7;
-                                    new_meta.TE = new_T & 0x7;
-                                    new_meta.B = (new_B >> 3) & 0x7FF;
-                                    new_meta.T = (new_T >> 3) & 0x1FF;
+                                    
+                                    if (new_E == 0) {
+                                        // Exact representation possible
+                                        new_meta.IE = 0;
+                                        new_meta.BE = new_B & 0x7;
+                                        new_meta.TE = new_T & 0x7;
+                                        new_meta.B = (new_B >> 3) & 0x7FF;
+                                        new_meta.T = (new_T >> 3) & 0x1FF;
+                                    } else {
+                                        // Compressed representation
+                                        new_meta.IE = 1;
+                                        new_meta.BE = new_E & 0x7;
+                                        new_meta.TE = (new_E >> 3) & 0x7;
+                                        new_meta.B = (new_B >> 3) & 0x7FF;
+                                        new_meta.T = (new_T >> 3) & 0x1FF;
+                                    }
                                     
                                     Cd.setMetadata(new_meta);
                                     Cd.setAddress(new_base);
                                     
-                                        DPRINTF(CheriDecode, "Set exact bounds: base = %#llx, length = %llu\n",
-                                            (unsigned long long)new_base,
-                                            (unsigned long long)req_length);
+                                    DPRINTF(CheriDecode, "Set bounds: base = %#llx, length = %llu, E = %llu\n",
+                                        (unsigned long long)new_base,
+                                        (unsigned long long)req_length,
+                                        (unsigned long long)new_E);
                                 }
                             }
-                        }
-					}});
+                        }});
+                    }
+                    
+                    format COp {
+                        0x09: csetboundsexact({{
+                            using namespace gem5::CHERIRiscvISA;
 
-                    0x0b: cseal({{
-                        using namespace gem5::CHERIRiscvISA;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                            DPRINTF(CheriDecode, "Setting exact bounds for c%d from c%d with length from x%d\n",
+                                dstIdx, cs1Idx, rs2Idx);
 
-                        DPRINTF(CheriDecode, "Sealing c%d from c%d with otype from c%d\n",
-                            dstIdx, cs1Idx, cs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability cs1 invalid, clearing tag\n");
-                        } else if (!Cs2.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Sealing capability cs2 invalid, clearing tag\n");
-                        } else {
-                            CAPTYPE meta1 = Cs1.getMetadata();
-                            CAPTYPE meta2 = Cs2.getMetadata();
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            // Check if cs1 is already sealed (otype != unsealed value)
-                            const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
-                            if (meta1.otype != OTYPE_UNSEALED) {
+                            if (!Cs1.getTag()) {
                                 Cd.setTag(false);
-                                DPRINTF(CheriDecode, "Source capability already sealed, clearing tag\n");
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                             } else {
-                                // Get otype from cs2's address (lower bits used as otype)
-                                uint64_t new_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                uint64_t new_base = Cs1.getAddress();
+                                uint64_t req_length = Rs2;
+                                uint64_t new_top = new_base + req_length;
                                 
-                                // Check if new_otype is in valid range (not the unsealed value)
-                                if (new_otype >= OTYPE_UNSEALED) {
-                                    Cd.setTag(false);
-                                    DPRINTF(CheriDecode, "Invalid otype value, clearing tag\n");
-                                } else {
-                                    // Set the new otype
-                                    CAPTYPE new_meta = meta1;
-                                    new_meta.otype = new_otype;
-                                    Cd.setMetadata(new_meta);
-                                    
-                                    DPRINTF(CheriDecode, "Sealed capability with otype = %#llx\n",
-                                            (unsigned long long)new_otype);
-                                }
-                            }
-                        }
-                        
-                    }});
-
-                    0x0c: cunseal({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Unsealing c%d from c%d with otype from c%d\n",
-                            dstIdx, cs1Idx, cs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability cs1 invalid, clearing tag\n");
-                        } else if (!Cs2.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Unsealing capability cs2 invalid, clearing tag\n");
-                        } else {
-                            CAPTYPE meta1 = Cs1.getMetadata();
-                            CAPTYPE meta2 = Cs2.getMetadata();
-                            
-                            const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
-                            
-                            // Check if cs1 is sealed
-                            if (meta1.otype == OTYPE_UNSEALED) {
-                                Cd.setTag(false);
-                                DPRINTF(CheriDecode, "Source capability not sealed, clearing tag\n");
-                            } else {
-                                // Get otype from cs2's address
-                                uint64_t unseal_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                // Get original bounds (same decoding as CSetBounds)
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
                                 
-                                // Check if otypes match
-                                if (meta1.otype != unseal_otype) {
-                                    Cd.setTag(false);
-                                    DPRINTF(CheriDecode, "Otype mismatch (sealed=%#llx, unsealing=%#llx), clearing tag\n",
-                                            (unsigned long long)meta1.otype,
-                                            (unsigned long long)unseal_otype);
+                                uint64_t B_hi = meta.B;
+                                uint64_t T_hi = meta.T;
+                                uint64_t B_E = meta.BE;
+                                uint64_t T_E = meta.TE;
+                                uint64_t I_E = meta.IE;
+                                
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;
+                                    B = (B_hi << 3) | B_E;
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
                                 } else {
-                                    // Unseal by setting otype to unsealed value
-                                    CAPTYPE new_meta = meta1;
-                                    new_meta.otype = OTYPE_UNSEALED;
-                                    Cd.setMetadata(new_meta);
-                                    
-                                    DPRINTF(CheriDecode, "Unsealed capability (otype was %#llx)\n",
-                                            (unsigned long long)unseal_otype);
+                                    E = (T_E << 3) | B_E;
+                                    T = T_hi << 3;
+                                    B = B_hi << 3;
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                int64_t c_b, c_t;
+                                bool cond1_b = (A_3 < R);
+                                bool cond2_b = (B_3 < R);
+                                if (!cond1_b && !cond2_b) c_b = 0;
+                                else if (!cond1_b && cond2_b) c_b = 1;
+                                else if (cond1_b && !cond2_b) c_b = -1;
+                                else c_b = 0;
+                                
+                                bool cond1_t = (A_3 < R);
+                                bool cond2_t = (T_3 < R);
+                                if (!cond1_t && !cond2_t) c_t = 0;
+                                else if (!cond1_t && cond2_t) c_t = 1;
+                                else if (cond1_t && !cond2_t) c_t = -1;
+                                else c_t = 0;
+                                
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                // Check if new bounds are within original bounds
+                                if (new_base < orig_base || new_top > orig_top) {
+                                    Cd.setTag(false);
+                                    DPRINTF(CheriDecode, "New bounds out of range, clearing tag\n");
+                                } else {
+                                    // For exact bounds, check if representable without compression
+                                    // Max representable length without compression is 2^14
+                                    if (req_length > (1ULL << 14) || (new_base & ((1ULL << E) - 1)) != 0) {
+                                        // Cannot represent exactly
+                                        Cd.setTag(false);
+                                        DPRINTF(CheriDecode, "Cannot represent bounds exactly, clearing tag\n");
+                                    } else {
+                                        // Can represent exactly with E=0
+                                        uint64_t new_B = new_base & ((1ULL << 14) - 1);
+                                        uint64_t new_T = new_top & ((1ULL << 14) - 1);
+                                        
+                                        CAPTYPE new_meta = meta;
+                                        new_meta.IE = 0;
+                                        new_meta.BE = new_B & 0x7;
+                                        new_meta.TE = new_T & 0x7;
+                                        new_meta.B = (new_B >> 3) & 0x7FF;
+                                        new_meta.T = (new_T >> 3) & 0x1FF;
+                                        
+                                        Cd.setMetadata(new_meta);
+                                        Cd.setAddress(new_base);
+                                        
+                                            DPRINTF(CheriDecode, "Set exact bounds: base = %#llx, length = %llu\n",
+                                                (unsigned long long)new_base,
+                                                (unsigned long long)req_length);
+                                    }
                                 }
                             }
-                        }
-                    }});
+                        }});
+                    } 
 
-                    0x0d: candperm({{
-                        using namespace gem5::CHERIRiscvISA;
+                    format COp {
+                        0x0b: cseal({{
+                            using namespace gem5::CHERIRiscvISA;
 
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
 
-                        DPRINTF(CheriDecode, "Masking permissions for c%d from c%d with mask from x%d\n",
-                            dstIdx, cs1Idx, rs2Idx);
+                            DPRINTF(CheriDecode, "Sealing c%d from c%d with otype from c%d\n",
+                                dstIdx, cs1Idx, cs2Idx);
 
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            CAPTYPE meta = Cs1.getMetadata();
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            // Get permission mask (16 bits for permissions)
-                            uint64_t perm_mask = Rs2 & 0xFFFF;
-                            
-                            // AND current permissions with mask
-                            uint64_t new_perms = meta.perm & perm_mask;
-                            
-                            // Update metadata
-                            CAPTYPE new_meta = meta;
-                            new_meta.perm = new_perms;
-                            Cd.setMetadata(new_meta);
-                            
-                                DPRINTF(CheriDecode, "Old permissions = %#llx, mask = %#llx, new permissions = %#llx\n",
-                                    (unsigned long long)meta.perm,
-                                    (unsigned long long)perm_mask,
-                                    (unsigned long long)new_perms);
-                        }
-                    }});
-
-                    0x0e: csetflags({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-
-                        DPRINTF(CheriDecode, "CSetFlags: Setting flags of c%d with capability from c%d and flags from x%d\n", dstIdx, cs1Idx, rs2Idx);
-                        // DPRINTF(CheriDecode, "Setting flags for c%d with capability from c%d\n", dstIdx, cs1Idx)
-                        //        << " and flag from x" << rs2Idx << " with value = " << (Rs2 & 0x1) << std::endl;
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            // Get metadata, modify flag, write back
-                            CAPTYPE meta = Cs1.getMetadata();
-                            meta.flag = Rs2 & 0x1;  // 1-bit flag
-                            Cd.setMetadata(meta);
-                            
-                                DPRINTF(CheriDecode, "Set flag for c%d with value = %llu\n",
-                                    dstIdx, (unsigned long long)meta.flag);
-                        }
-
-                    }});
-
-                    0x0f: csetoffset({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Setting offset for c%d from c%d with offset from x%d\n",
-                            dstIdx, cs1Idx, rs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            uint64_t a = Cs1.getAddress();
-                            CAPTYPE meta = Cs1.getMetadata();
-                            
-                            // Decode base to calculate new address from offset
-                            uint64_t B_hi = meta.B;
-                            uint64_t T_hi = meta.T;
-                            uint64_t B_E = meta.BE;
-                            uint64_t T_E = meta.TE;
-                            uint64_t I_E = meta.IE;
-                            
-                            uint64_t E, B, T, L_carry_out, L_msb;
-                            
-                            if (I_E == 0) {
-                                E = 0;
-                                T = (T_hi << 3) | T_E;
-                                B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
-                                L_msb = 0;
-                            } else {
-                                E = (T_E << 3) | B_E;
-                                T = T_hi << 3;
-                                B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                                L_msb = 1;
-                            }
-                            
-                            uint64_t B_top2 = (B >> 12) & 0x3;
-                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                            
-                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                            uint64_t B_3 = (B >> 11) & 0x7;
-                            uint64_t T_3 = (T >> 11) & 0x7;
-                            uint64_t R = (B_3 - 1) & 0x7;
-                            
-                            // Calculate base correction
-                            int64_t c_b;
-                            bool cond1_b = (A_3 < R);
-                            bool cond2_b = (B_3 < R);
-                            if (!cond1_b && !cond2_b) c_b = 0;
-                            else if (!cond1_b && cond2_b) c_b = 1;
-                            else if (cond1_b && !cond2_b) c_b = -1;
-                            else c_b = 0;
-                            
-                            // Calculate top correction
-                            int64_t c_t;
-                            bool cond1_t = (A_3 < R);
-                            bool cond2_t = (T_3 < R);
-                            if (!cond1_t && !cond2_t) c_t = 0;
-                            else if (!cond1_t && cond2_t) c_t = 1;
-                            else if (cond1_t && !cond2_t) c_t = -1;
-                            else c_t = 0;
-                            
-                            uint64_t a_top = (a >> (E + 14));
-                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
-                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
-                            
-                            // Calculate new address from offset
-                            uint64_t offset = Rs2;
-                            uint64_t new_addr = base + offset;
-                            
-                            // Check bounds
-                            if (new_addr < base || new_addr >= top) {
+                            if (!Cs1.getTag()) {
                                 Cd.setTag(false);
-                                DPRINTF(CheriDecode, "New address out of bounds, clearing tag\n");
-                            } else {
-                                Cd.setAddress(new_addr);
-                                DPRINTF(CheriDecode, "Set address to %#llx (base=%#llx, offset=%#llx)\n",
-                                        (unsigned long long)new_addr,
-                                        (unsigned long long)base,
-                                        (unsigned long long)offset);
-                            }
-                        }
-                    }});
-
-                    0x10: csetaddr({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Setting address for c%d from c%d with address from x%d\n",
-                            dstIdx, cs1Idx, rs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        }
-                        else {
-                            uint64_t a = Cs1.getAddress();
-                            CAPTYPE meta = Cs1.getMetadata();
-                            
-                            // Decode bounds
-                            uint64_t B_hi = meta.B;
-                            uint64_t T_hi = meta.T;
-                            uint64_t B_E = meta.BE;
-                            uint64_t T_E = meta.TE;
-                            uint64_t I_E = meta.IE;
-                            
-                            uint64_t E, B, T, L_carry_out, L_msb;
-                            
-                            if (I_E == 0) {
-                                E = 0;
-                                T = (T_hi << 3) | T_E;
-                                B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
-                                L_msb = 0;
-                            } else {
-                                E = (T_E << 3) | B_E;
-                                T = T_hi << 3;
-                                B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                                L_msb = 1;
-                            }
-                            
-                            uint64_t B_top2 = (B >> 12) & 0x3;
-                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                            
-                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                            uint64_t B_3 = (B >> 11) & 0x7;
-                            uint64_t T_3 = (T >> 11) & 0x7;
-                            uint64_t R = (B_3 - 1) & 0x7;
-                            
-                            int64_t c_b;
-                            bool cond1_b = (A_3 < R);
-                            bool cond2_b = (B_3 < R);
-                            if (!cond1_b && !cond2_b) c_b = 0;
-                            else if (!cond1_b && cond2_b) c_b = 1;
-                            else if (cond1_b && !cond2_b) c_b = -1;
-                            else c_b = 0;
-                            
-                            int64_t c_t;
-                            bool cond1_t = (A_3 < R);
-                            bool cond2_t = (T_3 < R);
-                            if (!cond1_t && !cond2_t) c_t = 0;
-                            else if (!cond1_t && cond2_t) c_t = 1;
-                            else if (cond1_t && !cond2_t) c_t = -1;
-                            else c_t = 0;
-                            
-                            uint64_t a_top = (a >> (E + 14));
-                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
-                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
-                            
-                            // Set new address
-                            uint64_t new_addr = Rs2;
-                            
-                            // Check bounds
-                            if (new_addr < base || new_addr >= top) {
+                                DPRINTF(CheriDecode, "Source capability cs1 invalid, clearing tag\n");
+                            } else if (!Cs2.getTag()) {
                                 Cd.setTag(false);
-                                DPRINTF(CheriDecode, "New address %#llx out of bounds (%#llx, %#llx), clearing tag\n",
-                                        (unsigned long long)new_addr,
-                                        (unsigned long long)base,
-                                        (unsigned long long)top);
+                                DPRINTF(CheriDecode, "Sealing capability cs2 invalid, clearing tag\n");
                             } else {
-                                Cd.setAddress(new_addr);
-                                DPRINTF(CheriDecode, "Set address to %#llx\n",
-                                        (unsigned long long)new_addr);
-                            }
-                        }
-                    }});
-
-                    0x11: cincoffset({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Incrementing offset for c%d from c%d with increment from x%d\n",
-                            dstIdx, cs1Idx, rs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            uint64_t a = Cs1.getAddress();
-                            CAPTYPE meta = Cs1.getMetadata();
-                            
-                            // Decode bounds
-                            uint64_t B_hi = meta.B;
-                            uint64_t T_hi = meta.T;
-                            uint64_t B_E = meta.BE;
-                            uint64_t T_E = meta.TE;
-                            uint64_t I_E = meta.IE;
-                            
-                            uint64_t E, B, T, L_carry_out, L_msb;
-                            
-                            if (I_E == 0) {
-                                E = 0;
-                                T = (T_hi << 3) | T_E;
-                                B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
-                                L_msb = 0;
-                            } else {
-                                E = (T_E << 3) | B_E;
-                                T = T_hi << 3;
-                                B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                                L_msb = 1;
-                            }
-                            
-                            uint64_t B_top2 = (B >> 12) & 0x3;
-                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                            
-                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                            uint64_t B_3 = (B >> 11) & 0x7;
-                            uint64_t T_3 = (T >> 11) & 0x7;
-                            uint64_t R = (B_3 - 1) & 0x7;
-                            
-                            int64_t c_b;
-                            bool cond1_b = (A_3 < R);
-                            bool cond2_b = (B_3 < R);
-                            if (!cond1_b && !cond2_b) c_b = 0;
-                            else if (!cond1_b && cond2_b) c_b = 1;
-                            else if (cond1_b && !cond2_b) c_b = -1;
-                            else c_b = 0;
-                            
-                            int64_t c_t;
-                            bool cond1_t = (A_3 < R);
-                            bool cond2_t = (T_3 < R);
-                            if (!cond1_t && !cond2_t) c_t = 0;
-                            else if (!cond1_t && cond2_t) c_t = 1;
-                            else if (cond1_t && !cond2_t) c_t = -1;
-                            else c_t = 0;
-                            
-                            uint64_t a_top = (a >> (E + 14));
-                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
-                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
-                            
-                            // Increment address (Rs2 is treated as signed)
-                            int64_t increment = (int64_t)Rs2;
-                            uint64_t new_addr = a + increment;
-                            
-                            // Check bounds
-                            if (new_addr < base || new_addr >= top) {
-                                Cd.setTag(false);
-                                DPRINTF(CheriDecode, "New address %#llx out of bounds, clearing tag\n",
-                                        (unsigned long long)new_addr);
-                            } else {
-                                Cd.setAddress(new_addr);
-                                DPRINTF(CheriDecode, "Incremented address by %lld to %#llx\n",
-                                        (long long)increment,
-                                        (unsigned long long)new_addr);
-                            }
-                        }
-                    }});
-
-                    0x12: ctoptr({{
-                        // to be implemented
-                    }});
-
-                    0x13: cfromptr({{
-                        // to be implemented
-                    }});
-
-                    0x16: csethigh({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Setting high 64 bits for c%d from c%d with value from x%d\n",
-                            dstIdx, cs1Idx, rs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        // Set metadata (high 64 bits) directly from Rs2
-                        uint64_t new_metadata = Rs2;
-                        Cd.setMetadata(new_metadata);
-                        DPRINTF(CheriDecode, "Set metadata to %#llx\n",
-                            (unsigned long long)new_metadata);
-                    }});
-
-                    0x1d: cbuildcap({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Building capability c%d from c%d (permissions/otype) and c%d (bounds/address)\n",
-                            dstIdx, cs1Idx, cs2Idx);
-
-                        // Start with cs2 (bounds and address)
-                        Cd = Cs2;
-                        
-                        if (!Cs1.getTag() || !Cs2.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            CAPTYPE meta1 = Cs1.getMetadata();
-                            CAPTYPE meta2 = Cs2.getMetadata();
-                            
-                            // Build new metadata: permissions and otype from cs1, bounds from cs2
-                            CAPTYPE new_meta = meta2;  // Keep bounds (B, T, BE, TE, IE)
-                            new_meta.perm = meta1.perm;  // Copy permissions from cs1
-                            new_meta.otype = meta1.otype;  // Copy otype from cs1
-                            new_meta.flag = meta1.flag;  // Copy flag from cs1
-                            
-                            Cd.setMetadata(new_meta);
-                            Cd.setAddress(Cs2.getAddress());  // Use address from cs2
-                            
-                                DPRINTF(CheriDecode, "Built capability with perms=%#llx, otype=%#llx\n",
-                                    (unsigned long long)meta1.perm,
-                                    (unsigned long long)meta1.otype);
-                        }
-                    }});
-
-                    0x1e: ccopytype({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Copying otype from c%d to c%d and storing in c%d\n",
-                            cs2Idx, cs1Idx, dstIdx);
-
-                        // Copy source capability cs1
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag() || !Cs2.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                        } else {
-                            CAPTYPE meta1 = Cs1.getMetadata();
-                            CAPTYPE meta2 = Cs2.getMetadata();
-                            
-                            // Copy otype from cs2 to cs1's capability
-                            CAPTYPE new_meta = meta1;
-                            new_meta.otype = meta2.otype;
-                            Cd.setMetadata(new_meta);
-                            
-                                DPRINTF(CheriDecode, "Copied otype %#llx from c%d to c%d\n",
-                                    (unsigned long long)meta2.otype, cs2Idx, dstIdx);
-                        }
-                    }});
-
-                    0x1f: ccseal({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-
-                        DPRINTF(CheriDecode, "Conditional sealing c%d from c%d with otype from c%d\n",
-                            dstIdx, cs1Idx, cs2Idx);
-
-                        // Copy source capability
-                        Cd = Cs1;
-                        
-                        if (!Cs1.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability cs1 invalid, clearing tag\n");
-                        } else if (!Cs2.getTag()) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Sealing capability cs2 invalid, clearing tag\n");
-                        } else {
-                            CAPTYPE meta1 = Cs1.getMetadata();
-                            CAPTYPE meta2 = Cs2.getMetadata();
-                            
-                            // Check if cs2 has sealing permission (typically bit 10 of permissions)
-                            const uint64_t PERM_SEAL = (1ULL << 10);
-                            if ((meta2.perm & PERM_SEAL) == 0) {
-                                Cd.setTag(false);
-                                DPRINTF(CheriDecode, "cs2 lacks sealing permission, clearing tag\n");
-                            } else {
-                                // Check if cs1 is already sealed
+                                CAPTYPE meta1 = Cs1.getMetadata();
+                                CAPTYPE meta2 = Cs2.getMetadata();
+                                
+                                // Check if cs1 is already sealed (otype != unsealed value)
                                 const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
                                 if (meta1.otype != OTYPE_UNSEALED) {
                                     Cd.setTag(false);
                                     DPRINTF(CheriDecode, "Source capability already sealed, clearing tag\n");
                                 } else {
-                                    // Get otype from cs2's address
+                                    // Get otype from cs2's address (lower bits used as otype)
                                     uint64_t new_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
                                     
-                                    // Check if new_otype is in valid range
+                                    // Check if new_otype is in valid range (not the unsealed value)
                                     if (new_otype >= OTYPE_UNSEALED) {
                                         Cd.setTag(false);
                                         DPRINTF(CheriDecode, "Invalid otype value, clearing tag\n");
@@ -5782,186 +5286,754 @@ decode QUADRANT default Unknown::unknown() {
                                         new_meta.otype = new_otype;
                                         Cd.setMetadata(new_meta);
                                         
-                                        DPRINTF(CheriDecode, "Conditionally sealed capability with otype = %#llx\n",
+                                        DPRINTF(CheriDecode, "Sealed capability with otype = %#llx\n",
                                                 (unsigned long long)new_otype);
                                     }
                                 }
                             }
-                        }
-                    }});
-
-                    0x20: ctestsubset({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = RD + int_reg::_ZeroIdx;
-
-                        DPRINTF(CheriDecode, "Testing if c%d is subset of c%d and storing result in x%d\n",
-                            cs1Idx, cs2Idx, dstIdx);
-
-                        // Both must be valid for meaningful comparison
-                        if (!Cs1.getTag() || !Cs2.getTag()) {
-                            Rd = 0;
-                            DPRINTF(CheriDecode, "One or both capabilities invalid, returning 0\n");
-                        } else {
-                            CAPTYPE meta1 = Cs1.getMetadata();
-                            CAPTYPE meta2 = Cs2.getMetadata();
                             
-                            // Decode bounds for cs1
-                            uint64_t a1 = Cs1.getAddress();
-                            uint64_t B_hi1 = meta1.B;
-                            uint64_t T_hi1 = meta1.T;
-                            uint64_t B_E1 = meta1.BE;
-                            uint64_t T_E1 = meta1.TE;
-                            uint64_t I_E1 = meta1.IE;
+                        }});
+                    } 
+
+                    format COp {
+                        0x0c: cunseal({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Unsealing c%d from c%d with otype from c%d\n",
+                                dstIdx, cs1Idx, cs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            uint64_t E1, B1, T1, L_carry_out1, L_msb1;
-                            
-                            if (I_E1 == 0) {
-                                E1 = 0;
-                                T1 = (T_hi1 << 3) | T_E1;
-                                B1 = (B_hi1 << 3) | B_E1;
-                                L_carry_out1 = (T1 < B1) ? 1 : 0;
-                                L_msb1 = 0;
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability cs1 invalid, clearing tag\n");
+                            } else if (!Cs2.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Unsealing capability cs2 invalid, clearing tag\n");
                             } else {
-                                E1 = (T_E1 << 3) | B_E1;
-                                T1 = T_hi1 << 3;
-                                B1 = B_hi1 << 3;
-                                L_carry_out1 = (T_hi1 < B_hi1) ? 1 : 0;
-                                L_msb1 = 1;
+                                CAPTYPE meta1 = Cs1.getMetadata();
+                                CAPTYPE meta2 = Cs2.getMetadata();
+                                
+                                const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
+                                
+                                // Check if cs1 is sealed
+                                if (meta1.otype == OTYPE_UNSEALED) {
+                                    Cd.setTag(false);
+                                    DPRINTF(CheriDecode, "Source capability not sealed, clearing tag\n");
+                                } else {
+                                    // Get otype from cs2's address
+                                    uint64_t unseal_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                    
+                                    // Check if otypes match
+                                    if (meta1.otype != unseal_otype) {
+                                        Cd.setTag(false);
+                                        DPRINTF(CheriDecode, "Otype mismatch (sealed=%#llx, unsealing=%#llx), clearing tag\n",
+                                                (unsigned long long)meta1.otype,
+                                                (unsigned long long)unseal_otype);
+                                    } else {
+                                        // Unseal by setting otype to unsealed value
+                                        CAPTYPE new_meta = meta1;
+                                        new_meta.otype = OTYPE_UNSEALED;
+                                        Cd.setMetadata(new_meta);
+                                        
+                                        DPRINTF(CheriDecode, "Unsealed capability (otype was %#llx)\n",
+                                                (unsigned long long)unseal_otype);
+                                    }
+                                }
                             }
+                        }});
+                    } 
+
+                    format COp {
+                        0x0d: candperm({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Masking permissions for c%d from c%d with mask from x%d\n",
+                                dstIdx, cs1Idx, rs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            uint64_t B_top2_1 = (B1 >> 12) & 0x3;
-                            T1 |= ((B_top2_1 + L_carry_out1 + L_msb1) & 0x3) << 12;
-                            
-                            uint64_t A_3_1 = (a1 >> (E1 + 11)) & 0x7;
-                            uint64_t B_3_1 = (B1 >> 11) & 0x7;
-                            uint64_t T_3_1 = (T1 >> 11) & 0x7;
-                            uint64_t R1 = (B_3_1 - 1) & 0x7;
-                            
-                            int64_t c_b1, c_t1;
-                            bool cond1_b1 = (A_3_1 < R1);
-                            bool cond2_b1 = (B_3_1 < R1);
-                            if (!cond1_b1 && !cond2_b1) c_b1 = 0;
-                            else if (!cond1_b1 && cond2_b1) c_b1 = 1;
-                            else if (cond1_b1 && !cond2_b1) c_b1 = -1;
-                            else c_b1 = 0;
-                            
-                            bool cond1_t1 = (A_3_1 < R1);
-                            bool cond2_t1 = (T_3_1 < R1);
-                            if (!cond1_t1 && !cond2_t1) c_t1 = 0;
-                            else if (!cond1_t1 && cond2_t1) c_t1 = 1;
-                            else if (cond1_t1 && !cond2_t1) c_t1 = -1;
-                            else c_t1 = 0;
-                            
-                            uint64_t a_top1 = (a1 >> (E1 + 14));
-                            uint64_t base1 = ((a_top1 + c_b1) << (E1 + 14)) | (B1 << E1);
-                            uint64_t top1 = ((a_top1 + c_t1) << (E1 + 14)) | (T1 << E1);
-                            
-                            // Decode bounds for cs2
-                            uint64_t a2 = Cs2.getAddress();
-                            uint64_t B_hi2 = meta2.B;
-                            uint64_t T_hi2 = meta2.T;
-                            uint64_t B_E2 = meta2.BE;
-                            uint64_t T_E2 = meta2.TE;
-                            uint64_t I_E2 = meta2.IE;
-                            
-                            uint64_t E2, B2, T2, L_carry_out2, L_msb2;
-                            
-                            if (I_E2 == 0) {
-                                E2 = 0;
-                                T2 = (T_hi2 << 3) | T_E2;
-                                B2 = (B_hi2 << 3) | B_E2;
-                                L_carry_out2 = (T2 < B2) ? 1 : 0;
-                                L_msb2 = 0;
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                             } else {
-                                E2 = (T_E2 << 3) | B_E2;
-                                T2 = T_hi2 << 3;
-                                B2 = B_hi2 << 3;
-                                L_carry_out2 = (T_hi2 < B_hi2) ? 1 : 0;
-                                L_msb2 = 1;
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Get permission mask (16 bits for permissions)
+                                uint64_t perm_mask = Rs2 & 0xFFFF;
+                                
+                                // AND current permissions with mask
+                                uint64_t new_perms = meta.perm & perm_mask;
+                                
+                                // Update metadata
+                                CAPTYPE new_meta = meta;
+                                new_meta.perm = new_perms;
+                                Cd.setMetadata(new_meta);
+                                
+                                    DPRINTF(CheriDecode, "Old permissions = %#llx, mask = %#llx, new permissions = %#llx\n",
+                                        (unsigned long long)meta.perm,
+                                        (unsigned long long)perm_mask,
+                                        (unsigned long long)new_perms);
                             }
+                        }});
+                    } 
+
+                    format COp {
+                        0x0e: csetflags({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+
+                            DPRINTF(CheriDecode, "CSetFlags: Setting flags of c%d with capability from c%d and flags from x%d\n", dstIdx, cs1Idx, rs2Idx);
+                            // DPRINTF(CheriDecode, "Setting flags for c%d with capability from c%d\n", dstIdx, cs1Idx)
+                            //        << " and flag from x" << rs2Idx << " with value = " << (Rs2 & 0x1) << std::endl;
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            uint64_t B_top2_2 = (B2 >> 12) & 0x3;
-                            T2 |= ((B_top2_2 + L_carry_out2 + L_msb2) & 0x3) << 12;
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                            } else {
+                                // Get metadata, modify flag, write back
+                                CAPTYPE meta = Cs1.getMetadata();
+                                meta.flag = Rs2 & 0x1;  // 1-bit flag
+                                Cd.setMetadata(meta);
+                                
+                                    DPRINTF(CheriDecode, "Set flag for c%d with value = %llu\n",
+                                        dstIdx, (unsigned long long)meta.flag);
+                            }
+
+                        }});
+                    } 
+
+                    format COp {
+                        0x0f: csetoffset({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Setting offset for c%d from c%d with offset from x%d\n",
+                                dstIdx, cs1Idx, rs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            uint64_t A_3_2 = (a2 >> (E2 + 11)) & 0x7;
-                            uint64_t B_3_2 = (B2 >> 11) & 0x7;
-                            uint64_t T_3_2 = (T2 >> 11) & 0x7;
-                            uint64_t R2 = (B_3_2 - 1) & 0x7;
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                            } else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Decode base to calculate new address from offset
+                                uint64_t B_hi = meta.B;
+                                uint64_t T_hi = meta.T;
+                                uint64_t B_E = meta.BE;
+                                uint64_t T_E = meta.TE;
+                                uint64_t I_E = meta.IE;
+                                
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;
+                                    B = (B_hi << 3) | B_E;
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;
+                                    T = T_hi << 3;
+                                    B = B_hi << 3;
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                // Calculate base correction
+                                int64_t c_b;
+                                bool cond1_b = (A_3 < R);
+                                bool cond2_b = (B_3 < R);
+                                if (!cond1_b && !cond2_b) c_b = 0;
+                                else if (!cond1_b && cond2_b) c_b = 1;
+                                else if (cond1_b && !cond2_b) c_b = -1;
+                                else c_b = 0;
+                                
+                                // Calculate top correction
+                                int64_t c_t;
+                                bool cond1_t = (A_3 < R);
+                                bool cond2_t = (T_3 < R);
+                                if (!cond1_t && !cond2_t) c_t = 0;
+                                else if (!cond1_t && cond2_t) c_t = 1;
+                                else if (cond1_t && !cond2_t) c_t = -1;
+                                else c_t = 0;
+                                
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                // Calculate new address from offset
+                                uint64_t offset = Rs2;
+                                uint64_t new_addr = base + offset;
+                                
+                                // Check bounds
+                                if (new_addr < base || new_addr >= top) {
+                                    Cd.setTag(false);
+                                    DPRINTF(CheriDecode, "New address out of bounds, clearing tag\n");
+                                } else {
+                                    Cd.setAddress(new_addr);
+                                    DPRINTF(CheriDecode, "Set address to %#llx (base=%#llx, offset=%#llx)\n",
+                                            (unsigned long long)new_addr,
+                                            (unsigned long long)base,
+                                            (unsigned long long)offset);
+                                }
+                            }
+                        }});
+                    }
+
+                    format COp {
+                        0x10: csetaddr({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Setting address for c%d from c%d with address from x%d\n",
+                                dstIdx, cs1Idx, rs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            int64_t c_b2, c_t2;
-                            bool cond1_b2 = (A_3_2 < R2);
-                            bool cond2_b2 = (B_3_2 < R2);
-                            if (!cond1_b2 && !cond2_b2) c_b2 = 0;
-                            else if (!cond1_b2 && cond2_b2) c_b2 = 1;
-                            else if (cond1_b2 && !cond2_b2) c_b2 = -1;
-                            else c_b2 = 0;
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                            }
+                            else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Decode bounds
+                                uint64_t B_hi = meta.B;
+                                uint64_t T_hi = meta.T;
+                                uint64_t B_E = meta.BE;
+                                uint64_t T_E = meta.TE;
+                                uint64_t I_E = meta.IE;
+                                
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;
+                                    B = (B_hi << 3) | B_E;
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;
+                                    T = T_hi << 3;
+                                    B = B_hi << 3;
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                int64_t c_b;
+                                bool cond1_b = (A_3 < R);
+                                bool cond2_b = (B_3 < R);
+                                if (!cond1_b && !cond2_b) c_b = 0;
+                                else if (!cond1_b && cond2_b) c_b = 1;
+                                else if (cond1_b && !cond2_b) c_b = -1;
+                                else c_b = 0;
+                                
+                                int64_t c_t;
+                                bool cond1_t = (A_3 < R);
+                                bool cond2_t = (T_3 < R);
+                                if (!cond1_t && !cond2_t) c_t = 0;
+                                else if (!cond1_t && cond2_t) c_t = 1;
+                                else if (cond1_t && !cond2_t) c_t = -1;
+                                else c_t = 0;
+                                
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                // Set new address
+                                uint64_t new_addr = Rs2;
+                                
+                                // Check bounds
+                                if (new_addr < base || new_addr >= top) {
+                                    Cd.setTag(false);
+                                    DPRINTF(CheriDecode, "New address %#llx out of bounds (%#llx, %#llx), clearing tag\n",
+                                            (unsigned long long)new_addr,
+                                            (unsigned long long)base,
+                                            (unsigned long long)top);
+                                } else {
+                                    Cd.setAddress(new_addr);
+                                    DPRINTF(CheriDecode, "Set address to %#llx\n",
+                                            (unsigned long long)new_addr);
+                                }
+                            }
+                        }});
+                    } 
+
+                    format COp {
+                        0x11: cincoffset({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Incrementing offset for c%d from c%d with increment from x%d\n",
+                                dstIdx, cs1Idx, rs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            bool cond1_t2 = (A_3_2 < R2);
-                            bool cond2_t2 = (T_3_2 < R2);
-                            if (!cond1_t2 && !cond2_t2) c_t2 = 0;
-                            else if (!cond1_t2 && cond2_t2) c_t2 = 1;
-                            else if (cond1_t2 && !cond2_t2) c_t2 = -1;
-                            else c_t2 = 0;
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                            } else {
+                                uint64_t a = Cs1.getAddress();
+                                CAPTYPE meta = Cs1.getMetadata();
+                                
+                                // Decode bounds
+                                uint64_t B_hi = meta.B;
+                                uint64_t T_hi = meta.T;
+                                uint64_t B_E = meta.BE;
+                                uint64_t T_E = meta.TE;
+                                uint64_t I_E = meta.IE;
+                                
+                                uint64_t E, B, T, L_carry_out, L_msb;
+                                
+                                if (I_E == 0) {
+                                    E = 0;
+                                    T = (T_hi << 3) | T_E;
+                                    B = (B_hi << 3) | B_E;
+                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_msb = 0;
+                                } else {
+                                    E = (T_E << 3) | B_E;
+                                    T = T_hi << 3;
+                                    B = B_hi << 3;
+                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_msb = 1;
+                                }
+                                
+                                uint64_t B_top2 = (B >> 12) & 0x3;
+                                T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                                
+                                uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                                uint64_t B_3 = (B >> 11) & 0x7;
+                                uint64_t T_3 = (T >> 11) & 0x7;
+                                uint64_t R = (B_3 - 1) & 0x7;
+                                
+                                int64_t c_b;
+                                bool cond1_b = (A_3 < R);
+                                bool cond2_b = (B_3 < R);
+                                if (!cond1_b && !cond2_b) c_b = 0;
+                                else if (!cond1_b && cond2_b) c_b = 1;
+                                else if (cond1_b && !cond2_b) c_b = -1;
+                                else c_b = 0;
+                                
+                                int64_t c_t;
+                                bool cond1_t = (A_3 < R);
+                                bool cond2_t = (T_3 < R);
+                                if (!cond1_t && !cond2_t) c_t = 0;
+                                else if (!cond1_t && cond2_t) c_t = 1;
+                                else if (cond1_t && !cond2_t) c_t = -1;
+                                else c_t = 0;
+                                
+                                uint64_t a_top = (a >> (E + 14));
+                                uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                                uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                                
+                                // Increment address (Rs2 is treated as signed)
+                                int64_t increment = (int64_t)Rs2;
+                                uint64_t new_addr = a + increment;
+                                
+                                // Check bounds
+                                if (new_addr < base || new_addr >= top) {
+                                    Cd.setTag(false);
+                                    DPRINTF(CheriDecode, "New address %#llx out of bounds, clearing tag\n",
+                                            (unsigned long long)new_addr);
+                                } else {
+                                    Cd.setAddress(new_addr);
+                                    DPRINTF(CheriDecode, "Incremented address by %lld to %#llx\n",
+                                            (long long)increment,
+                                            (unsigned long long)new_addr);
+                                }
+                            }
+                        }});
+                    } 
+
+                    format COp {
+                        0x12: ctoptr({{
+                            // to be implemented
+                        }});
+                    } 
+
+                    format COp {
+                        0x13: cfromptr({{
+                            // to be implemented
+                        }});
+                    } 
+
+                    format COp {
+                        0x16: csethigh({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex rs2Idx = RS2 + int_reg::_ZeroIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Setting high 64 bits for c%d from c%d with value from x%d\n",
+                                dstIdx, cs1Idx, rs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            uint64_t a_top2 = (a2 >> (E2 + 14));
-                            uint64_t base2 = ((a_top2 + c_b2) << (E2 + 14)) | (B2 << E2);
-                            uint64_t top2 = ((a_top2 + c_t2) << (E2 + 14)) | (T2 << E2);
+                            // Set metadata (high 64 bits) directly from Rs2
+                            uint64_t new_metadata = Rs2;
+                            Cd.setMetadata(new_metadata);
+                            DPRINTF(CheriDecode, "Set metadata to %#llx\n",
+                                (unsigned long long)new_metadata);
+                        }});
+                    } 
+
+                    format COp {
+                        0x1d: cbuildcap({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Building capability c%d from c%d (permissions/otype) and c%d (bounds/address)\n",
+                                dstIdx, cs1Idx, cs2Idx);
+
+                            // Start with cs2 (bounds and address)
+                            Cd = Cs2;
                             
-                            // Check if cs1 is subset of cs2
-                            // Bounds: cs1's bounds must be within cs2's bounds
-                            bool bounds_subset = (base1 >= base2) && (top1 <= top2);
+                            if (!Cs1.getTag() || !Cs2.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                            } else {
+                                CAPTYPE meta1 = Cs1.getMetadata();
+                                CAPTYPE meta2 = Cs2.getMetadata();
+                                
+                                // Build new metadata: permissions and otype from cs1, bounds from cs2
+                                CAPTYPE new_meta = meta2;  // Keep bounds (B, T, BE, TE, IE)
+                                new_meta.perm = meta1.perm;  // Copy permissions from cs1
+                                new_meta.otype = meta1.otype;  // Copy otype from cs1
+                                new_meta.flag = meta1.flag;  // Copy flag from cs1
+                                
+                                Cd.setMetadata(new_meta);
+                                Cd.setAddress(Cs2.getAddress());  // Use address from cs2
+                                
+                                    DPRINTF(CheriDecode, "Built capability with perms=%#llx, otype=%#llx\n",
+                                        (unsigned long long)meta1.perm,
+                                        (unsigned long long)meta1.otype);
+                            }
+                        }});
+                    } 
+
+                    format COp {
+                        0x1e: ccopytype({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Copying otype from c%d to c%d and storing in c%d\n",
+                                cs2Idx, cs1Idx, dstIdx);
+
+                            // Copy source capability cs1
+                            Cd = Cs1;
                             
-                            // Permissions: cs1's permissions must be subset of cs2's permissions
-                            bool perms_subset = ((meta1.perm & ~meta2.perm) == 0);
+                            if (!Cs1.getTag() || !Cs2.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                            } else {
+                                CAPTYPE meta1 = Cs1.getMetadata();
+                                CAPTYPE meta2 = Cs2.getMetadata();
+                                
+                                // Copy otype from cs2 to cs1's capability
+                                CAPTYPE new_meta = meta1;
+                                new_meta.otype = meta2.otype;
+                                Cd.setMetadata(new_meta);
+                                
+                                    DPRINTF(CheriDecode, "Copied otype %#llx from c%d to c%d\n",
+                                        (unsigned long long)meta2.otype, cs2Idx, dstIdx);
+                            }
+                        }});
+                    } 
+
+                    format COp {
+                        0x1f: ccseal({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+
+                            DPRINTF(CheriDecode, "Conditional sealing c%d from c%d with otype from c%d\n",
+                                dstIdx, cs1Idx, cs2Idx);
+
+                            // Copy source capability
+                            Cd = Cs1;
                             
-                            // Check otype compatibility
-                            bool otype_compatible = (meta1.otype == meta2.otype);
+                            if (!Cs1.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Source capability cs1 invalid, clearing tag\n");
+                            } else if (!Cs2.getTag()) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "Sealing capability cs2 invalid, clearing tag\n");
+                            } else {
+                                CAPTYPE meta1 = Cs1.getMetadata();
+                                CAPTYPE meta2 = Cs2.getMetadata();
+                                
+                                // Check if cs2 has sealing permission (typically bit 10 of permissions)
+                                const uint64_t PERM_SEAL = (1ULL << 10);
+                                if ((meta2.perm & PERM_SEAL) == 0) {
+                                    Cd.setTag(false);
+                                    DPRINTF(CheriDecode, "cs2 lacks sealing permission, clearing tag\n");
+                                } else {
+                                    // Check if cs1 is already sealed
+                                    const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;  // 0x3FFFF
+                                    if (meta1.otype != OTYPE_UNSEALED) {
+                                        Cd.setTag(false);
+                                        DPRINTF(CheriDecode, "Source capability already sealed, clearing tag\n");
+                                    } else {
+                                        // Get otype from cs2's address
+                                        uint64_t new_otype = Cs2.getAddress() & ((1ULL << 18) - 1);
+                                        
+                                        // Check if new_otype is in valid range
+                                        if (new_otype >= OTYPE_UNSEALED) {
+                                            Cd.setTag(false);
+                                            DPRINTF(CheriDecode, "Invalid otype value, clearing tag\n");
+                                        } else {
+                                            // Set the new otype
+                                            CAPTYPE new_meta = meta1;
+                                            new_meta.otype = new_otype;
+                                            Cd.setMetadata(new_meta);
+                                            
+                                            DPRINTF(CheriDecode, "Conditionally sealed capability with otype = %#llx\n",
+                                                    (unsigned long long)new_otype);
+                                        }
+                                    }
+                                }
+                            }
+                        }});
+                    } 
+
+                    format COp {
+                        0x20: ctestsubset({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
+
+                            DPRINTF(CheriDecode, "Testing if c%d is subset of c%d and storing result in x%d\n",
+                                cs1Idx, cs2Idx, dstIdx);
+
+                            // Both must be valid for meaningful comparison
+                            if (!Cs1.getTag() || !Cs2.getTag()) {
+                                Rd = 0;
+                                DPRINTF(CheriDecode, "One or both capabilities invalid, returning 0\n");
+                            } else {
+                                CAPTYPE meta1 = Cs1.getMetadata();
+                                CAPTYPE meta2 = Cs2.getMetadata();
+                                
+                                // Decode bounds for cs1
+                                uint64_t a1 = Cs1.getAddress();
+                                uint64_t B_hi1 = meta1.B;
+                                uint64_t T_hi1 = meta1.T;
+                                uint64_t B_E1 = meta1.BE;
+                                uint64_t T_E1 = meta1.TE;
+                                uint64_t I_E1 = meta1.IE;
+                                
+                                uint64_t E1, B1, T1, L_carry_out1, L_msb1;
+                                
+                                if (I_E1 == 0) {
+                                    E1 = 0;
+                                    T1 = (T_hi1 << 3) | T_E1;
+                                    B1 = (B_hi1 << 3) | B_E1;
+                                    L_carry_out1 = (T1 < B1) ? 1 : 0;
+                                    L_msb1 = 0;
+                                } else {
+                                    E1 = (T_E1 << 3) | B_E1;
+                                    T1 = T_hi1 << 3;
+                                    B1 = B_hi1 << 3;
+                                    L_carry_out1 = (T_hi1 < B_hi1) ? 1 : 0;
+                                    L_msb1 = 1;
+                                }
+                                
+                                uint64_t B_top2_1 = (B1 >> 12) & 0x3;
+                                T1 |= ((B_top2_1 + L_carry_out1 + L_msb1) & 0x3) << 12;
+                                
+                                uint64_t A_3_1 = (a1 >> (E1 + 11)) & 0x7;
+                                uint64_t B_3_1 = (B1 >> 11) & 0x7;
+                                uint64_t T_3_1 = (T1 >> 11) & 0x7;
+                                uint64_t R1 = (B_3_1 - 1) & 0x7;
+                                
+                                int64_t c_b1, c_t1;
+                                bool cond1_b1 = (A_3_1 < R1);
+                                bool cond2_b1 = (B_3_1 < R1);
+                                if (!cond1_b1 && !cond2_b1) c_b1 = 0;
+                                else if (!cond1_b1 && cond2_b1) c_b1 = 1;
+                                else if (cond1_b1 && !cond2_b1) c_b1 = -1;
+                                else c_b1 = 0;
+                                
+                                bool cond1_t1 = (A_3_1 < R1);
+                                bool cond2_t1 = (T_3_1 < R1);
+                                if (!cond1_t1 && !cond2_t1) c_t1 = 0;
+                                else if (!cond1_t1 && cond2_t1) c_t1 = 1;
+                                else if (cond1_t1 && !cond2_t1) c_t1 = -1;
+                                else c_t1 = 0;
+                                
+                                uint64_t a_top1 = (a1 >> (E1 + 14));
+                                uint64_t base1 = ((a_top1 + c_b1) << (E1 + 14)) | (B1 << E1);
+                                uint64_t top1 = ((a_top1 + c_t1) << (E1 + 14)) | (T1 << E1);
+                                
+                                // Decode bounds for cs2
+                                uint64_t a2 = Cs2.getAddress();
+                                uint64_t B_hi2 = meta2.B;
+                                uint64_t T_hi2 = meta2.T;
+                                uint64_t B_E2 = meta2.BE;
+                                uint64_t T_E2 = meta2.TE;
+                                uint64_t I_E2 = meta2.IE;
+                                
+                                uint64_t E2, B2, T2, L_carry_out2, L_msb2;
+                                
+                                if (I_E2 == 0) {
+                                    E2 = 0;
+                                    T2 = (T_hi2 << 3) | T_E2;
+                                    B2 = (B_hi2 << 3) | B_E2;
+                                    L_carry_out2 = (T2 < B2) ? 1 : 0;
+                                    L_msb2 = 0;
+                                } else {
+                                    E2 = (T_E2 << 3) | B_E2;
+                                    T2 = T_hi2 << 3;
+                                    B2 = B_hi2 << 3;
+                                    L_carry_out2 = (T_hi2 < B_hi2) ? 1 : 0;
+                                    L_msb2 = 1;
+                                }
+                                
+                                uint64_t B_top2_2 = (B2 >> 12) & 0x3;
+                                T2 |= ((B_top2_2 + L_carry_out2 + L_msb2) & 0x3) << 12;
+                                
+                                uint64_t A_3_2 = (a2 >> (E2 + 11)) & 0x7;
+                                uint64_t B_3_2 = (B2 >> 11) & 0x7;
+                                uint64_t T_3_2 = (T2 >> 11) & 0x7;
+                                uint64_t R2 = (B_3_2 - 1) & 0x7;
+                                
+                                int64_t c_b2, c_t2;
+                                bool cond1_b2 = (A_3_2 < R2);
+                                bool cond2_b2 = (B_3_2 < R2);
+                                if (!cond1_b2 && !cond2_b2) c_b2 = 0;
+                                else if (!cond1_b2 && cond2_b2) c_b2 = 1;
+                                else if (cond1_b2 && !cond2_b2) c_b2 = -1;
+                                else c_b2 = 0;
+                                
+                                bool cond1_t2 = (A_3_2 < R2);
+                                bool cond2_t2 = (T_3_2 < R2);
+                                if (!cond1_t2 && !cond2_t2) c_t2 = 0;
+                                else if (!cond1_t2 && cond2_t2) c_t2 = 1;
+                                else if (cond1_t2 && !cond2_t2) c_t2 = -1;
+                                else c_t2 = 0;
+                                
+                                uint64_t a_top2 = (a2 >> (E2 + 14));
+                                uint64_t base2 = ((a_top2 + c_b2) << (E2 + 14)) | (B2 << E2);
+                                uint64_t top2 = ((a_top2 + c_t2) << (E2 + 14)) | (T2 << E2);
+                                
+                                // Check if cs1 is subset of cs2
+                                // Bounds: cs1's bounds must be within cs2's bounds
+                                bool bounds_subset = (base1 >= base2) && (top1 <= top2);
+                                
+                                // Permissions: cs1's permissions must be subset of cs2's permissions
+                                bool perms_subset = ((meta1.perm & ~meta2.perm) == 0);
+                                
+                                // Check otype compatibility
+                                bool otype_compatible = (meta1.otype == meta2.otype);
+                                
+                                if (bounds_subset && perms_subset && otype_compatible) {
+                                    Rd = 1;
+                                    DPRINTF(CheriDecode, "c%d is subset of c%d\n", cs1Idx, cs2Idx);
+                                } else {
+                                    Rd = 0;
+                                    DPRINTF(CheriDecode, "c%d is NOT subset of c%d (bounds=%d, perms=%d, otype=%d)\n",
+                                            cs1Idx, cs2Idx,
+                                            (int)bounds_subset, (int)perms_subset, (int)otype_compatible);
+                                }
+                            }
+                        }});
+                    } 
+
+                    format COp {
+                        0x21: csetequalexact({{
+                            using namespace gem5::CHERIRiscvISA;
+
+                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                            RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
+                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
+
+                            DPRINTF(CheriDecode, "Testing exact equality of c%d and c%d and storing result in x%d\n",
+                                cs1Idx, cs2Idx, dstIdx);
+
+                            // Check if tags match
+                            bool tags_equal = (Cs1.getTag() == Cs2.getTag());
                             
-                            if (bounds_subset && perms_subset && otype_compatible) {
+                            // Check if addresses match
+                            bool addrs_equal = (Cs1.getAddress() == Cs2.getAddress());
+                            
+                            // Check if metadata matches
+                            bool meta_equal = (Cs1.getMetadata() == Cs2.getMetadata());
+                            
+                            if (tags_equal && addrs_equal && meta_equal) {
                                 Rd = 1;
-                                DPRINTF(CheriDecode, "c%d is subset of c%d\n", cs1Idx, cs2Idx);
+                                DPRINTF(CheriDecode, "Capabilities are exactly equal\n");
                             } else {
                                 Rd = 0;
-                                DPRINTF(CheriDecode, "c%d is NOT subset of c%d (bounds=%d, perms=%d, otype=%d)\n",
-                                        cs1Idx, cs2Idx,
-                                        (int)bounds_subset, (int)perms_subset, (int)otype_compatible);
+                                DPRINTF(CheriDecode, "Capabilities are NOT equal (tag=%d, addr=%d, meta=%d)\n",
+                                        (int)tags_equal, (int)addrs_equal, (int)meta_equal);
                             }
-                        }
-                    }});
+                        }});
+                    } 
 
-                    0x21: csetequalexact({{
-                        using namespace gem5::CHERIRiscvISA;
-
-                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                        RegIndex cs2Idx = CS2 + cap_reg::_CNullIdx;
-                        RegIndex dstIdx = RD + int_reg::_ZeroIdx;
-
-                        DPRINTF(CheriDecode, "Testing exact equality of c%d and c%d and storing result in x%d\n",
-                            cs1Idx, cs2Idx, dstIdx);
-
-                        // Check if tags match
-                        bool tags_equal = (Cs1.getTag() == Cs2.getTag());
-                        
-                        // Check if addresses match
-                        bool addrs_equal = (Cs1.getAddress() == Cs2.getAddress());
-                        
-                        // Check if metadata matches
-                        bool meta_equal = (Cs1.getMetadata() == Cs2.getMetadata());
-                        
-                        if (tags_equal && addrs_equal && meta_equal) {
-                            Rd = 1;
-                            DPRINTF(CheriDecode, "Capabilities are exactly equal\n");
-                        } else {
-                            Rd = 0;
-                            DPRINTF(CheriDecode, "Capabilities are NOT equal (tag=%d, addr=%d, meta=%d)\n",
-                                    (int)tags_equal, (int)addrs_equal, (int)meta_equal);
-                        }
-                    }});
-
-                    0x7f: decode CAPFUN {
+                    format COp {
+                        0x7f: decode CAPFUN {
                         0x00: cgetperm({{
                             using namespace gem5::CHERIRiscvISA;
 
@@ -6811,211 +6883,384 @@ decode QUADRANT default Unknown::unknown() {
                         }});
 
                     }
-                }
+                    }
 
-                0x1: cincoffsetimm({{
-                    using namespace gem5::CHERIRiscvISA;
+                   
+                    0x7c: decode RD {
+                        // SB.CAP rs2, cs1 - store byte 
+                        format CapDataStore{
+                            0x08: sb_cap({{
+                                    Mem_ub = Rs2_ub;
+                                }},
+                                ea_code = {{
+                                    Cs1 = CapRegContainer::almighty(0x80010000);
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
+                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                                    //     return std::make_shared<
+                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
+                            }});
 
-                    RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                    RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-                    int64_t imm = IMM12;  // 12-bit signed immediate
+                            0x09: sh_cap({{
+                                Mem_uh = Rs2_uh;
+                                }},
+                                ea_code = {{
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
+                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                                    //     return std::make_shared<
+                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
+                                }});
 
-                        DPRINTF(CheriDecode, "Incrementing offset for c%d from c%d with immediate %lld\n", dstIdx, cs1Idx, (long long)imm);
+                            // SW.CAP rs2, cs1 — store word
+                            0x0a: sw_cap({{
+                                    Mem_uw = Rs2_uw;
+                                }},
+                                ea_code = {{
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
+                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                                    //     return std::make_shared<
+                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
+                                }});
 
-                    // Copy source capability
-                    Cd = Cs1;
-                    
-                        if (!Cs1.getTag()) {
-                        Cd.setTag(false);
-                        DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                    } else {
-                        uint64_t a = Cs1.getAddress();
-                        CAPTYPE meta = Cs1.getMetadata();
-                        
-                        // Decode bounds
-                        uint64_t B_hi = meta.B;
-                        uint64_t T_hi = meta.T;
-                        uint64_t B_E = meta.BE;
-                        uint64_t T_E = meta.TE;
-                        uint64_t I_E = meta.IE;
-                        
-                        uint64_t E, B, T, L_carry_out, L_msb;
-                        
-                        if (I_E == 0) {
-                            E = 0;
-                            T = (T_hi << 3) | T_E;
-                            B = (B_hi << 3) | B_E;
-                            L_carry_out = (T < B) ? 1 : 0;
-                            L_msb = 0;
-                        } else {
-                            E = (T_E << 3) | B_E;
-                            T = T_hi << 3;
-                            B = B_hi << 3;
-                            L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                            L_msb = 1;
-                        }
-                        
-                        uint64_t B_top2 = (B >> 12) & 0x3;
-                        T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                        
-                        uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                        uint64_t B_3 = (B >> 11) & 0x7;
-                        uint64_t T_3 = (T >> 11) & 0x7;
-                        uint64_t R = (B_3 - 1) & 0x7;
-                        
-                        int64_t c_b;
-                        bool cond1_b = (A_3 < R);
-                        bool cond2_b = (B_3 < R);
-                        if (!cond1_b && !cond2_b) c_b = 0;
-                        else if (!cond1_b && cond2_b) c_b = 1;
-                        else if (cond1_b && !cond2_b) c_b = -1;
-                        else c_b = 0;
-                        
-                        int64_t c_t;
-                        bool cond1_t = (A_3 < R);
-                        bool cond2_t = (T_3 < R);
-                        if (!cond1_t && !cond2_t) c_t = 0;
-                        else if (!cond1_t && cond2_t) c_t = 1;
-                        else if (cond1_t && !cond2_t) c_t = -1;
-                        else c_t = 0;
-                        
-                        uint64_t a_top = (a >> (E + 14));
-                        uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
-                        uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
-                        
-                        // Increment address by immediate (signed)
-                        uint64_t new_addr = a + imm;
-                        
-                        // Check bounds
-                        if (new_addr < base || new_addr >= top) {
-                            Cd.setTag(false);
-                            DPRINTF(CheriDecode, "New address %#llx out of bounds, clearing tag\n", (unsigned long long)new_addr);
-                        } else {
-                            Cd.setAddress(new_addr);
-                            DPRINTF(CheriDecode, "Incremented address by %lld to %#llx\n", (long long)imm, (unsigned long long)new_addr);
+                            0x0b: sd_cap({{
+                                    Mem_ud = Rs2_ud;
+                                }},
+                                ea_code = {{
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
+                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                                    //     return std::make_shared<
+                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
+                                }});
+
+                        } 
+                        format CapStore{
+                            0x0c: sc_cap({{
+                                _storeCap = Cs2;
+                            }},
+                            ea_code = {{
+                                Cs2 = CapRegContainer::almighty(0x80020000);
+                                Cs1 = CapRegContainer::almighty(0x80010000);
+                                EA = rvZext(Cs1.getAddress());
+                            }},
+                            cap_check_code = {{
+                                // Must have STORE permission
+                                auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 16, false);
+                                // if (_cf != CapFaultType::NONE)
+                                //     return std::make_shared<CheriCapFault>(_cf);
+                                // // If storing a tagged cap, need STORE_CAP permission
+                                // // If cs2 is tagged but not global, need STORE_LOCAL_CAP
+                                // if (Cs2.getTag() && !Cs1.hasStoreCap()) {
+                                //     return std::make_shared<CheriCapFault>(
+                                //         CapFaultType::PERMIT_STORE_CAP_VIOLATION);
+                                // }
+                                // if (Cs2.getTag() && !Cs2.hasGlobal() &&
+                                //     !Cs1.hasPerm(CHERIPerms::STORE_LOCAL)) {
+                                //     return std::make_shared<CheriCapFault>(
+                                //         CapFaultType::PERMIT_STORE_CAP_VIOLATION);
+                                // }
+                            }},
+                            offset_code = {{;}});
                         }
                     }
-                }});
 
-                0x2: csetboundsimm({{
-                    using namespace gem5::CHERIRiscvISA;
-
-                    RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                    RegIndex dstIdx = CD + cap_reg::_CNullIdx;
-                    uint64_t imm = IMM12 & 0xFFF;  // 12-bit unsigned immediate
-
-                        DPRINTF(CheriDecode, "Setting bounds for c%d from c%d with immediate length %llu\n", dstIdx, cs1Idx, (unsigned long long)imm);
-
-                    // Copy source capability
-                    Cd = Cs1;
                     
-                    if (!Cs1.getTag()) {
-                        Cd.setTag(false);
-                        DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
-                    } else {
-                        uint64_t new_base = Cs1.getAddress();
-                        uint64_t req_length = imm;
-                        uint64_t new_top = new_base + req_length;
-                        
-                        // Get original bounds to check if new bounds fit
-                        uint64_t a = Cs1.getAddress();
-                        CAPTYPE meta = Cs1.getMetadata();
-                        
-                        uint64_t B_hi = meta.B;
-                        uint64_t T_hi = meta.T;
-                        uint64_t B_E = meta.BE;
-                        uint64_t T_E = meta.TE;
-                        uint64_t I_E = meta.IE;
-                        
-                        // Decode original bounds
-                        uint64_t E, B, T, L_carry_out, L_msb;
-                        
-                        if (I_E == 0) {
-                            E = 0;
-                            T = (T_hi << 3) | T_E;
-                            B = (B_hi << 3) | B_E;
-                            L_carry_out = (T < B) ? 1 : 0;
-                            L_msb = 0;
-                        } else {
-                            E = (T_E << 3) | B_E;
-                            T = T_hi << 3;
-                            B = B_hi << 3;
-                            L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                            L_msb = 1;
+                    0x7d: decode RS2 {
+                        format CapDataLoad{ 
+                            0x08: lb_cap({{
+                                    Rd_sd = Mem_sb;
+                                }},
+                                ea_code = {{
+                                    Cs1 = CapRegContainer::almighty(0x80010000);
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
+                                    // if (_cf != CheriCapException::None)
+                                    //     return std::make_shared<CheriCapFault>(_cf);
+                                }});
+                            0x09: lh_cap({{
+                                    Rd_sd = Mem_sh;
+                                }},
+                                ea_code = {{
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
+                                    if (_cf != CheriCapException::None)
+                                        return std::make_shared<CheriCapFault>(_cf);
+                                }});
+                            0x0a: lw_cap({{
+                                    Rd_sd = Mem_sw;
+                                }},
+                                ea_code = {{
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
+                                    if (_cf != CheriCapException::None)
+                                        return std::make_shared<CheriCapFault>(_cf);
+                                }});
+                            
+                            0x0b: ld_cap({{
+                                    Rd_sd = Mem_sd;
+                                }},
+                                ea_code = {{
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
+                                    if (_cf != CheriCapException::None)
+                                        return std::make_shared<CheriCapFault>(_cf);
+                                 }});
+                             
                         }
+                        format CapLoad{
+                            // 0x0c: lbu_cap({{
+                            //         // Rd_sd = Mem_sb;
+                            //     }},
+                            //     ea_code = {{
+                            //         EA = rvZext(Cs1.getAddress());
+                            //     }},
+                            //     cap_check_code = {{
+                            //         CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
+                            //         if (_cf != CheriCapException::None)
+                            //             return std::make_shared<CheriCapFault>(_cf);
+                            //      }});  
+
+                            0x0c: lc_cap({{
+                                    Cd = _loadedCap;
+                                }},
+                                ea_code = {{
+                                    Cs1 = CapRegContainer::almighty(0x80010000);
+                                    EA = rvZext(Cs1.getAddress());
+                                }},
+                                cap_check_code = {{
+                                    CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 16, false);
+                                    // if (_cf != CheriCapException::None)
+                                    //     return std::make_shared<CheriCapFault>(_cf);
+                                }},
+                                offset_code = {{;}});
+                        }
+                    }
+                }    
+
+                format COp {
+                    0x1: cincoffsetimm({{
+                        using namespace gem5::CHERIRiscvISA;
+
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                        int64_t imm = IMM12;  // 12-bit signed immediate
+
+                            DPRINTF(CheriDecode, "Incrementing offset for c%d from c%d with immediate %lld\n", dstIdx, cs1Idx, (long long)imm);
+
+                        // Copy source capability
+                        Cd = Cs1;
                         
-                        uint64_t B_top2 = (B >> 12) & 0x3;
-                        T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                        
-                        uint64_t A_3 = (a >> (E + 11)) & 0x7;
-                        uint64_t B_3 = (B >> 11) & 0x7;
-                        uint64_t T_3 = (T >> 11) & 0x7;
-                        uint64_t R = (B_3 - 1) & 0x7;
-                        
-                        // Calculate base correction
-                        int64_t c_b;
-                        bool cond1_b = (A_3 < R);
-                        bool cond2_b = (B_3 < R);
-                        if (!cond1_b && !cond2_b) c_b = 0;
-                        else if (!cond1_b && cond2_b) c_b = 1;
-                        else if (cond1_b && !cond2_b) c_b = -1;
-                        else c_b = 0;
-                        
-                        // Calculate top correction
-                        int64_t c_t;
-                        bool cond1_t = (A_3 < R);
-                        bool cond2_t = (T_3 < R);
-                        if (!cond1_t && !cond2_t) c_t = 0;
-                        else if (!cond1_t && cond2_t) c_t = 1;
-                        else if (cond1_t && !cond2_t) c_t = -1;
-                        else c_t = 0;
-                        
-                        uint64_t a_top = (a >> (E + 14));
-                        uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
-                        uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
-                        
-                        // Check if new bounds are within original bounds
-                        if (new_base < orig_base || new_top > orig_top) {
+                            if (!Cs1.getTag()) {
                             Cd.setTag(false);
-                            DPRINTF(CheriDecode, "New bounds out of range, clearing tag\n");
+                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                         } else {
-                            // Calculate exponent E needed for compression
-                            // Immediate is only 12 bits, so max value is 4096, which fits in 14 bits
-                            // Therefore E will always be 0 for immediate values
-                            uint64_t new_E = 0;
-                            if (req_length > (1ULL << 14)) {
-                                // Should not happen with 12-bit immediate (max 4096)
-                                // But handle it just in case
-                                uint64_t temp = req_length >> 14;
-                                while (temp > 0) {
-                                    new_E++;
-                                    temp >>= 1;
-                                }
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            // Decode bounds
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
                             }
                             
-                            // Encode base and top
-                            uint64_t new_B = (new_base >> new_E) & ((1ULL << 14) - 1);
-                            uint64_t new_T = (new_top >> new_E) & ((1ULL << 14) - 1);
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
                             
-                            // Update metadata
-                            CAPTYPE new_meta = meta;
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
                             
-                            // Since immediate is max 4096, E will always be 0
-                            new_meta.IE = 0;
-                            new_meta.BE = new_B & 0x7;
-                            new_meta.TE = new_T & 0x7;
-                            new_meta.B = (new_B >> 3) & 0x7FF;
-                            new_meta.T = (new_T >> 3) & 0x1FF;
+                            int64_t c_b;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
                             
-                            Cd.setMetadata(new_meta);
-                            Cd.setAddress(new_base);
-
-                            DPRINTF(CheriDecode, "Set bounds: base = %#llx, length = %llu\n", (unsigned long long)new_base, (unsigned long long)req_length);
+                            int64_t c_t;
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Increment address by immediate (signed)
+                            uint64_t new_addr = a + imm;
+                            
+                            // Check bounds
+                            if (new_addr < base || new_addr >= top) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "New address %#llx out of bounds, clearing tag\n", (unsigned long long)new_addr);
+                            } else {
+                                Cd.setAddress(new_addr);
+                                DPRINTF(CheriDecode, "Incremented address by %lld to %#llx\n", (long long)imm, (unsigned long long)new_addr);
+                            }
                         }
-                    }
-                }});
+                    }});
+                } 
+
+                format COp {
+                    0x2: csetboundsimm({{
+                        using namespace gem5::CHERIRiscvISA;
+
+                        RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
+                        RegIndex dstIdx = CD + cap_reg::_CNullIdx;
+                        uint64_t imm = IMM12 & 0xFFF;  // 12-bit unsigned immediate
+
+                            DPRINTF(CheriDecode, "Setting bounds for c%d from c%d with immediate length %llu\n", dstIdx, cs1Idx, (unsigned long long)imm);
+
+                        // Copy source capability
+                        Cd = Cs1;
+                        
+                        if (!Cs1.getTag()) {
+                            Cd.setTag(false);
+                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
+                        } else {
+                            uint64_t new_base = Cs1.getAddress();
+                            uint64_t req_length = imm;
+                            uint64_t new_top = new_base + req_length;
+                            
+                            // Get original bounds to check if new bounds fit
+                            uint64_t a = Cs1.getAddress();
+                            CAPTYPE meta = Cs1.getMetadata();
+                            
+                            uint64_t B_hi = meta.B;
+                            uint64_t T_hi = meta.T;
+                            uint64_t B_E = meta.BE;
+                            uint64_t T_E = meta.TE;
+                            uint64_t I_E = meta.IE;
+                            
+                            // Decode original bounds
+                            uint64_t E, B, T, L_carry_out, L_msb;
+                            
+                            if (I_E == 0) {
+                                E = 0;
+                                T = (T_hi << 3) | T_E;
+                                B = (B_hi << 3) | B_E;
+                                L_carry_out = (T < B) ? 1 : 0;
+                                L_msb = 0;
+                            } else {
+                                E = (T_E << 3) | B_E;
+                                T = T_hi << 3;
+                                B = B_hi << 3;
+                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_msb = 1;
+                            }
+                            
+                            uint64_t B_top2 = (B >> 12) & 0x3;
+                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
+                            
+                            uint64_t A_3 = (a >> (E + 11)) & 0x7;
+                            uint64_t B_3 = (B >> 11) & 0x7;
+                            uint64_t T_3 = (T >> 11) & 0x7;
+                            uint64_t R = (B_3 - 1) & 0x7;
+                            
+                            // Calculate base correction
+                            int64_t c_b;
+                            bool cond1_b = (A_3 < R);
+                            bool cond2_b = (B_3 < R);
+                            if (!cond1_b && !cond2_b) c_b = 0;
+                            else if (!cond1_b && cond2_b) c_b = 1;
+                            else if (cond1_b && !cond2_b) c_b = -1;
+                            else c_b = 0;
+                            
+                            // Calculate top correction
+                            int64_t c_t;
+                            bool cond1_t = (A_3 < R);
+                            bool cond2_t = (T_3 < R);
+                            if (!cond1_t && !cond2_t) c_t = 0;
+                            else if (!cond1_t && cond2_t) c_t = 1;
+                            else if (cond1_t && !cond2_t) c_t = -1;
+                            else c_t = 0;
+                            
+                            uint64_t a_top = (a >> (E + 14));
+                            uint64_t orig_base = ((a_top + c_b) << (E + 14)) | (B << E);
+                            uint64_t orig_top = ((a_top + c_t) << (E + 14)) | (T << E);
+                            
+                            // Check if new bounds are within original bounds
+                            if (new_base < orig_base || new_top > orig_top) {
+                                Cd.setTag(false);
+                                DPRINTF(CheriDecode, "New bounds out of range, clearing tag\n");
+                            } else {
+                                // Calculate exponent E needed for compression
+                                // Immediate is only 12 bits, so max value is 4096, which fits in 14 bits
+                                // Therefore E will always be 0 for immediate values
+                                uint64_t new_E = 0;
+                                if (req_length > (1ULL << 14)) {
+                                    // Should not happen with 12-bit immediate (max 4096)
+                                    // But handle it just in case
+                                    uint64_t temp = req_length >> 14;
+                                    while (temp > 0) {
+                                        new_E++;
+                                        temp >>= 1;
+                                    }
+                                }
+                                
+                                // Encode base and top
+                                uint64_t new_B = (new_base >> new_E) & ((1ULL << 14) - 1);
+                                uint64_t new_T = (new_top >> new_E) & ((1ULL << 14) - 1);
+                                
+                                // Update metadata
+                                CAPTYPE new_meta = meta;
+                                
+                                // Since immediate is max 4096, E will always be 0
+                                new_meta.IE = 0;
+                                new_meta.BE = new_B & 0x7;
+                                new_meta.TE = new_T & 0x7;
+                                new_meta.B = (new_B >> 3) & 0x7FF;
+                                new_meta.T = (new_T >> 3) & 0x1FF;
+                                
+                                Cd.setMetadata(new_meta);
+                                Cd.setAddress(new_base);
+
+                                DPRINTF(CheriDecode, "Set bounds: base = %#llx, length = %llu\n", (unsigned long long)new_base, (unsigned long long)req_length);
+                            }
+                        }
+                    }});
+                } 
             }
-        }
 
         0x18: decode FUNCT3 {
             format BOp {

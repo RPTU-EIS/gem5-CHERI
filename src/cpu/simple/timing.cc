@@ -556,6 +556,13 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
 
     req->taskId(taskId());
 
+    // ── CHERI: attach tag to capability store requests ──
+    if (_hasPendingCapTag && req->isCapStore()) {
+        req->setCapTag(_pendingCapTag);
+        DPRINTF(SimpleCPU, "CHERI: attaching tag=%d to cap store "
+                "at %#x\n", _pendingCapTag, addr);
+    }
+
     Addr split_addr = roundDown(addr + size - 1, block_size);
     assert(split_addr <= addr || split_addr - addr < block_size);
 
@@ -588,6 +595,33 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
 
     // Translation faults will be returned via finishTranslation()
     return NoFault;
+}
+
+Fault
+TimingSimpleCPU::initiateCapMemRead(Addr addr, unsigned size,
+                                    Request::Flags flags,
+                                    const std::vector<bool>& byte_enable)
+{
+    return initiateMemRead(addr, size,
+                           flags | Request::CHERI_CAP_LOAD,
+                           byte_enable);
+}
+
+Fault
+TimingSimpleCPU::writeCapMem(uint8_t *data, unsigned size,
+                             Addr addr, Request::Flags flags,
+                             uint64_t *res, bool capTag,
+                             const std::vector<bool>& byte_enable)
+{
+    _pendingCapTag = capTag;
+    _hasPendingCapTag = true;
+
+    Fault fault = writeMem(data, size, addr,
+                           flags | Request::CHERI_CAP_STORE,
+                           res, byte_enable);
+
+    _hasPendingCapTag = false;
+    return fault;
 }
 
 Fault

@@ -60,6 +60,7 @@
 #include "debug/MatRegs.hh"
 #include "debug/VecPredRegs.hh"
 #include "debug/VecRegs.hh"
+#include "debug/CapRegs.hh"
 #include "mem/htm.hh"
 #include "mem/page_table.hh"
 #include "mem/request.hh"
@@ -319,6 +320,8 @@ class SimpleThread : public ThreadState, public ThreadContext
         const auto &reg_file = regFiles[reg.classValue()];
         const auto &reg_class = reg_file.regClass;
 
+        // std::cout << "1. Getting reg: " << reg.className() << " " << reg_class.regName(arch_reg) << " name: " << reg_class.name() << " idx: " << idx << " _regBytes: " << reg_class.regBytes() << std::endl;
+        
         RegVal val = reg_file.reg(idx);
         DPRINTFV(reg_class.debug(), "Reading %s reg %s (%d) as %#x.\n",
                 reg.className(), reg_class.regName(arch_reg), idx, val);
@@ -334,6 +337,8 @@ class SimpleThread : public ThreadState, public ThreadContext
 
         const auto &reg_file = regFiles[reg.classValue()];
         const auto &reg_class = reg_file.regClass;
+
+        // std::cout << "2. Getting reg: " << reg.className() << " " << reg_class.regName(arch_reg) << " name: " << reg_class.name() << " idx: " << idx << " _regBytes: " << reg_class.regBytes() << std::endl;
 
         reg_file.get(idx, val);
         DPRINTFV(reg_class.debug(), "Reading %s register %s (%d) as %s.\n",

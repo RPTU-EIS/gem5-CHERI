@@ -49,6 +49,7 @@
 #include "debug/MemoryAccess.hh"
 #include "mem/packet_access.hh"
 #include "sim/system.hh"
+#include "mem/cheri_tag_table.hh"
 
 namespace gem5
 {
@@ -400,6 +401,8 @@ AbstractMemory::access(PacketPtr pkt)
             if (pmemAddr) {
                 pkt->setData(host_addr);
                 (*(pkt->getAtomicOp()))(host_addr);
+                 // ── CHERI: atomic op modifies memory, clear tags ──
+                system()->cheritagtable.clearTagsInRange(pkt->getAddr(), pkt->getSize());
             }
         } else {
             std::vector<uint8_t> overwrite_val(pkt->getSize());
@@ -428,8 +431,10 @@ AbstractMemory::access(PacketPtr pkt)
                     panic("Invalid size for conditional read/write\n");
             }
 
-            if (overwrite_mem)
+            if (overwrite_mem){
                 std::memcpy(host_addr, &overwrite_val[0], pkt->getSize());
+                system()->cheritagtable.clearTagsInRange(pkt->getAddr(), pkt->getSize());
+            }
 
             assert(!pkt->req->isInstFetch());
             TRACE_PACKET("Read/Write");
@@ -448,6 +453,31 @@ AbstractMemory::access(PacketPtr pkt)
         if (pmemAddr) {
             pkt->setData(host_addr);
         }
+
+        // ── CHERI: attach tag on capability loads ──
+        // After the 16 data bytes have been copied into the packet,
+        // look up the tag from the tag table and attach it to the
+        // request so the instruction can read it back.
+        if (pkt->req->isCapLoad()) {
+            Addr paddr = pkt->getAddr();
+            assert(pkt->getSize() == 16 &&
+                   "CHERI cap load must be 16 bytes");
+            assert(CheriTagTable::isCapAligned(paddr) &&
+                   "CHERI cap load must be 16-byte aligned");
+
+            bool tag = system()->cheritagtable.getTag(paddr);
+
+            // If the page table walker marked this page as
+            // not allowing capability loads, strip the tag
+            if (pkt->req->getClearTagOnLoad()) {
+                tag = false;
+            }
+
+            pkt->req->setCapTag(tag);
+            DPRINTF(MemoryAccess, "CHERI CapLoad at %#x: tag=%d\n",
+                    paddr, tag);
+        }
+
         TRACE_PACKET(pkt->req->isInstFetch() ? "IFetch" : "Read");
         if (collectStats) {
             stats.numReads[pkt->req->requestorId()]++;
@@ -464,8 +494,36 @@ AbstractMemory::access(PacketPtr pkt)
         // no need to do anything
     } else if (pkt->isWrite()) {
         if (writeOK(pkt)) {
+
+            // ── CHERI: handle tags before writing data ──
+            Addr paddr = pkt->getAddr();
+
+            if (pkt->req->isCapStore()) {
+                // Capability store (SC instruction):
+                // Write the tag that was attached to the request
+                // by the instruction's initiateAcc().
+                assert(pkt->getSize() == 16 &&
+                       "CHERI cap store must be 16 bytes");
+                assert(CheriTagTable::isCapAligned(paddr) &&
+                       "CHERI cap store must be 16-byte aligned");
+
+                bool tag = pkt->req->getCapTag();
+                system()->cheritagtable.setTag(paddr, tag);
+                DPRINTF(MemoryAccess, "CHERI CapStore at %#x: tag=%d\n",
+                        paddr, tag);
+            } else {
+                // Regular store (SW, SD, SB, SH, etc.):
+                // Clear tags on any capability granule that this
+                // write overlaps. This is the fundamental CHERI
+                // security invariant — you cannot forge a capability
+                // by writing raw bytes to memory.
+                system()->cheritagtable.clearTagsInRange(
+                    paddr, pkt->getSize());
+            }
+
             if (pmemAddr) {
                 pkt->writeData(host_addr);
+
                 DPRINTF(MemoryAccess, "%s write due to %s\n",
                         __func__, pkt->print());
             }
@@ -502,6 +560,15 @@ AbstractMemory::functionalAccess(PacketPtr pkt)
         if (pmemAddr) {
             pkt->writeData(host_addr);
         }
+        // ── CHERI: functional writes also clear tags unless it's a capability store ──
+        if (pkt->req->isCapStore()) {
+            system()->cheritagtable.setTag(
+                pkt->getAddr(), pkt->req->getCapTag());
+        } else {
+            system()->cheritagtable.clearTagsInRange(
+                pkt->getAddr(), pkt->getSize());
+        }
+
         TRACE_PACKET("Write");
         pkt->makeResponse();
     } else if (pkt->isPrint()) {

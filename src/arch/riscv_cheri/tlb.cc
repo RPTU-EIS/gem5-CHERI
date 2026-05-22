@@ -42,6 +42,7 @@
 #include "arch/riscv_cheri/pmp.hh"
 #include "arch/riscv_cheri/pra_constants.hh"
 #include "arch/riscv_cheri/utility.hh"
+#include "arch/riscv_cheri/pcstate.hh"
 #include "base/inifile.hh"
 #include "base/str.hh"
 #include "base/trace.hh"
@@ -49,6 +50,7 @@
 #include "debug/TLB.hh"
 #include "debug/TLBVerbose.hh"
 #include "mem/page_table.hh"
+#include "mem/cheri_tag_table.hh"
 #include "params/CHERIRiscvTLB.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
@@ -377,6 +379,32 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         MISA misa = tc->readMiscRegNoEffect(MISCREG_ISA);
         SATP satp = tc->readMiscReg(MISCREG_SATP);
         Fault fault = NoFault;
+
+        // ════════════════════════════════════════════
+        // CHERI checks — BEFORE normal translation
+        // ════════════════════════════════════════════
+
+        Addr vaddr = req->getVaddr();
+
+        // 1. Capability access alignment check.
+        //    Cap loads/stores MUST be 16-byte aligned.
+        if (req->isCapAccess()) {
+            if (vaddr & (CheriTagTable::CAP_SIZE - 1)) {
+                DPRINTF(TLB, "CHERI: misaligned cap access "
+                        "at %#x\n", vaddr);
+                if (req->isCapLoad()) {
+                    return std::make_shared<AddressFault>(
+                        vaddr, ExceptionCode::LOAD_ADDR_MISALIGNED);
+                } else {
+                    return std::make_shared<AddressFault>(
+                        vaddr, ExceptionCode::STORE_ADDR_MISALIGNED);
+                }
+            }
+            DPRINTF(TLBVerbose, "CHERI: cap access at %#x "
+                    "alignment OK\n", vaddr);
+        }
+
+        // DDC checks? TODO. 
 
         fault = pma->checkVAddrAlignment(req, mode);
 

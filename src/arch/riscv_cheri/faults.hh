@@ -38,6 +38,7 @@
 #include "arch/riscv_cheri/isa.hh"
 #include "cpu/null_static_inst.hh"
 #include "sim/faults.hh"
+#include "arch/generic/cheri_defs.hh"
 
 namespace gem5
 {
@@ -328,27 +329,6 @@ class SyscallFault : public RiscvFault
     }
 
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
-};
-
-// CHERI capability exception codes
-enum CheriCapException : uint64_t
-{
-    None = 0,
-    LengthViolation, 
-    TagViolation,
-    SealViolation,
-    TypeViolation,
-    SoftwareDefinedPermissionViolation = 0x7,
-    GlobalViolation, 
-    PermitExecuteViolation,
-    PermitLoadViolation,
-    PermitStoreViolation,
-    PermitLoadCapViolation,
-    PermitStoreCapViolation,
-    PermitStoreLocalViolation,
-    PermitAccessSystemRegistersViolation,
-    PermitInvokeViolation,
-    PermitSetCIDViolation
 };
 
 class CheriCapFault : public RiscvFault

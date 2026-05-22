@@ -41,6 +41,7 @@
 #include "arch/riscv_cheri/pcstate.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
 #include "arch/riscv_cheri/regs/cap.hh"
+#include "arch/generic/cap_reg.hh"
 #include "arch/riscv_cheri/types.hh"
 #include "base/types.hh"
 

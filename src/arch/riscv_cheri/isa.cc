@@ -308,6 +308,14 @@ ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
     capMiscRegFile[0].setTag(true);  // DDC is index 0
     capMiscRegFile[0].setAddress(0);
     capMiscRegFile[0].setMetadata(ddc_meta);
+
+    // CapRegContainer readBack;
+    // tc->getReg(capRegClass[1], &readBack);
+
+    // readBack = CapRegContainer::almighty(0x80010000);
+    // std::cout << "Test capability register set to c1: " << readBack << std::endl;
+    
+    // tc->setReg(capRegClass[1], &readBack);
     
     DPRINTF(RiscvMisc, "Initialized CHERI capability registers\n");
 }
@@ -1175,6 +1183,16 @@ ISA::resetThread()
     ddc_meta.otype = (1ULL << 18) - 1;
     capMiscRegFile[0].setTag(true);
     capMiscRegFile[0].setMetadata(ddc_meta);
+
+    std::cout << "Test capability register set to c1: " << std::endl;
+
+    CapRegContainer readBack;
+    tc->getReg(capRegClass[1], &readBack);
+
+    readBack = CapRegContainer::almighty(0x80010000);
+    std::cout << "Test capability register set to c1: " << readBack << std::endl;
+    
+    tc->setReg(capRegClass[1], &readBack);
     
     DPRINTF(RiscvMisc, "Reset CHERI capability registers\n");
 }
