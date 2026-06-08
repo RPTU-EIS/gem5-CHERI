@@ -296,27 +296,8 @@ ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
     }
     
     // Initialize DDC to full address space capability
-    CAPTYPE ddc_meta = 0;
-    ddc_meta.perm = 0xFFFF;  // All permissions
-    ddc_meta.otype = (1ULL << 18) - 1;  // Unsealed
-    ddc_meta.IE = 0;  // No compression
-    ddc_meta.BE = 0;
-    ddc_meta.TE = 0;
-    ddc_meta.B = 0;
-    ddc_meta.T = 0;
-    
-    capMiscRegFile[0].setTag(true);  // DDC is index 0
-    capMiscRegFile[0].setAddress(0);
-    capMiscRegFile[0].setMetadata(ddc_meta);
+    capMiscRegFile[0] = CapRegContainer::almighty(0);
 
-    // CapRegContainer readBack;
-    // tc->getReg(capRegClass[1], &readBack);
-
-    // readBack = CapRegContainer::almighty(0x80010000);
-    // std::cout << "Test capability register set to c1: " << readBack << std::endl;
-    
-    // tc->setReg(capRegClass[1], &readBack);
-    
     DPRINTF(RiscvMisc, "Initialized CHERI capability registers\n");
 }
 
@@ -384,16 +365,7 @@ void ISA::clear()
     }
     
     // Re-initialize DDC
-    CAPTYPE ddc_meta = 0;
-    ddc_meta.perm = 0xFFFF;
-    ddc_meta.otype = (1ULL << 18) - 1;
-    capMiscRegFile[0].setTag(true);
-    capMiscRegFile[0].setMetadata(ddc_meta);
-
-    miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_VENDORID] = 0;
-    miscRegFile[MISCREG_ARCHID] = 0;
-    miscRegFile[MISCREG_IMPID] = 0;
+    capMiscRegFile[0] = CapRegContainer::almighty(0);
 
     MISA misa = 0;
     STATUS status = 0;
@@ -1178,21 +1150,7 @@ ISA::resetThread()
         cap.setMetadata(0);
     }
 
-    CAPTYPE ddc_meta = 0;
-    ddc_meta.perm = 0xFFFF;
-    ddc_meta.otype = (1ULL << 18) - 1;
-    capMiscRegFile[0].setTag(true);
-    capMiscRegFile[0].setMetadata(ddc_meta);
-
-    std::cout << "Test capability register set to c1: " << std::endl;
-
-    CapRegContainer readBack;
-    tc->getReg(capRegClass[1], &readBack);
-
-    readBack = CapRegContainer::almighty(0x80010000);
-    std::cout << "Test capability register set to c1: " << readBack << std::endl;
-    
-    tc->setReg(capRegClass[1], &readBack);
+    capMiscRegFile[0] = CapRegContainer::almighty(0);
     
     DPRINTF(RiscvMisc, "Reset CHERI capability registers\n");
 }

@@ -139,6 +139,17 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         }
 
         // Set fault cause, privilege, and return PC
+        // ── Determine which CHERI SCRs to use, matching the privilege level
+        // we're entering. PCC saves to xEPCC; new PCC loads from xTCC. ──
+        MiscRegIndex epcc_idx, tcc_idx;
+        switch (prv) {
+          case PRV_U: epcc_idx = MISCREG_UEPCC; tcc_idx = MISCREG_UTCC; break;
+          case PRV_S: epcc_idx = MISCREG_SEPCC; tcc_idx = MISCREG_STCC; break;
+          case PRV_M: epcc_idx = MISCREG_MEPCC; tcc_idx = MISCREG_MTCC; break;
+          default: panic("Unknown privilege mode %d.", prv);
+        }
+
+        // Set fault cause, privilege, and return PC
         uint64_t _cause = _code;
         if (isInterrupt()) {
            _cause |= CAUSE_INTERRUPT_MASKS[pc_state.rvType()];
@@ -148,23 +159,35 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         tc->setMiscReg(tval, trap_value());
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
-        // Temporarily mask NMI while we're in NMI handler. Otherweise, the
-        // checkNonMaskableInterrupt will always return true and we'll be
-        // stucked in an infinite loop.
+
         if (isNonMaskableInterrupt()) {
             tc->setMiscReg(MISCREG_NMIE, 0);
         }
 
-        // Clear load reservation address
+        // Clear load reservation
         auto isa = static_cast<CHERIRiscvISA::ISA*>(tc->getIsaPtr());
         isa->clearLoadReservation(tc->contextId());
 
-        // Set PC to fault handler address
+        // ── CHERI: save current PCC into xEPCC ──
+        // Address of saved PCC = faulting instruction's PC. Bounds/perms
+        // are the existing PCC's. CheriBSD reads MEPCC/SEPCC on xret and
+        // restores PCC from it.
+        CapRegContainer saved_pcc = pc_state.pcc();
+        saved_pcc.setAddress(pc_state.instAddr());
+        isa->setCapMiscReg(epcc_idx, saved_pcc);
+
+        // ── CHERI: load new PCC from xTCC ──
+        // The trap vector cap holds bounds/perms for the handler.
+        // Its address is the handler entry point (matching MTVEC address).
+        CapRegContainer new_pcc = isa->readCapMiscReg(tcc_idx);
+
+        // Compute handler address per RISC-V mtvec format (direct vs vectored)
         Addr addr = isa->getFaultHandlerAddr(tvec, _code, isInterrupt());
+        new_pcc.setAddress(addr);
+
+        pc_state.pcc(new_pcc);
         pc_state.set(addr);
         tc->pcState(pc_state);
-    } else {
-        invokeSE(tc, inst);
     }
 }
 

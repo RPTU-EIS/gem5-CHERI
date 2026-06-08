@@ -1081,21 +1081,42 @@ decode QUADRANT default Unknown::unknown() {
                     IsSquashAfter, No_OpClass);
             }
 
-            0x2: decode FUNCT12 {
-                format CBMOp {
-                    0x0: cbo_inval({{
-                        Mem = 0;
-                    }}, mem_flags=[INVALIDATE, DST_POC]);
-                    0x1: cbo_clean({{
-                        Mem = 0;
-                    }}, mem_flags=[CLEAN, DST_POC]);
-                    0x2: cbo_flush({{
-                        Mem = 0;
-                    }}, mem_flags=[CLEAN, INVALIDATE, DST_POC]);
-                    0x4: cbo_zero({{
-                        Mem = 0;
-                    }}, mem_flags=[CACHE_BLOCK_ZERO]);
-                }
+            // 0x2: decode FUNCT12 {
+            //     format CBMOp {
+            //         0x0: cbo_inval({{
+            //             Mem = 0;
+            //         }}, mem_flags=[INVALIDATE, DST_POC]);
+            //         0x1: cbo_clean({{
+            //             Mem = 0;
+            //         }}, mem_flags=[CLEAN, DST_POC]);
+            //         0x2: cbo_flush({{
+            //             Mem = 0;
+            //         }}, mem_flags=[CLEAN, INVALIDATE, DST_POC]);
+            //         0x4: cbo_zero({{
+            //             Mem = 0;
+            //         }}, mem_flags=[CACHE_BLOCK_ZERO]);
+            //     }
+            // }
+            format CapLoad {
+
+                0x2: clc({{
+                    Cd = _loadedCap;
+                }},
+                    ea_code = {{
+                        // Take a snapshot of Cs1 (the cap from the program) BEFORE any 
+                        // potential modification of operand state.
+                        // EA = Cs1.address + offset (offset is sign-extended imm12)
+                        EA = rvZext(Cs1.getAddress() + offset);
+                }},
+                    cap_check_code = {{
+                        CheriCapException _cf = Cs1.checkForLoad(
+                        Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(),
+                        Cs1.isSealed(), EA, 16, false);
+                        // if (_cf != CheriCapException::None)
+                        //     return std::make_shared<CheriCapFault>(_cf);
+                    }},
+                    offset_code = {{offset = sext<12>(IMM12);}});
+                    
             }
         }
 
@@ -1394,12 +1415,17 @@ decode QUADRANT default Unknown::unknown() {
             // To test without checking bounds //
             using namespace gem5::CHERIRiscvISA;
 
-            // Get PCC from PCState
-            CapRegContainer pcc = xc->pcState().as<PCState>().pcc();
-            
-            // Copy to destination and update address
-            Cd = pcc;
-            Cd.setAddress(pcc.getAddress() + (sext<20>(imm) << 12));
+            // Get current PC state
+            PCState pc_state;
+            set(pc_state, xc->pcState());
+
+            // Use the CURRENT instruction PC, not pcc.address (which is stale)
+            Addr cur_pc = pc_state.instAddr();
+
+            // Build cd from PCC's metadata/tag/perms, but with address from current PC
+            CapRegContainer _cd = pc_state.pcc();
+            _cd.setAddress(cur_pc + (sext<20>(imm) << 12));
+            Cd = _cd;
 
         }});
 
@@ -1450,33 +1476,91 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x08: decode FUNCT3 {
-            format Store {
-                0x0: sb({{
-                    Mem_ub = Rs2_ub;
+            // format Store {
+            //     0x0: sb({{
+            //         Mem_ub = Rs2_ub;
+            //     }});
+            //     0x1: sh({{
+            //         Mem_uh = Rs2_uh;
+            //     }});
+            //     0x2: sw({{
+            //         Mem_uw = Rs2_uw;
+            //     }});
+            //     0x3: decode RVTYPE {
+            //         0x1: sd({{
+            //             Mem_ud = Rs2_ud;
+            //         }});
+            //     }
+            // }
+
+            format CapDataStore{
+                0x0: sb_cap({{
+                        Mem_ub = Rs2_ub;
+                    }},
+                    ea_code = {{
+                        // Cs1 = CapRegContainer::almighty(0x80010000);
+                        EA = rvZext(Cs1.getAddress());
+                    }},
+                    cap_check_code = {{
+                        auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
+                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                        //     return std::make_shared<
+                        //         CHERIRiscvISA::CheriCapFault>(_cf);
                 }});
-                0x1: sh({{
+
+                0x1: sh_cap({{
                     Mem_uh = Rs2_uh;
-                }});
-                0x2: sw({{
-                    Mem_uw = Rs2_uw;
-                }});
-                0x3: decode RVTYPE {
-                    0x1: sd({{
-                        Mem_ud = Rs2_ud;
+                    }},
+                    ea_code = {{
+                        EA = rvZext(Cs1.getAddress());
+                    }},
+                    cap_check_code = {{
+                        auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
+                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                        //     return std::make_shared<
+                        //         CHERIRiscvISA::CheriCapFault>(_cf);
                     }});
-                }
+
+                // SW.CAP rs2, cs1 — store word
+                0x2: sw_cap({{
+                        Mem_uw = Rs2_uw;
+                    }},
+                    ea_code = {{
+                        EA = rvZext(Cs1.getAddress());
+                    }},
+                    cap_check_code = {{
+                        auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
+                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                        //     return std::make_shared<
+                        //         CHERIRiscvISA::CheriCapFault>(_cf);
+                    }});
+
+                0x3: sd_cap({{
+                        Mem_ud = Rs2_ud;
+                    }},
+                    ea_code = {{
+                        EA = rvZext(Cs1.getAddress());
+                    }},
+                    cap_check_code = {{
+                        auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
+                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                        //     return std::make_shared<
+                        //         CHERIRiscvISA::CheriCapFault>(_cf);
+                    }});
+
             }
+
 
             // CSC Cs2, offset(Cs1)
             format CapStore {
                 0x4: csc({{ 
-                    // _storeCap = Cs2; 
+                    _storeCap = Cs2; 
                 }}, 
                 ea_code = {{ 
                     EA = rvZext(Cs1.getAddress() + offset);
                 }},
                 cap_check_code = {{
-                    // auto _cf = Cs1.checkForStore(EA, 16, true);
+                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 16, false);
                     // if (_cf != CHERIRiscvISA::CheriCapException::None)
                     //     return std::make_shared<
                     //         CHERIRiscvISA::CheriCapFault>(_cf);
@@ -2941,6 +3025,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, FloatCvtOp);
             }
         }
+
+        
 
         0x15: decode FUNCT3 {
             // OPIVV
@@ -4992,10 +5078,47 @@ decode QUADRANT default Unknown::unknown() {
             // format COp {
                 0x0: decode FUNCT7 {
                     format COp {
-                        0x01:  
-                            cspecialrw({{
-                            // to be implemented
-                        }}); 
+                        0x01:cspecialrw({{
+                            using namespace gem5::CHERIRiscvISA;
+                            
+                            const uint32_t scr_index = bits(machInst, 24, 20);
+                            const uint32_t cs1_idx   = bits(machInst, 19, 15);
+
+                            auto *tc = xc->tcBase();
+                            auto *isa = dynamic_cast<CHERIRiscvISA::ISA *>(tc->getIsaPtr());
+                            if (!isa) {
+                                return std::make_shared<IllegalInstFault>(
+                                    "not a CHERI ISA", machInst);
+                            }
+
+                            RegIndex misc_idx;
+                            switch (scr_index) {
+                                case 0:  misc_idx = MISCREG_PCC;       break;
+                                case 1:  misc_idx = MISCREG_DDC;       break;
+                                case 28: misc_idx = MISCREG_MTCC;      break;
+                                case 29: misc_idx = MISCREG_MTDC;      break;
+                                case 30: misc_idx = MISCREG_MSCRATCHC; break;
+                                case 31: misc_idx = MISCREG_MEPCC;     break;
+                                default:
+                                    return std::make_shared<IllegalInstFault>(
+                                        "Unknown SCR", machInst);
+                            }
+
+                            // Read SCR
+                            CapRegContainer _oldVal = isa->readCapMiscReg(misc_idx);
+
+                            // Only write SCR if cs1 != c0 (read-only when c0)
+                            if (cs1_idx != 0 && scr_index != 0) {
+                                // Read cs1 from the capability register file manually
+                                CapRegContainer _cs1_val;
+                                tc->getReg(capRegClass[cs1_idx], &_cs1_val);
+                                isa->setCapMiscReg(misc_idx, _cs1_val);
+                            }
+
+                            // Write to Cd. Cd handles c0 fine because it's a write
+                            // (writes to null cap reg are discarded by the framework).
+                            Cd = _oldVal;
+                        }}, IsNonSpeculative);
                     }
                      
                     format COp {
@@ -6888,69 +7011,69 @@ decode QUADRANT default Unknown::unknown() {
                    
                     0x7c: decode RD {
                         // SB.CAP rs2, cs1 - store byte 
-                        format CapDataStore{
-                            0x08: sb_cap({{
-                                    Mem_ub = Rs2_ub;
-                                }},
-                                ea_code = {{
-                                    Cs1 = CapRegContainer::almighty(0x80010000);
-                                    EA = rvZext(Cs1.getAddress());
-                                }},
-                                cap_check_code = {{
-                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
-                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                                    //     return std::make_shared<
-                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
-                            }});
+                        // format CapDataStore{
+                            // 0x08: sb_cap({{
+                            //         Mem_ub = Rs2_ub;
+                            //     }},
+                            //     ea_code = {{
+                            //         // Cs1 = CapRegContainer::almighty(0x80010000);
+                            //         EA = rvZext(Cs1.getAddress());
+                            //     }},
+                            //     cap_check_code = {{
+                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
+                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                            //         //     return std::make_shared<
+                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
+                            // }});
 
-                            0x09: sh_cap({{
-                                Mem_uh = Rs2_uh;
-                                }},
-                                ea_code = {{
-                                    EA = rvZext(Cs1.getAddress());
-                                }},
-                                cap_check_code = {{
-                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
-                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                                    //     return std::make_shared<
-                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
-                                }});
+                            // 0x09: sh_cap({{
+                            //     Mem_uh = Rs2_uh;
+                            //     }},
+                            //     ea_code = {{
+                            //         EA = rvZext(Cs1.getAddress());
+                            //     }},
+                            //     cap_check_code = {{
+                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
+                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                            //         //     return std::make_shared<
+                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
+                            //     }});
 
-                            // SW.CAP rs2, cs1 — store word
-                            0x0a: sw_cap({{
-                                    Mem_uw = Rs2_uw;
-                                }},
-                                ea_code = {{
-                                    EA = rvZext(Cs1.getAddress());
-                                }},
-                                cap_check_code = {{
-                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
-                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                                    //     return std::make_shared<
-                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
-                                }});
+                            // // SW.CAP rs2, cs1 — store word
+                            // 0x0a: sw_cap({{
+                            //         Mem_uw = Rs2_uw;
+                            //     }},
+                            //     ea_code = {{
+                            //         EA = rvZext(Cs1.getAddress());
+                            //     }},
+                            //     cap_check_code = {{
+                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
+                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                            //         //     return std::make_shared<
+                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
+                            //     }});
 
-                            0x0b: sd_cap({{
-                                    Mem_ud = Rs2_ud;
-                                }},
-                                ea_code = {{
-                                    EA = rvZext(Cs1.getAddress());
-                                }},
-                                cap_check_code = {{
-                                    auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
-                                    // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                                    //     return std::make_shared<
-                                    //         CHERIRiscvISA::CheriCapFault>(_cf);
-                                }});
+                            // 0x0b: sd_cap({{
+                            //         Mem_ud = Rs2_ud;
+                            //     }},
+                            //     ea_code = {{
+                            //         EA = rvZext(Cs1.getAddress());
+                            //     }},
+                            //     cap_check_code = {{
+                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
+                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
+                            //         //     return std::make_shared<
+                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
+                            //     }});
 
-                        } 
+                        // } 
                         format CapStore{
                             0x0c: sc_cap({{
                                 _storeCap = Cs2;
                             }},
                             ea_code = {{
-                                Cs2 = CapRegContainer::almighty(0x80020000);
-                                Cs1 = CapRegContainer::almighty(0x80010000);
+                                // Cs2 = CapRegContainer::almighty(0x80020000);
+                                // Cs1 = CapRegContainer::almighty(0x80010000);
                                 EA = rvZext(Cs1.getAddress());
                             }},
                             cap_check_code = {{
@@ -6981,7 +7104,7 @@ decode QUADRANT default Unknown::unknown() {
                                     Rd_sd = Mem_sb;
                                 }},
                                 ea_code = {{
-                                    Cs1 = CapRegContainer::almighty(0x80010000);
+                                    // Cs1 = CapRegContainer::almighty(0x80010000);
                                     EA = rvZext(Cs1.getAddress());
                                 }},
                                 cap_check_code = {{
@@ -7311,8 +7434,53 @@ decode QUADRANT default Unknown::unknown() {
 
         0x19: decode FUNCT3 {
             0x0: Jump::jalr({{
-                Rd = rvSext(NPC);
-                NPC = rvZext((imm + Rs1) & (~0x1));
+                // Rd = rvSext(NPC);
+                // NPC = rvZext((imm + Rs1) & (~0x1));
+
+                using namespace gem5::CHERIRiscvISA;
+
+                DPRINTF(CheriDecode, "JALR.CAP: cd=c%d cs1=c%d\n",
+                        CD + cap_reg::_CNullIdx, CS1 + cap_reg::_CNullIdx);
+
+                // ── Capture Cs1 FIRST, before any writes to Cd ──
+                // Cd and Cs1 may name the same register (common case: jalr cra, 0(cra))
+                CapRegContainer _jalr_target = Cs1;
+
+                if (!_jalr_target.getTag()) {
+                    // tag violation
+                } else {
+                    PCState pc_state;
+                    set(pc_state, xc->pcState());
+                    CapRegContainer current_pcc = pc_state.pcc();
+
+                    // ── Compute target address ──
+                    uint64_t target = (_jalr_target.getAddress() + imm) & ~1ULL;
+
+                    // ── Build return capability (sentry-sealed PCC at NPC) ──
+                    CapRegContainer _ret = current_pcc;
+                    CAPTYPE meta = current_pcc.getMetadata();
+                    meta.otype = (1ULL << 18) - 2;
+                    _ret.setMetadata(meta);
+                    _ret.setAddress(pc_state.npc());
+
+                    // ── Build new PCC (from saved _jalr_target, unsealed if sentry) ──
+                    CapRegContainer new_pcc = _jalr_target;
+                    new_pcc.setAddress(target);
+                    meta = new_pcc.getMetadata();
+                    if (meta.otype == ((1ULL << 18) - 2)) {
+                        meta.otype = (1ULL << 18) - 1;
+                        new_pcc.setMetadata(meta);
+                    }
+
+                    // ── Now write back ──
+                    Cd = _ret;
+                    pc_state.pcc(new_pcc);
+                    pc_state.set(target);
+                    xc->pcState(pc_state);
+
+                    DPRINTF(CheriDecode, "JALR.CAP: target=0x%x ret_addr=0x%x\n",
+                            target, pc_state.npc());
+                }
             }}, IsIndirectControl, IsUncondControl);
         }
 
@@ -7350,29 +7518,40 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     0x8: decode RS2 {
                         0x2: sret({{
-                            MISA misa = xc->readMiscReg(MISCREG_ISA);
-                            if (!misa.rvs) {
-                                return std::make_shared<IllegalInstFault>(
-                                            "sret can't execute without RVS",
-                                            machInst);
-                            }
-                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                            auto pm = (CHERIPrivilegeMode)xc->readMiscReg(
-                                MISCREG_PRV);
-                            if (pm == PRV_U ||
-                                (pm == PRV_S && status.tsr == 1)) {
-                                return std::make_shared<IllegalInstFault>(
-                                            "sret in user mode or TSR enabled",
-                                            machInst);
-                                NPC = NPC;
-                            } else {
+                                MISA misa = xc->readMiscReg(MISCREG_ISA);
+                                if (!misa.rvs) {
+                                    return std::make_shared<IllegalInstFault>(
+                                                "sret can't execute without RVS",
+                                                machInst);
+                                }
+                                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                                auto pm = (CHERIPrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                                if (pm == PRV_U ||
+                                    (pm == PRV_S && status.tsr == 1)) {
+                                    return std::make_shared<IllegalInstFault>(
+                                                "sret in user mode or TSR enabled",
+                                                machInst);
+                                }
+
+                                using namespace gem5::CHERIRiscvISA;
+
                                 xc->setMiscReg(MISCREG_PRV, status.spp);
                                 status.sie = status.spie;
                                 status.spie = 1;
                                 status.spp = PRV_U;
                                 xc->setMiscReg(MISCREG_STATUS, status);
-                                NPC = xc->readMiscReg(MISCREG_SEPC);
-                            }
+
+                                // ── CHERI: restore PCC from SEPCC ──
+                                auto *isa = dynamic_cast<ISA*>(xc->tcBase()->getIsaPtr());
+                                CapRegContainer sepcc = isa->readCapMiscReg(MISCREG_SEPCC);
+
+                                PCState pc_state;
+                                set(pc_state, xc->pcState());
+                                pc_state.pcc(sepcc);
+                                pc_state.set(sepcc.getAddress());
+                                xc->pcState(pc_state);
+
+                                NPC = sepcc.getAddress();
                         }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                         0x5: wfi({{
                             MISA misa = xc->readMiscReg(MISCREG_ISA);
@@ -7420,17 +7599,30 @@ decode QUADRANT default Unknown::unknown() {
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(
                                         "mret at lower privilege", machInst);
-                            NPC = NPC;
-                        } else {
-                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                            xc->setMiscReg(MISCREG_PRV, status.mpp);
-                            xc->setMiscReg(MISCREG_NMIE, 1);
-                            status.mie = status.mpie;
-                            status.mpie = 1;
-                            status.mpp = PRV_U;
-                            xc->setMiscReg(MISCREG_STATUS, status);
-                            NPC = xc->readMiscReg(MISCREG_MEPC);
                         }
+
+                        using namespace gem5::CHERIRiscvISA;
+
+                        // Restore privilege state
+                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        xc->setMiscReg(MISCREG_PRV, status.mpp);
+                        xc->setMiscReg(MISCREG_NMIE, 1);
+                        status.mie = status.mpie;
+                        status.mpie = 1;
+                        status.mpp = PRV_U;
+                        xc->setMiscReg(MISCREG_STATUS, status);
+
+                        // ── CHERI: restore PCC from MEPCC ──
+                        auto *isa = dynamic_cast<ISA*>(xc->tcBase()->getIsaPtr());
+                        CapRegContainer mepcc = isa->readCapMiscReg(MISCREG_MEPCC);
+
+                        PCState pc_state;
+                        set(pc_state, xc->pcState());
+                        pc_state.pcc(mepcc);
+                        pc_state.set(mepcc.getAddress());
+                        xc->pcState(pc_state);
+
+                        NPC = mepcc.getAddress();
                     }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                 }
             }
