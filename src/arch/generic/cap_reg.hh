@@ -384,6 +384,7 @@ namespace gem5
             meta.TE = 0x6;   // E bits [5:3] = 6 -> E = 52
             meta.B = 0;
             meta.T = 0x100;  // T << E overflows to cover full space
+            
             cap.metadata = meta;
 
             return cap;

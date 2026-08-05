@@ -182,7 +182,14 @@ def template CJumpExecute {{
             Addr pc, const loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
-        ss << mnemonic << ' ' << registerName(srcRegIdx(0));
+        // NOTE: for some compressed-jump encodings, accessing the source
+        // operand here (srcRegIdx(0) / registerName) segfaults the Exec
+        // tracer's disassembler (bad/implicit operand for this encoding).
+        // Execution itself is fine (branchTarget reads the register); only
+        // the *disassembly* is affected, so print just the mnemonic to keep
+        // the Exec trace usable. Re-add the operand once the underlying
+        // operand-decl issue is understood.
+        ss << mnemonic;
         return ss.str();
     }
 }};

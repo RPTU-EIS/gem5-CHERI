@@ -108,6 +108,7 @@ class BootloaderKernelWorkload: public Workload
     void loadBootloader();
     void loadKernel();
     void loadDtb();
+    void processCapRelocs(); 
     void addExitOnKernelPanicEvent();
     void addExitOnKernelOopsEvent();
 

@@ -79,43 +79,21 @@ class PCState : public GenericISA::UPCState<4>
         _vtype(other._vtype), _vl(other._vl), _pcc(other._pcc), _capMode(other._capMode)
     {}
     PCState &operator=(const PCState &other) = default;
-    PCState(){
-        _pcc.setTag(true);
-        _pcc.setAddress(0);
-
-        CAPTYPE meta = 0; 
-        meta.perm = 0xFFFF;
-        meta.otype = (1ULL << 18) - 1;
-        meta.IE = 0; 
-        meta.BE = 0; 
-        meta.T = 0; 
-        meta.TE = 0;
-        _pcc.setMetadata(meta);
+    PCState() {
+        _pcc = CapRegContainer::almighty(0);
     }
 
     explicit PCState(Addr addr) { 
         set(addr); 
-
-        _pcc.setTag(true);
-        _pcc.setAddress(addr);
-        CAPTYPE meta = 0;
-        meta.perm = 0xFFFF;
-        meta.otype = (1ULL << 18) - 1;
-        _pcc.setMetadata(meta);
+        _pcc = CapRegContainer::almighty(addr);
     }
+
     explicit PCState(Addr addr, CHERIRiscvType rvType, uint64_t vlenb)
     {
         set(addr);
         _rvType = rvType;
         _vlenb = vlenb;
-
-        _pcc.setTag(true); 
-        _pcc.setAddress(addr);
-        CAPTYPE meta = 0;
-        meta.perm = 0xFFFF;
-        meta.otype = (1ULL << 18) - 1;
-        _pcc.setMetadata(meta);
-
+        _pcc = CapRegContainer::almighty(addr);
     }
 
     PCStateBase *clone() const override { return new PCState(*this); }

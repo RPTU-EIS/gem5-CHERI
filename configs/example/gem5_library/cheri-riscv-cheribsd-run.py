@@ -43,7 +43,7 @@ board = RiscvCheriBoard(
 # ── Workload ──
 board.set_kernel_disk_workload(
     kernel=FileResource(
-        local_path="/import/public/Linux/gem5/CHERI-RISCV/kernel",
+        local_path="/import/lab/users/vishwas/hiwi/gem5CHERISCV/tests/kernel",
     ),
     disk_image=DiskImageResource(
         local_path="/import/public/Linux/gem5/CHERI-RISCV/cheribsd-riscv64-purecap.img",
@@ -51,27 +51,8 @@ board.set_kernel_disk_workload(
     ),
 )
 
-# import sys
-# wl = board.workload
-# print("=== Workload state ===", file=sys.stderr)
-# print(f"  Type: {type(wl).__name__}", file=sys.stderr)
-# for attr_name in dir(wl):
-#     if attr_name.startswith("_"):
-#         continue
-#     try:
-#         val = getattr(wl, attr_name)
-#         # Skip methods, just show simple values
-#         if isinstance(val, (str, int, bool, float)):
-#             print(f"  {attr_name}: {val!r}", file=sys.stderr)
-#     except:
-#         pass
-
-# print("=== Disk state ===", file=sys.stderr)
-# # disk_obj = board.platform.disk
-# print(f"  Image: {disk_obj.vio.image}", file=sys.stderr)
-# print(f"  Image file: {disk_obj.vio.image.image_file}", file=sys.stderr)
-# # if hasattr(disk_obj.vio.image, 'child'):
-# #     print(f"  Child image_file: {disk_obj.vio.image.child.image_file}", file=sys.stderr)
-
+# Override entry to skip bootloader stage
 simulator = Simulator(board=board)
+
+
 simulator.run()

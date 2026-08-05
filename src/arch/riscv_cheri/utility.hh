@@ -131,7 +131,7 @@ inline std::string
 registerName(RegId reg)
 {
     if (reg.is(IntRegClass)) {
-        if (reg.index() >= int_reg::NumArchRegs) {
+        if (reg.index() >= int_reg::RegNames.size()) {
             /*
              * This should only happen if a instruction is being speculatively
              * executed along a not-taken branch, and if that instruction's
@@ -147,7 +147,7 @@ registerName(RegId reg)
         }
         return int_reg::RegNames[reg.index()];
     } if (reg.is(CapRegClass)) {
-        if (reg.index() >= cap_reg::NumCapRegs) {
+        if (reg.index() >= cap_reg::RegNames.size()) {
             std::stringstream str;
             str << "?? (c" << reg.index() << ')';
             return str.str();
@@ -168,10 +168,14 @@ registerName(RegId reg)
         }
         return VecRegNames[reg.index()];
     } else  {
-        /* It must be an InvalidRegClass, in RISC-V we should treat it as a
-         * zero register for the disassembler to work correctly.
+        /* InvalidRegClass or an unrecognized register class. reg.index() can
+         * be garbage / out-of-range for such a RegId (e.g. an implicit or
+         * improperly-declared operand), so do NOT index RegNames with it —
+         * that was an out-of-bounds std::vector access -> segfault when the
+         * Exec tracer disassembled an instruction carrying such an operand
+         * (seen on a c_jr in kvprintf). Treat it as the zero register.
          */
-        return int_reg::RegNames[reg.index()];
+        return int_reg::RegNames[0];
     }
 }
 

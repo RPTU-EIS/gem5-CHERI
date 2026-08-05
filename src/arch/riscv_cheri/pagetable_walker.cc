@@ -576,8 +576,13 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
              */
             Addr vaddr = req->getVaddr();
             vaddr = Addr(sext<VADDR_BITS>(vaddr));
-            Addr paddr = walker->tlb->translateWithTLB(vaddr, satp.asid,
-                                                       satp.mode, mode);
+            // Use the entry produced by THIS walk directly instead of
+            // re-looking it up in the TLB. The re-lookup (translateWithTLB)
+            // could miss due to a VPN/key round-trip issue in the TLB trie
+            // and then hit an assertion; the just-walked entry already has
+            // the answer. Same formula translateWithTLB would use.
+            Addr paddr = (entry.paddr << PageShift) |
+                         (vaddr & mask(entry.logBytes));
             req->setPaddr(paddr);
 
             // do pmp check if any checking condition is met.

@@ -91,7 +91,7 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         if processor.get_isa() != ISA.RISCV_CHERI:
             raise Exception(
                 "The RISCV CHERI Board requires a processor using the "
-                "RISCV ISA. Current processor ISA: "
+                "RISCV CHERI ISA. Current processor ISA: "
                 f"'{processor.get_isa().name}'."
             )
 
@@ -261,6 +261,11 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         bootargs = self.workload.command_line
         node.append(FdtPropertyStrings("bootargs", [bootargs]))
         node.append(FdtPropertyStrings("stdout-path", ["/uart@10000000"]))
+        # FreeBSD/CheriBSD's initriscv() reads the boot hart id from
+        # /chosen "boot-hartid" (normally injected by OpenSBI/U-Boot). Without
+        # it, OF_getencprop returns -1 and the kernel panics with
+        # "Boot hart ID was not properly set." Single hart -> hart 0.
+        node.append(FdtPropertyWords("boot-hartid", [0]))
         root.append(node)
 
         # See Documentation/devicetree/bindings/riscv/cpus.txt for details.
@@ -505,10 +510,14 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             self.workload.bootloader_addr = 0x0
             self.workload.bootloader_filename = self._bootloader[0]
             self.workload.kernel_addr = 0x80200000
-            self.workload.entry_point = 0x80000000  # Bootloader starting point
+            self.workload.entry_point = 0x80200000  # Bootloader starting point
+        
         else:
             self.workload.kernel_addr = 0x0
-            self.workload.entry_point = 0x80000000
+            # self.workload.entry_point = 0x80200044
+            self.workload.entry_point = 0xffffffc000000044   
+            # self.workload.entry_point = 0x80200000
+
         self._connect_things()
 
     @overrides(KernelDiskWorkload)

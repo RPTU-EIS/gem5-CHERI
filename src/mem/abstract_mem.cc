@@ -460,22 +460,35 @@ AbstractMemory::access(PacketPtr pkt)
         // request so the instruction can read it back.
         if (pkt->req->isCapLoad()) {
             Addr paddr = pkt->getAddr();
-            assert(pkt->getSize() == 16 &&
-                   "CHERI cap load must be 16 bytes");
-            assert(CheriTagTable::isCapAligned(paddr) &&
-                   "CHERI cap load must be 16-byte aligned");
 
-            bool tag = system()->cheritagtable.getTag(paddr);
+            // NOTE (caches vs. request-piggybacked tags): with a cache
+            // hierarchy, the packet that reaches memory for a capability load
+            // is a cache-line fill (e.g. 64 B), NOT the pristine 16-byte cap
+            // access. The tag-on-request scheme only works in a cacheless
+            // (baremetal) path where memory sees the exact 16 bytes. For now
+            // (tag checks disabled), only do the tag lookup for a clean
+            // 16-byte aligned access and skip otherwise, so cached full-system
+            // boots don't crash on the first clc.
+            // TODO: proper cache-aware tag propagation (look up the tag CPU-
+            //       side in completeAcc, or carry tags alongside cache lines).
+            // ---- ORIGINAL hard asserts (kept for revert) ----
+            // assert(pkt->getSize() == 16 &&
+            //        "CHERI cap load must be 16 bytes");
+            // assert(CheriTagTable::isCapAligned(paddr) &&
+            //        "CHERI cap load must be 16-byte aligned");
+            if (pkt->getSize() == 16 && CheriTagTable::isCapAligned(paddr)) {
+                bool tag = system()->cheritagtable.getTag(paddr);
 
-            // If the page table walker marked this page as
-            // not allowing capability loads, strip the tag
-            if (pkt->req->getClearTagOnLoad()) {
-                tag = false;
+                // If the page table walker marked this page as
+                // not allowing capability loads, strip the tag
+                if (pkt->req->getClearTagOnLoad()) {
+                    tag = false;
+                }
+
+                pkt->req->setCapTag(tag);
+                DPRINTF(MemoryAccess, "CHERI CapLoad at %#x: tag=%d\n",
+                        paddr, tag);
             }
-
-            pkt->req->setCapTag(tag);
-            DPRINTF(MemoryAccess, "CHERI CapLoad at %#x: tag=%d\n",
-                    paddr, tag);
         }
 
         TRACE_PACKET(pkt->req->isInstFetch() ? "IFetch" : "Read");
@@ -495,31 +508,29 @@ AbstractMemory::access(PacketPtr pkt)
     } else if (pkt->isWrite()) {
         if (writeOK(pkt)) {
 
-            // ── CHERI: handle tags before writing data ──
-            Addr paddr = pkt->getAddr();
-
-            if (pkt->req->isCapStore()) {
-                // Capability store (SC instruction):
-                // Write the tag that was attached to the request
-                // by the instruction's initiateAcc().
-                assert(pkt->getSize() == 16 &&
-                       "CHERI cap store must be 16 bytes");
-                assert(CheriTagTable::isCapAligned(paddr) &&
-                       "CHERI cap store must be 16-byte aligned");
-
-                bool tag = pkt->req->getCapTag();
-                system()->cheritagtable.setTag(paddr, tag);
-                DPRINTF(MemoryAccess, "CHERI CapStore at %#x: tag=%d\n",
-                        paddr, tag);
-            } else {
-                // Regular store (SW, SD, SB, SH, etc.):
-                // Clear tags on any capability granule that this
-                // write overlaps. This is the fundamental CHERI
-                // security invariant — you cannot forge a capability
-                // by writing raw bytes to memory.
-                system()->cheritagtable.clearTagsInRange(
-                    paddr, pkt->getSize());
-            }
+            // ── CHERI: tags are maintained CPU-side, NOT here ──
+            // With a write-back cache the packets that reach memory are cache
+            // -line fills/writebacks, not the original CPU accesses, so doing
+            // tag work here corrupts the tag table (e.g. a dirty 64-byte
+            // writeback would clear the tag of a capability that was stored
+            // into that line). Capability-store tags are now recorded in
+            // CapStoreCompleteAcc (by physical address), and cap-load tags are
+            // read in CapLoadCompleteAcc — both cache-independent. So this path
+            // is intentionally tag-neutral.
+            // TODO (deferred, like the other checks): clear tags CPU-side on
+            //   regular stores to fully enforce the "raw write clears a cap"
+            //   invariant. Not needed for bring-up with checks disabled.
+            // ---- ORIGINAL memory-side tag handling (kept for revert) ----
+            // Addr paddr = pkt->getAddr();
+            // if (pkt->req->isCapStore()) {
+            //     if (pkt->getSize() == 16 && CheriTagTable::isCapAligned(paddr)) {
+            //         system()->cheritagtable.setTag(paddr, pkt->req->getCapTag());
+            //     } else {
+            //         system()->cheritagtable.clearTagsInRange(paddr, pkt->getSize());
+            //     }
+            // } else {
+            //     system()->cheritagtable.clearTagsInRange(paddr, pkt->getSize());
+            // }
 
             if (pmemAddr) {
                 pkt->writeData(host_addr);

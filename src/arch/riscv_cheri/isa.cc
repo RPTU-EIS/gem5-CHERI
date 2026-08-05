@@ -295,8 +295,11 @@ ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
         cap.setMetadata(0);
     }
     
-    // Initialize DDC to full address space capability
-    capMiscRegFile[0] = CapRegContainer::almighty(0);
+    // Initialize PCC to full address space capability
+    capMiscRegFile[MISCREG_PCC - MISCREG_PCC] = CapRegContainer::almighty(0);
+
+    // Initialize DDC to almighty 
+    capMiscRegFile[MISCREG_DDC - MISCREG_PCC] = CapRegContainer::almighty(0);
 
     DPRINTF(RiscvMisc, "Initialized CHERI capability registers\n");
 }
@@ -708,7 +711,8 @@ ISA::readCapMiscRegNoEffect(RegIndex idx) const
 {
     // Check if it's a valid capability misc register
     if (!isCapMiscReg(idx)) {
-        panic("Illegal capability misc reg index %#x\n", idx);
+        panic("Illegal capability misc reg index %#x (MISCREG_PCC=%#x, NUM=%#x)\n",
+              idx, MISCREG_PCC, NUM_CHERI_MISCREGS);
     }
     
     if (idx == MISCREG_PCC) {

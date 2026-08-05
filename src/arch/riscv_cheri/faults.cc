@@ -181,8 +181,17 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         // Its address is the handler entry point (matching MTVEC address).
         CapRegContainer new_pcc = isa->readCapMiscReg(tcc_idx);
 
-        // Compute handler address per RISC-V mtvec format (direct vs vectored)
-        Addr addr = isa->getFaultHandlerAddr(tvec, _code, isInterrupt());
+        // Compute handler address per RISC-V tvec format (direct vs vectored).
+        // In CHERI-RISC-V the trap vector IS xTCC; its address field serves as
+        // xTVEC. The purecap kernel programs xTCC (via cspecialrw), NOT the
+        // legacy xTVEC CSR (which stays 0), so derive the handler address from
+        // xTCC's address rather than getFaultHandlerAddr(tvec)/xTVEC (which
+        // returned 0 and vectored every trap to PC=0 -> fetch-fault loop).
+        (void)tvec;  // legacy xTVEC index unused on the purecap trap path
+        uint64_t vec = new_pcc.getAddress();
+        Addr addr = mbits(vec, 63, 2);
+        if (isInterrupt() && bits(vec, 1, 0) == 1)
+            addr += 4 * _code;
         new_pcc.setAddress(addr);
 
         pc_state.pcc(new_pcc);
@@ -194,7 +203,22 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 void
 Reset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 {
-    tc->setMiscReg(MISCREG_PRV, PRV_M);
+    // ── Emulate the OpenSBI -> kernel handoff (no firmware in this setup). ──
+    // On real hardware M-mode firmware (OpenSBI) delegates traps to S-mode and
+    // drops to S-mode before entering the S-mode kernel. We have no OpenSBI, so
+    // do the equivalent here: enter the kernel directly in S-mode with traps
+    // delegated. Otherwise the kernel runs in M-mode and its page faults etc.
+    // are delivered to the unset MTVEC (the kernel only programs STVEC) and the
+    // machine hangs. faults.cc already honours MEDELEG/MIDELEG when the faulting
+    // privilege is < M. To revert, set PRV_M and drop the two deleg writes.
+    tc->setMiscReg(MISCREG_PRV, PRV_S);
+    // Delegate exceptions to S-mode, EXCEPT ecall-from-S (9) / ecall-from-M
+    // (11), which must stay in M-mode so our inline SBI emulation still fires.
+    // Bits: 0-8 (misaligned/access/illegal/breakpoint/ecall-U) + 12/13/15
+    // (instr/load/store page fault) = 0xB1FF.
+    tc->setMiscReg(MISCREG_MEDELEG, 0xB1FF);
+    // Delegate S-mode interrupts (SSIP/STIP/SEIP = bits 1/5/9) = 0x222.
+    tc->setMiscReg(MISCREG_MIDELEG, 0x222);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     status.mie = 0;
     status.mprv = 0;

@@ -147,7 +147,12 @@ namespace gem5
                     "ca6", "ca7", "cs2", "cs3",
                     "cs4", "cs5", "cs6", "cs7",
                     "cs8", "cs9", "cs10", "cs11",
-                    "ct3", "ct4", "ct5", "ct6"
+                    "ct3", "ct4", "ct5", "ct6",
+                    // Index 32 = CUreg0 (internal atomic temp). Must be present:
+                    // registerName() bounds-checks against NumCapRegs (33), so a
+                    // missing 33rd entry made RegNames[32] an out-of-bounds
+                    // vector access -> segfault when disassembling it.
+                    "cureg0"
             };
 
         } // namespace cap_reg

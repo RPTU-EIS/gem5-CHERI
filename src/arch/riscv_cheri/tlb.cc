@@ -408,17 +408,54 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
 
         fault = pma->checkVAddrAlignment(req, mode);
 
-        if (!misa.rvs || pmode == CHERIPrivilegeMode::PRV_M ||
-            satp.mode == AddrXlateMode::BARE) {
+        // NOTE (bring-up, no OpenSBI): the kernel is entered in M-mode (reset
+        // default) but is an S-mode kernel that sets up satp/paging. Real
+        // RISC-V M-mode data accesses ignore satp, but here we deliberately
+        // honour satp whenever paging is enabled so the kernel's page tables
+        // (including the device map -> real MMIO) are actually walked. Fall
+        // back to the physical/linear early-boot mapping only when paging is
+        // off (satp==BARE) or S-mode is unsupported.
+        DPRINTF(TLB, "xlate va=%#lx pmode=%d satp.mode=%d satp=%#lx rvs=%d\n",
+                vaddr, (int)pmode, (int)satp.mode, (uint64_t)satp,
+                (int)misa.rvs);
+        // Physical DRAM identity window for the physical->virtual paging
+        // handoff. CheriBSD's locore enables satp (with a correct physical
+        // root) and then executes a few more *physical*-PC instructions before
+        // it jumps to its virtual (0xffffffc0...) address. Its early page
+        // tables only map the high half, so those physical fetches would fault
+        // and loop. On real HW the loader leaves a transient identity map for
+        // exactly this handoff; we skip the loader, so pass physical DRAM
+        // addresses through untranslated even when paging is on. (Comment out
+        // the else-if branch to require a real page-table walk instead.)
+        constexpr Addr DRAM_ID_BASE = 0x80000000ULL;
+        constexpr Addr DRAM_ID_END  = 0x100000000ULL;
+        if (!misa.rvs || satp.mode == AddrXlateMode::BARE) {
             req->setFlags(Request::PHYSICAL);
+        } else if (vaddr >= DRAM_ID_BASE && vaddr < DRAM_ID_END) {
+            req->setFlags(Request::PHYSICAL);
+            DPRINTF(TLB, "CHERI identity passthrough (paging on): %#lx\n",
+                    vaddr);
         }
 
         if (fault == NoFault) {
             if (req->getFlags() & Request::PHYSICAL) {
-                /**
-                 * we simply set the virtual address to physical address
-                 */
-                req->setPaddr(req->getVaddr());
+                // CHERI early-boot: translate kernel high-half VAs to PAs
+                // The CheriBSD kernel uses VA 0xffffffc000000000 → PA 0x80200000
+                // mapping before MMU is enabled. Emulate that mapping here.
+                Addr vaddr = req->getVaddr();
+                Addr paddr;
+                constexpr Addr KERNEL_VA_BASE = 0xffffffc000000000ULL;
+                constexpr Addr KERNEL_PA_BASE = 0x80200000ULL;
+
+                if (vaddr >= KERNEL_VA_BASE) {
+                    paddr = vaddr - KERNEL_VA_BASE + KERNEL_PA_BASE;
+                    DPRINTF(TLB, "CHERI early-boot VA->PA: %#lx -> %#lx\n",
+                            vaddr, paddr);
+                } else {
+                    paddr = vaddr;
+                }
+
+                req->setPaddr(paddr);
             } else {
                 fault = doTranslate(req, tc, translation, mode, delayed);
             }

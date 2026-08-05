@@ -103,6 +103,7 @@ output exec {{
 #include "arch/riscv_cheri/mmu.hh"
 #include "arch/riscv_cheri/reg_abi.hh"
 #include "arch/riscv_cheri/regs/cap.hh"
+#include "arch/riscv_cheri/regs/cc128_bounds.hh"
 #include "arch/generic/cap_reg.hh"
 #include "arch/riscv_cheri/regs/float.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
@@ -123,6 +124,11 @@ output exec {{
 #include "sim/full_system.hh"
 #include "sim/pseudo_inst.hh"
 #include "sim/sim_events.hh"
+// Needed by CapLoadCompleteAcc: read the CHERI tag CPU-side from the tag
+// table (system->cheritagtable) by physical address.
+#include "sim/system.hh"
+// Needed by ecall: emulate SBI calls in gem5 (no OpenSBI firmware).
+#include "arch/riscv_cheri/sbi.hh"
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 

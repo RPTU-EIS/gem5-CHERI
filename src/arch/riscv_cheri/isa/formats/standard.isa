@@ -335,6 +335,21 @@ def template CSRExecute {{
 
         auto csr_data_it = csr_data.find(csr);
         if (csr_data_it == csr_data.end()) {
+            // Custom S-mode CSR 0x9c0: CheriBSD's initriscv probes this
+            // (reads it and tests bit 63) as a feature-detect. We don't model
+            // it, so read as 0 (feature absent) and ignore writes, rather than
+            // trapping illegal. Scoped so op_decl doesn't clash with the main
+            // body below.
+            if (csr == 0x9c0) {
+                {
+                    %(op_decl)s;
+                    %(op_rd)s;
+                    RegVal data = 0;
+                    %(code)s;
+                    %(op_wb)s;
+                }
+                return NoFault;
+            }
             return std::make_shared<IllegalInstFault>(
                     csprintf("Illegal CSR index %#x\n", csr), machInst);
         }
