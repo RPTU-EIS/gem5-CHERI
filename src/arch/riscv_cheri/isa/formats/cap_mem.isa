@@ -86,7 +86,6 @@ def template CapLoadExecute {{
         // ── Atomic 16-byte read with cap flag ──
         uint8_t capData[16] = {0};
         const std::vector<bool> byte_enable(16, true);
-        std::cout << " I AM HERE \n"; 
         {
             Fault fault = xc->readMem(
                 EA, capData, 16,

@@ -125,6 +125,7 @@ class CHERIRiscvBootloaderKernelWorkload(Workload):
     # Note: Duplicated from KernelWorkload for now
     on_panic = Param.KernelPanicOopsBehaviour(
         "Continue",
+        # "DumpDmesgAndExit",
         "Define how gem5 should behave after a guest Kernel Panic. "
         "Continue lets CheriBSD's panic() print via the SBI console.",
     )

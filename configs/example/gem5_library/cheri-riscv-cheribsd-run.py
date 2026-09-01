@@ -6,6 +6,9 @@ from gem5.components.boards.riscv_cheri_board import RiscvCheriBoard
 from gem5.components.cachehierarchies.classic.private_l1_private_l2_walk_cache_hierarchy import (
     PrivateL1PrivateL2WalkCacheHierarchy,
 )
+
+from gem5.components.cachehierarchies.classic.no_cache import NoCache
+
 from gem5.components.memory import DualChannelDDR4_2400
 from gem5.components.processors.cpu_types import CPUTypes
 from gem5.components.processors.simple_processor import SimpleProcessor
@@ -24,12 +27,16 @@ cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
     l1d_size="16kB", l1i_size="16kB", l2_size="256kB"
 )
 
+# cache_hierarchy = NoCache()
+
 # ── Memory ──
 memory = DualChannelDDR4_2400(size="3GB")
 
 # ── Processor ──
 processor = SimpleProcessor(
     cpu_type=CPUTypes.TIMING, isa=ISA.RISCV_CHERI, num_cores=1
+    # cpu_type=CPUTypes.ATOMIC, isa=ISA.RISCV_CHERI, num_cores=1
+
 )
 
 # ── Board ──

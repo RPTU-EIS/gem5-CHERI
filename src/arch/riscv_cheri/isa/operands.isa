@@ -155,6 +155,39 @@ let {{
         @overrideInOperand
         def regId(self):
             return f'{self.reg_class}[{self.reg_spec}]'
+
+        # cnull (capability register 0) ALWAYS reads as the null capability
+        # {address 0, metadata 0, tag 0}, regardless of what is physically in
+        # c0 -- exactly like RISC-V x0. Without this, `csc cnull` (used to zero
+        # structs) stores stale c0 contents: the address half reads 0 (x0 is
+        # hardwired), but the METADATA half and TAG are garbage, so the upper
+        # 8 bytes of every null-store land as junk (e.g. corrupting sbuf
+        # s_flags -> bogus SBUF_DYNAMIC -> free() of a stack buffer ->
+        # pmap_kextract panic during device attach).
+        #
+        # Lexer note (see makeWrite above): build C++ braces from ob/cb so the
+        # isa-parser CODELIT block is not terminated early by a doubled brace.
+        # Mirrors the default CapRegOperand.makeRead (declare a tmp container,
+        # then `auto name = tmp` -- makeDecl is empty for caps), but SKIPS the
+        # register read when the index is 0, leaving tmp default-constructed
+        # (null). No doubled braces in this Python source (ob/cb build the C++).
+        @overrideInOperand
+        def makeRead(self):
+            ob = '{'
+            cb = '}'
+            ns = self.parser.namespace
+            name = self.base_name
+            if self.is_dest and self.is_src:
+                name += '_merger'
+            tmp_name = f'tmp_s{self.src_reg_idx}'
+            return (
+                f'{ns}::CapRegContainer {tmp_name};\n'
+                f'if (({self.reg_spec}) != 0) {ob}\n'
+                f'    xc->getRegOperand(this, {self.src_reg_idx}, '
+                f'&{tmp_name});\n'
+                f'{cb}\n'
+                f'auto {name} = {tmp_name};\n'
+            )
 }};
 
 def operands {{

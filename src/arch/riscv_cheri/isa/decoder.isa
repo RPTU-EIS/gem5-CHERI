@@ -45,7 +45,7 @@
 
 decode QUADRANT default Unknown::unknown() {
     0x0: decode COPCODE {
-        0x0: CIAddi4spnOp::c_addi4spn({{
+        0x0: CIncSpOp::c_addi4spn({{
             imm = CIMM8<1:1> << 2 |
                   CIMM8<0:0> << 3 |
                   CIMM8<7:6> << 4 |
@@ -54,7 +54,20 @@ decode QUADRANT default Unknown::unknown() {
             if (imm == 0)
                 return std::make_shared<IllegalInstFault>("immediate = 0",
                                                            machInst);
-            Rp2 = rvSext(sp + imm);
+            // PURECAP: c.addi4spn is c.cincoffset4cspn -- cd' = csp + imm, keep
+            // csp's tag and bounds. Write NO register via the framework; the dest
+            // is cd' (RP2+8). Read csp's cap for tag+bounds, take its address via
+            // the int `sp` source view, then write the integer dest and the cap
+            // dest (LAST, restoring tag+bounds) -- robust to shared-container or
+            // one-way int->cap sync.
+            using namespace gem5::CHERIRiscvISA;
+            auto *_tc = xc->tcBase();
+            CapRegContainer _csp;
+            _tc->getReg(cap_reg::CSp, &_csp);
+            uint64_t _na = rvSext(sp + imm);
+            _tc->setReg(intRegClass[RP2 + 8], _na);
+            _csp.setAddress(_na);
+            _tc->setReg(capRegClass[RP2 + 8], &_csp);
         }}, uint64_t);
         format CompressedLoad {
             // PURECAP: this encoding (C0, funct3=001) is c.lq (load 128-bit
@@ -237,7 +250,7 @@ decode QUADRANT default Unknown::unknown() {
             Rc1_sd = imm;
         }});
         0x3: decode RC1 {
-            0x2: CIOp::c_addi16sp({{
+            0x2: CIncSpOp::c_addi16sp({{
                 imm = sext<10>((CIMM5<4:4> << 4) |
                                (CIMM5<0:0> << 5) |
                                (CIMM5<3:3> << 6) |
@@ -248,7 +261,24 @@ decode QUADRANT default Unknown::unknown() {
                     return std::make_shared<IllegalInstFault>(
                             "immediate = 0", machInst);
                 }
-                sp_sd = rvSext(sp_sd + imm);
+                // PURECAP: c.addi16sp is c.cincoffset16csp -- adjust csp while
+                // preserving its tag and bounds. int and cap share ONE register
+                // container, so an integer dest-operand writeback zeroes csp's
+                // tag+metadata (that stripped csp untagged in every prologue and
+                // broke stack-derived &local -> kmem_subinit "valid capability
+                // min"). This format writes NO register via the framework.
+                // Order that works whether int/cap share one container or sync
+                // one-way: (1) read csp's cap FIRST to save tag+bounds, (2)
+                // write the integer sp (c.sqsp/c.lqsp address off int sp), (3)
+                // write the cap LAST so tag+bounds are restored onto the result.
+                using namespace gem5::CHERIRiscvISA;
+                auto *_tc = xc->tcBase();
+                CapRegContainer _csp;
+                _tc->getReg(cap_reg::CSp, &_csp);
+                uint64_t _na = rvSext(sp + imm);
+                _tc->setReg(int_reg::Sp, _na);
+                _csp.setAddress(_na);
+                _tc->setReg(cap_reg::CSp, &_csp);
             }});
             default: CIOp::c_lui({{
                 imm = sext<6>(CIMM5 | (CIMM1 << 5)) << 12;
@@ -1570,13 +1600,13 @@ decode QUADRANT default Unknown::unknown() {
             //     E = 0;
             //     T = (T_hi << 3) | T_E;
             //     B = (B_hi << 3) | B_E;
-            //     L_carry_out = (T < B) ? 1 : 0;
+            //     L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
             //     L_msb = 0;
             // } else {
             //     E = (T_E << 3) | B_E;
             //     T = T_hi << 3;
             //     B = B_hi << 3;
-            //     L_carry_out = (T_hi < B_hi) ? 1 : 0;
+            //     L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
             //     L_msb = 1;
             // }
             
@@ -5370,8 +5400,20 @@ decode QUADRANT default Unknown::unknown() {
                             Cd = Cs1;
                             
                             if (!Cs1.getTag()) {
+                                // Bring-up: stack caps are untagged (csp is a bare pointer), so
+                                // &local = csetbounds(untagged stack ptr, N) would otherwise get
+                                // no bounds. Apply the requested bounds so cgetlen()/cgetbase()
+                                // report them (the kernel validates &local via cgetlen); keep the
+                                // tag cleared.
+                                {
+                                    bool _uex = false;
+                                    CAPTYPE _um = cc128EncodeBounds(Cs1.getMetadata(),
+                                        Cs1.getAddress(), (uint64_t)(Rs2), &_uex);
+                                    Cd.setMetadata(_um);
+                                    Cd.setAddress(Cs1.getAddress());
+                                    (void)_uex;
+                                }
                                 Cd.setTag(false);
-                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                             } else {
                                 uint64_t new_base = Cs1.getAddress();
                                 uint64_t req_length = Rs2;
@@ -5394,13 +5436,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;
                                     B = (B_hi << 3) | B_E;
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;
                                     T = T_hi << 3;
                                     B = B_hi << 3;
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -5524,8 +5566,20 @@ decode QUADRANT default Unknown::unknown() {
                             Cd = Cs1;
                             
                             if (!Cs1.getTag()) {
+                                // Bring-up: stack caps are untagged (csp is a bare pointer), so
+                                // &local = csetbounds(untagged stack ptr, N) would otherwise get
+                                // no bounds. Apply the requested bounds so cgetlen()/cgetbase()
+                                // report them (the kernel validates &local via cgetlen); keep the
+                                // tag cleared.
+                                {
+                                    bool _uex = false;
+                                    CAPTYPE _um = cc128EncodeBounds(Cs1.getMetadata(),
+                                        Cs1.getAddress(), (uint64_t)(Rs2), &_uex);
+                                    Cd.setMetadata(_um);
+                                    Cd.setAddress(Cs1.getAddress());
+                                    (void)_uex;
+                                }
                                 Cd.setTag(false);
-                                DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                             } else {
                                 uint64_t new_base = Cs1.getAddress();
                                 uint64_t req_length = Rs2;
@@ -5547,13 +5601,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;
                                     B = (B_hi << 3) | B_E;
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;
                                     T = T_hi << 3;
                                     B = B_hi << 3;
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -5832,13 +5886,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;
                                     B = (B_hi << 3) | B_E;
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;
                                     T = T_hi << 3;
                                     B = B_hi << 3;
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -5935,13 +5989,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;
                                     B = (B_hi << 3) | B_E;
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;
                                     T = T_hi << 3;
                                     B = B_hi << 3;
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -6041,13 +6095,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;
                                     B = (B_hi << 3) | B_E;
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;
                                     T = T_hi << 3;
                                     B = B_hi << 3;
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -6302,13 +6356,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E1 = 0;
                                     T1 = (T_hi1 << 3) | T_E1;
                                     B1 = (B_hi1 << 3) | B_E1;
-                                    L_carry_out1 = (T1 < B1) ? 1 : 0;
+                                    L_carry_out1 = (T1 < (B1 & 0xFFF)) ? 1 : 0;
                                     L_msb1 = 0;
                                 } else {
                                     E1 = (T_E1 << 3) | B_E1;
                                     T1 = T_hi1 << 3;
                                     B1 = B_hi1 << 3;
-                                    L_carry_out1 = (T_hi1 < B_hi1) ? 1 : 0;
+                                    L_carry_out1 = (T1 < (B1 & 0xFFF)) ? 1 : 0;
                                     L_msb1 = 1;
                                 }
                                 
@@ -6353,13 +6407,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E2 = 0;
                                     T2 = (T_hi2 << 3) | T_E2;
                                     B2 = (B_hi2 << 3) | B_E2;
-                                    L_carry_out2 = (T2 < B2) ? 1 : 0;
+                                    L_carry_out2 = (T2 < (B2 & 0xFFF)) ? 1 : 0;
                                     L_msb2 = 0;
                                 } else {
                                     E2 = (T_E2 << 3) | B_E2;
                                     T2 = T_hi2 << 3;
                                     B2 = B_hi2 << 3;
-                                    L_carry_out2 = (T_hi2 < B_hi2) ? 1 : 0;
+                                    L_carry_out2 = (T2 < (B2 & 0xFFF)) ? 1 : 0;
                                     L_msb2 = 1;
                                 }
                                 
@@ -6494,7 +6548,7 @@ decode QUADRANT default Unknown::unknown() {
                             DPRINTF(CheriDecode, "CGetBase: c%d -> x%d\n", cs1Idx, dstIdx);
                             // DPRINTF(CheriDecode, "Getting base for c%d and storing in x%d\n", cs1Idx, dstIdx);
 
-                            if (!Cs1.getTag()) {
+                            if (false /* bring-up: decode untagged caps too (stack caps are untagged) */) {
                                 Rd = 0;
                                 DPRINTF(CheriDecode, "Capability is invalid, base = 0\n");
                             } else {
@@ -6515,13 +6569,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;  // T[11:3] | T[2:0]
                                     B = (B_hi << 3) | B_E;  // B[13:3] | B[2:0]
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;   // {T_E, B_E}
                                     T = T_hi << 3;          // T[11:3] | 0
                                     B = B_hi << 3;          // B[13:3] | 0
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -6570,7 +6624,7 @@ decode QUADRANT default Unknown::unknown() {
                                 DPRINTF(CheriDecode, "Getting length for c%d and storing in x%d\n",
                                     cs1Idx, dstIdx);
 
-                            if (!Cs1.getTag()) {
+                            if (false /* bring-up: decode untagged caps too (stack caps are untagged) */) {
                                 Rd = 0;
                                 DPRINTF(CheriDecode, "Capability is invalid, length = 0\n");
                             } else {
@@ -6590,13 +6644,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;
                                     B = (B_hi << 3) | B_E;
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;
                                     T = T_hi << 3;
                                     B = B_hi << 3;
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -6691,7 +6745,7 @@ decode QUADRANT default Unknown::unknown() {
 
                             DPRINTF(CheriDecode, "Getting offset for c%d and storing in x%d\n", cs1Idx, dstIdx);
 
-                            if (!Cs1.getTag()) {
+                            if (false /* bring-up: decode untagged caps too (stack caps are untagged) */) {
                                 Rd = 0;
                                 DPRINTF(CheriDecode, "Capability is invalid, offset = 0\n");
                             } else {
@@ -6712,13 +6766,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;  // T[11:3] | T[2:0]
                                     B = (B_hi << 3) | B_E;  // B[13:3] | B[2:0]
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;   // {T_E, B_E}
                                     T = T_hi << 3;          // T[11:3] | 0
                                     B = B_hi << 3;          // B[13:3] | 0
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -6802,7 +6856,7 @@ decode QUADRANT default Unknown::unknown() {
 
                             DPRINTF(CheriDecode, "Getting top for c%d and storing in x%d\n", cs1Idx, dstIdx);
 
-                            if (!Cs1.getTag()) {
+                            if (false /* bring-up: decode untagged caps too (stack caps are untagged) */) {
                                 Rd = 0;
                                 DPRINTF(CheriDecode, "Capability is invalid, top = 0\n");
                             } else {
@@ -6823,13 +6877,13 @@ decode QUADRANT default Unknown::unknown() {
                                     E = 0;
                                     T = (T_hi << 3) | T_E;  // T[11:3] | T[2:0]
                                     B = (B_hi << 3) | B_E;  // B[13:3] | B[2:0]
-                                    L_carry_out = (T < B) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 0;
                                 } else {
                                     E = (T_E << 3) | B_E;   // {T_E, B_E}
                                     T = T_hi << 3;          // T[11:3] | 0
                                     B = B_hi << 3;          // B[13:3] | 0
-                                    L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                    L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                     L_msb = 1;
                                 }
                                 
@@ -6876,35 +6930,17 @@ decode QUADRANT default Unknown::unknown() {
                                 DPRINTF(CheriDecode, "Rounding length from x%d to representable value and storing in x%d\n", rs1Idx, dstIdx);
 
                             uint64_t req_length = Rs1;
-                            
-                            if (req_length == 0) {
-                                Rd = 0;
-                                DPRINTF(CheriDecode, "Length is 0, returning 0\n");
-                            } else if (req_length <= (1ULL << 14)) {
-                                // Can be represented exactly without compression
-                                Rd = req_length;
-                                DPRINTF(CheriDecode, "Length %llu can be represented exactly\n", (unsigned long long)req_length);
-                            } else {
-                                // Need compression - find minimum E
-                                uint64_t E = 0;
-                                uint64_t temp = req_length >> 14;
-                                while (temp > 0) {
-                                    E++;
-                                    temp >>= 1;
-                                }
-                                
-                                // Round up to nearest multiple of 2^E
-                                uint64_t alignment = (1ULL << E);
-                                uint64_t rounded_length = ((req_length + alignment - 1) >> E) << E;
-                                
-                                Rd = rounded_length;
-                                
-                                DPRINTF(CheriDecode, "Rounded length from %#llx to %#llx (E=%llu, alignment=%#llx)\n",
-                                    (unsigned long long)req_length,
-                                    (unsigned long long)rounded_length,
-                                    (unsigned long long)E,
-                                    (unsigned long long)alignment);
-                            }
+
+                            // Use the shared reference-consistent rounding so
+                            // CRRL agrees with CSetBounds (the kernel rounds a
+                            // length here, aligns the base with CRAM below, then
+                            // asserts CSetBounds produced exactly this length).
+                            uint64_t rounded_length = cc128RoundLength(req_length);
+                            Rd = rounded_length;
+
+                            DPRINTF(CheriDecode, "Rounded length from %#llx to %#llx\n",
+                                (unsigned long long)req_length,
+                                (unsigned long long)rounded_length);
                         }});
 
                         0x09: crepresentablealignmentmask({{
@@ -6916,41 +6952,17 @@ decode QUADRANT default Unknown::unknown() {
                                 DPRINTF(CheriDecode, "Getting alignment mask for length from x%d and storing in x%d\n", rs1Idx, dstIdx);
 
                             uint64_t req_length = Rs1;
-                            
+
                             // CRepresentableAlignmentMask returns a mask such
                             // that (addr & mask) rounds addr DOWN to a base that
-                            // can hold an exact-bounds capability of `req_length`.
-                            // The mask therefore has the HIGH bits SET (preserved)
-                            // and the low E bits CLEAR (aligned away). Previously
-                            // both branches were inverted (returned 0 / the low
-                            // bits), which collapsed every "align then setbounds"
-                            // idiom's base to 0 -> null/base-0 kernel caps.
-                            if (req_length == 0 || req_length <= (1ULL << 14)) {
-                                // No alignment required for small lengths (E=0):
-                                // any address is representable, so preserve all
-                                // bits -> mask = all ones.
-                                Rd = ~0ULL;
-                                DPRINTF(CheriDecode, "No alignment required (E=0), mask = ~0\n");
-                            } else {
-                                // Need compression - find minimum E
-                                uint64_t E = 0;
-                                uint64_t temp = req_length >> 14;
-                                while (temp > 0) {
-                                    E++;
-                                    temp >>= 1;
-                                }
+                            // can hold an exact-bounds capability of req_length.
+                            // Uses the same reference cc128 exponent/incE logic
+                            // as CSetBounds and CRRL so the three stay consistent.
+                            uint64_t mask = cc128AlignMask(req_length);
+                            Rd = mask;
 
-                                // Clear the low E bits (align down); preserve the
-                                // high bits.
-                                uint64_t mask = ~((1ULL << E) - 1);
-
-                                Rd = mask;
-
-                                DPRINTF(CheriDecode, "Alignment mask = %#llx (E=%llu, base aligned to %#llx)\n",
-                                    (unsigned long long)mask,
-                                    (unsigned long long)E,
-                                    (unsigned long long)(1ULL << E));
-                            }
+                            DPRINTF(CheriDecode, "Alignment mask = %#llx\n",
+                                (unsigned long long)mask);
                         }});
 
                         0x0A: cmove({{
@@ -7166,7 +7178,7 @@ decode QUADRANT default Unknown::unknown() {
                         }});
 
                         0x12: cloadtags({{
- 
+
                             using namespace gem5::CHERIRiscvISA;
 
                             RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
@@ -7174,115 +7186,57 @@ decode QUADRANT default Unknown::unknown() {
 
                             DPRINTF(CheriDecode, "Loading tags from memory at c%d and storing in x%d\n", cs1Idx, dstIdx);
 
-                            // Check if cs1 tag is set
-                            if (!Cs1.getTag()) {
-                                DPRINTF(CheriDecode, "cs1 tag not set, raising CapEx_TagViolation\n");
-                                // fault = std::make_shared<CheriCapException>(CapEx_TagViolation);
-                                Rd = 0;
+                            // Bring-up: capability enforcement (tag/seal/perm/
+                            // bounds/alignment) is disabled throughout this port,
+                            // and the early caps do not yet carry correct perms/
+                            // otype, so gating cloadtags on those checks made it
+                            // always return 0 (kernel panic "Bad cloadtags result
+                            // 0x0"). Skip the checks and just read the tag table.
+                            uint64_t vaddr = Cs1.getAddress();
+                            const uint64_t caps_per_cache_line = 8;
+                            const uint64_t cap_size = 16;  // 128-bit capability
+                            const uint64_t access_length =
+                                caps_per_cache_line * cap_size;
+
+                            // cloadtags is a register-format instruction so it
+                            // does not go through the load/store translation
+                            // path; translate the virtual address ourselves. The
+                            // tag table is keyed by physical address, the same
+                            // way clc/csc read/write tags in cap_mem.isa.
+                            auto *ctc = xc->tcBase();
+                            // Use the virtual-address Request constructor (sets
+                            // VALID_VADDR); the 4-arg form builds a PHYSICAL
+                            // request and translateFunctional()'s getVaddr()
+                            // would assert.
+                            RequestPtr treq = std::make_shared<Request>(
+                                vaddr, access_length, Request::Flags(),
+                                Request::funcRequestorId, /*pc*/0,
+                                ctc->contextId());
+                            Fault tf = ctc->getMMUPtr()->translateFunctional(
+                                treq, ctc, BaseMMU::Read);
+                            uint64_t tag_bits = 0;
+                            Addr pa = vaddr;
+                            System *csys = ctc->getSystemPtr();
+                            if (tf == NoFault) {
+                                pa = treq->getPaddr();
                             } else {
-                                uint64_t vaddr = Cs1.getAddress();
-                                CAPTYPE meta = Cs1.getMetadata();
-                                
-                                // Check if cs1 is sealed
-                                const uint64_t OTYPE_UNSEALED = (1ULL << 18) - 1;
-                                if (meta.otype != OTYPE_UNSEALED) {
-                                    DPRINTF(CheriDecode, "cs1 is sealed, raising CapEx_SealViolation\n");
-                                    // fault = std::make_shared<CheriCapException>(CapEx_SealViolation);
-                                    Rd = 0;
-                                } else {
-                                    // Check load permission (bit 0)
-                                    const uint64_t PERM_LOAD = (1ULL << 0);
-                                    if ((meta.perm & PERM_LOAD) == 0) {
-                                        DPRINTF(CheriDecode, "No load permission, raising CapEx_PermitLoadViolation\n");
-                                        // fault = std::make_shared<CheriCapException>(CapEx_PermitLoadViolation);
-                                        Rd = 0;
-                                    } else {
-                                        // Check load capability permission (bit 2)
-                                        const uint64_t PERM_LOAD_CAP = (1ULL << 2);
-                                        if ((meta.perm & PERM_LOAD_CAP) == 0) {
-                                            DPRINTF(CheriDecode, "No load cap permission, raising CapEx_PermitLoadCapViolation\n");
-                                            // fault = std::make_shared<CheriCapException>(CapEx_PermitLoadCapViolation);
-                                            Rd = 0;
-                                        } else {
-                                            // Decode bounds
-                                            uint64_t B_hi = meta.B;
-                                            uint64_t T_hi = meta.T;
-                                            uint64_t B_E = meta.BE;
-                                            uint64_t T_E = meta.TE;
-                                            uint64_t I_E = meta.IE;
-                                            
-                                            uint64_t E, B, T, L_carry_out, L_msb;
-                                            
-                                            if (I_E == 0) {
-                                                E = 0;
-                                                T = (T_hi << 3) | T_E;
-                                                B = (B_hi << 3) | B_E;
-                                                L_carry_out = (T < B) ? 1 : 0;
-                                                L_msb = 0;
-                                            } else {
-                                                E = (T_E << 3) | B_E;
-                                                T = T_hi << 3;
-                                                B = B_hi << 3;
-                                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
-                                                L_msb = 1;
-                                            }
-                                            
-                                            uint64_t B_top2 = (B >> 12) & 0x3;
-                                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-                                            
-                                            uint64_t A_3 = (vaddr >> (E + 11)) & 0x7;
-                                            uint64_t B_3 = (B >> 11) & 0x7;
-                                            uint64_t T_3 = (T >> 11) & 0x7;
-                                            uint64_t R = (B_3 - 1) & 0x7;
-                                            
-                                            int64_t c_b, c_t;
-                                            bool cond1_b = (A_3 < R);
-                                            bool cond2_b = (B_3 < R);
-                                            if (!cond1_b && !cond2_b) c_b = 0;
-                                            else if (!cond1_b && cond2_b) c_b = 1;
-                                            else if (cond1_b && !cond2_b) c_b = -1;
-                                            else c_b = 0;
-                                            
-                                            bool cond1_t = (A_3 < R);
-                                            bool cond2_t = (T_3 < R);
-                                            if (!cond1_t && !cond2_t) c_t = 0;
-                                            else if (!cond1_t && cond2_t) c_t = 1;
-                                            else if (cond1_t && !cond2_t) c_t = -1;
-                                            else c_t = 0;
-                                            
-                                            uint64_t a_top = (vaddr >> (E + 14));
-                                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
-                                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
-                                            
-                                            // Check bounds - typical implementations load 8 tags (8 caps * 16 bytes)
-                                            const uint64_t caps_per_cache_line = 8;
-                                            const uint64_t cap_size = 16;  // 128 bits
-                                            uint64_t access_length = caps_per_cache_line * cap_size;
-                                            
-                                            if (vaddr < base || (vaddr + access_length) > top) {
-                                                DPRINTF(CheriDecode, "Address out of bounds, raising CapEx_LengthViolation\n");
-                                                // fault = std::make_shared<CheriCapException>(CapEx_LengthViolation, cs1Idx);
-                                                Rd = 0;
-                                            } else {
-                                                // Check alignment - must be aligned to (caps_per_cache_line * cap_size)
-                                                if ((vaddr % access_length) != 0) {
-                                                    DPRINTF(CheriDecode, "Address misaligned, raising E_Load_Addr_Align\n");
-                                                    // fault = std::make_shared<AddressAlignmentFault>(vaddr, E_Load_Addr_Align);
-                                                    Rd = 0;
-                                                } else {
-                                                    // Load tags from memory
-                                                    // TODO: Actually access memory tag table
-                                                    // For now, placeholder returns 0
-                                                    uint64_t tag_bits = 0;
-                                                    
-                                                    DPRINTF(CheriDecode, "Loaded tag bits = %#llx from address %#llx\n", (unsigned long long)tag_bits, (unsigned long long)vaddr);
-                                                    Rd = tag_bits;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                // Bring-up: this early cloadtags targets a
+                                // PHYSICAL address (e.g. 0x80204b00, in the DRAM
+                                // range where the kernel is loaded) that is not
+                                // mapped in the current page table, so translation
+                                // faults. Fall back to treating the capability
+                                // address as physical (identity) -- the tags for
+                                // that region are already in the table.
+                                pa = vaddr;
+                                DPRINTF(CheriDecode, "cloadtags translate failed for vaddr %#llx, using identity pa\n", (unsigned long long)vaddr);
                             }
+                            for (uint64_t i = 0; i < caps_per_cache_line; i++) {
+                                if (csys->cheritagtable.getTag(pa + i * cap_size))
+                                    tag_bits |= (1ULL << i);
+                            }
+
+                            DPRINTF(CheriDecode, "Loaded tag bits = %#llx from vaddr %#llx (pa-based)\n", (unsigned long long)tag_bits, (unsigned long long)vaddr);
+                            Rd = tag_bits;
 
                         }});
 
@@ -7314,13 +7268,13 @@ decode QUADRANT default Unknown::unknown() {
                                 E = 0;
                                 T = (T_hi << 3) | T_E;
                                 B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
+                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                 L_msb = 0;
                             } else {
                                 E = (T_E << 3) | B_E;
                                 T = T_hi << 3;
                                 B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                 L_msb = 1;
                             }
                             
@@ -7593,13 +7547,13 @@ decode QUADRANT default Unknown::unknown() {
                                 E = 0;
                                 T = (T_hi << 3) | T_E;
                                 B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
+                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                 L_msb = 0;
                             } else {
                                 E = (T_E << 3) | B_E;
                                 T = T_hi << 3;
                                 B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                 L_msb = 1;
                             }
                             
@@ -7667,8 +7621,20 @@ decode QUADRANT default Unknown::unknown() {
                         Cd = Cs1;
                         
                         if (!Cs1.getTag()) {
+                            // Bring-up: stack caps are untagged (csp is a bare pointer), so
+                            // &local = csetbounds(untagged stack ptr, N) would otherwise get
+                            // no bounds. Apply the requested bounds so cgetlen()/cgetbase()
+                            // report them (the kernel validates &local via cgetlen); keep the
+                            // tag cleared.
+                            {
+                                bool _uex = false;
+                                CAPTYPE _um = cc128EncodeBounds(Cs1.getMetadata(),
+                                    Cs1.getAddress(), (uint64_t)(imm), &_uex);
+                                Cd.setMetadata(_um);
+                                Cd.setAddress(Cs1.getAddress());
+                                (void)_uex;
+                            }
                             Cd.setTag(false);
-                            DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                         } else {
                             uint64_t new_base = Cs1.getAddress();
                             uint64_t req_length = imm;
@@ -7691,13 +7657,13 @@ decode QUADRANT default Unknown::unknown() {
                                 E = 0;
                                 T = (T_hi << 3) | T_E;
                                 B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < B) ? 1 : 0;
+                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                 L_msb = 0;
                             } else {
                                 E = (T_E << 3) | B_E;
                                 T = T_hi << 3;
                                 B = B_hi << 3;
-                                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                                 L_msb = 1;
                             }
                             

@@ -51,13 +51,13 @@ cc128DecodeBounds(uint64_t addr, CAPTYPE meta,
         E = 0;
         T = (T_hi << 3) | T_E;
         B = (B_hi << 3) | B_E;
-        L_carry_out = (T < B) ? 1 : 0;
+        L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
         L_msb = 0;
     } else {
         E = (T_E << 3) | B_E;
         T = T_hi << 3;
         B = B_hi << 3;
-        L_carry_out = (T_hi < B_hi) ? 1 : 0;
+        L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
         L_msb = 1;
     }
 
@@ -102,71 +102,121 @@ cc128DecodeBounds(uint64_t addr, CAPTYPE meta,
     out_top  = top_hi | top_lo;
 }
 
-// Build candidate bounds metadata for a given exponent and IE choice, keeping
-// the non-bounds fields (perms/otype/...) from src.
-inline CAPTYPE
-cc128BuildMeta(CAPTYPE src, uint64_t E, bool ie,
-               uint64_t req_base, uint64_t req_top)
+// Exponent for a requested length, matching the reference cc128 compute_e
+// (bwidth == MANTISSA_WIDTH == 14): E == 0 for lengths that fit the mantissa
+// without an internal exponent, otherwise msb(length) - 12.
+inline uint32_t
+cc128GetExponent(uint64_t req_length)
 {
-    CAPTYPE m = src;
-    if (!ie) {
-        // IE == 0: E is 0, B is 14 bits, T is 12 bits (top 2 reconstructed).
-        uint64_t Bm = req_base & 0x3FFFULL;
-        uint64_t Tm = req_top  & 0x3FFFULL;
-        m.IE = 0;
-        m.BE = Bm & 0x7;
-        m.B  = (Bm >> 3) & 0x7FF;
-        m.TE = Tm & 0x7;
-        m.T  = (Tm >> 3) & 0x1FF;
-    } else {
-        // IE == 1: low 3 bits of TOP/BOTTOM hold E; mantissas lose 3 bits.
-        uint64_t sh    = E + 3;
-        uint64_t tmask = (sh >= 64) ? ~0ULL : ((1ULL << sh) - 1);
-        uint64_t Bm    = (sh >= 64) ? 0 : ((req_base >> sh) & 0x7FFULL);
-        uint64_t Tm    = (sh >= 64) ? 0 : ((req_top  >> sh) & 0x7FFULL);
-        if (req_top & tmask)            // round the top up if bits are lost
-            Tm = (Tm + 1) & 0x7FFULL;
-        m.IE = 1;
-        m.BE = E & 0x7;                 // exponent low part
-        m.TE = (E >> 3) & 0x7;          // exponent high part
-        m.B  = Bm & 0x7FF;              // 11-bit bottom mantissa
-        m.T  = Tm & 0x1FF;              // 9-bit top mantissa (2 more reconstructed)
-    }
-    return m;
+    if (req_length < (1ULL << 13))
+        return 0;
+    return (uint32_t)(63 - __builtin_clzll(req_length)) - 12;
 }
 
-// Encode [req_base, req_base+req_length) into src's bounds fields. Picks the
-// smallest exponent that decodes back exactly; if no exponent is exact
-// (unusual for the aligned allocations a kernel makes), returns the smallest
-// exponent that at least COVERS the region and sets *exact=false.
+// Encode [req_base, req_base+req_length) into src's bounds fields. This is a
+// direct port of the reference CTSRD-CHERI/cheri-compressed-cap compute_ebt():
+// pick E from the length, use an internal exponent when needed, round the top
+// up when low bits are lost, and -- crucially -- bump E by one when the length
+// mantissa overflows (the incE step). *exact reports whether the encoded region
+// is exactly [req_base, req_base+req_length). Our cc128DecodeBounds is the
+// matching reconstruction, so an exact encoding round-trips through the
+// cget* decoders and an inexact one strictly covers the requested region.
 inline CAPTYPE
 cc128EncodeBounds(CAPTYPE src, uint64_t req_base, uint64_t req_length,
                   bool *exact)
 {
     uint64_t req_top = req_base + req_length;
+    uint32_t E = cc128GetExponent(req_length);
+    // Internal exponent whenever E != 0, or the length already reaches bit 12
+    // (a page-sized region needs IE even at E == 0).
+    bool ie = (E != 0) || ((req_length >> 12) & 1);
 
-    bool have_cover = false;
-    CAPTYPE cover_meta = src;
+    CAPTYPE m = src;
 
-    for (uint64_t E = 0; E <= 52; E++) {
-        // At E==0 an IE==0 encoding may be exact; otherwise use IE==1.
-        for (int ie = (E == 0 ? 0 : 1); ie <= 1; ie++) {
-            CAPTYPE cand = cc128BuildMeta(src, E, ie != 0, req_base, req_top);
-            uint64_t db, dt;
-            cc128DecodeBounds(req_base, cand, db, dt);
-            if (db == req_base && dt == req_top) {
-                if (exact) *exact = true;
-                return cand;
-            }
-            if (!have_cover && db <= req_base && dt >= req_top) {
-                have_cover = true;
-                cover_meta = cand;
-            }
-        }
+    if (!ie) {
+        // IE == 0: B is 14 bits, T is 12 bits (top 2 reconstructed on decode).
+        uint64_t bot = req_base & 0x3FFFULL;
+        uint64_t top = req_top  & 0x0FFFULL;
+        m.IE = 0;
+        m.BE = bot & 0x7;
+        m.B  = (bot >> 3) & 0x7FF;
+        m.TE = top & 0x7;
+        m.T  = (top >> 3) & 0x1FF;
+        if (exact) *exact = true;
+        return m;
     }
 
-    if (exact) *exact = false;
-    return have_cover ? cover_meta : src;
+    const uint32_t LOW = 3;   // exponent low-part width (EXP_LOW_WIDTH)
+    const uint32_t BW  = 11;  // internal-exponent mantissa width
+
+    uint64_t bot = (req_base >> (E + LOW)) & 0x7FFULL;
+    uint64_t top = (req_top  >> (E + LOW)) & 0x7FFULL;
+    uint64_t maskLo = (1ULL << (E + LOW)) - 1;
+    bool lostBase = (req_base & maskLo) != 0;
+    bool lostTop  = (req_top  & maskLo) != 0;
+    if (lostTop)
+        top = (top + 1) & 0x7FFULL;
+
+    uint64_t len_ie = (top - bot) & 0x7FFULL;
+    uint32_t newE = E;
+    if ((len_ie >> (BW - 1)) & 1) {
+        // Length mantissa overflowed: increment E and recompute at +1 shift.
+        lostBase = lostBase || (bot & 1);
+        lostTop  = lostTop  || (top & 1);
+        bot = (req_base >> (E + LOW + 1)) & 0x7FFULL;
+        bool incT = lostTop;
+        top = (req_top >> (E + LOW + 1)) & 0x7FFULL;
+        if (incT)
+            top = (top + 1) & 0x7FFULL;
+        newE = E + 1;
+    }
+
+    m.IE = 1;
+    m.BE = newE & 0x7;          // exponent low part
+    m.TE = (newE >> 3) & 0x7;   // exponent high part
+    m.B  = bot & 0x7FF;         // 11-bit bottom mantissa
+    m.T  = top & 0x1FF;         // 9-bit top mantissa (2 more reconstructed)
+    if (exact)
+        *exact = !lostBase && !lostTop;
+    return m;
+}
+
+// CRepresentableAlignmentMask: the mask that aligns a base DOWN so a capability
+// of req_length is exactly representable. Mirrors the reference
+// get_alignment_mask (compute_ebt with req_base == 0), returning the shift the
+// encoder would use -- E+3, or E+4 when the incE overflow step fires.
+inline uint64_t
+cc128AlignMask(uint64_t req_length)
+{
+    if (req_length == 0)
+        return ~0ULL;
+    uint32_t E = cc128GetExponent(req_length);
+    bool ie = (E != 0) || ((req_length >> 12) & 1);
+    if (!ie)
+        return ~0ULL;   // E == 0, IE == 0: any base is representable.
+
+    const uint32_t LOW = 3;
+    const uint32_t BW  = 11;
+    // req_base == 0 so bot == 0 and len_ie == top.
+    uint64_t top = (req_length >> (E + LOW)) & 0x7FFULL;
+    uint64_t maskLo = (1ULL << (E + LOW)) - 1;
+    if (req_length & maskLo)
+        top = (top + 1) & 0x7FFULL;
+    if ((top >> (BW - 1)) & 1)
+        return ~0ULL << (E + LOW + 1);
+    return ~0ULL << (E + LOW);
+}
+
+// CRoundRepresentableLength: smallest length >= req_length that is exactly
+// representable at a base aligned with cc128AlignMask(req_length). Mirrors the
+// reference get_representable_length.
+inline uint64_t
+cc128RoundLength(uint64_t req_length)
+{
+    if (req_length == 0)
+        return 0;
+    uint64_t mask = cc128AlignMask(req_length);
+    return (req_length + ~mask) & mask;
 }
 
 } // namespace CHERIRiscvISA

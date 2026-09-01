@@ -250,13 +250,13 @@ namespace gem5
                 E = 0;
                 T = (T_hi << 3) | T_E;
                 B = (B_hi << 3) | B_E;
-                L_carry_out = (T < B) ? 1 : 0;
+                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                 L_msb = 0;
             } else {
                 E = (T_E << 3) | B_E;
                 T = T_hi << 3;
                 B = B_hi << 3;
-                L_carry_out = (T_hi < B_hi) ? 1 : 0;
+                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
                 L_msb = 1;
             }
 

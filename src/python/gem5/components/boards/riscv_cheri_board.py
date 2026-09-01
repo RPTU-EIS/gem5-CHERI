@@ -297,13 +297,19 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             node.append(FdtPropertyStrings("status", "okay"))
             node.append(
                 FdtPropertyStrings(
-                    "riscv_cheri,isa", core.core.isa[0].get_isa_string()
+                    # Must be the standard "riscv,isa" -- the kernel parses this
+                    # to build the CPU's extension set; a "riscv_cheri,isa" name
+                    # is invisible to it ("Empty extension set for CPU 0").
+                    "riscv,isa", core.core.isa[0].get_isa_string()
                 )
             )
             # TODO: Should probably get this from the core.
             freq = self.clk_domain.clock[0].frequency
             node.append(FdtPropertyWords("clock-frequency", freq))
-            node.appendCompatible(["riscv_cheri"])
+
+            # added risc-v and cheri risc v compatible strings to the cpu node. 
+            node.appendCompatible(["riscv", "riscv_cheri"])
+            
             int_phandle = state.phandle(f"cpu@{i}.int_state")
             node.appendPhandle(f"cpu@{i}")
 

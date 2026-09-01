@@ -61,7 +61,7 @@ namespace linux
 void
 PanicOrOopsEvent::process(ThreadContext *tc)
 {
-    warn(descr());
+    warn(descr(), " current tick: %d\n", curTick());
 
     if (behaviour != KernelPanicOopsBehaviour::Continue) {
         inform("Dumping kernel dmesg buffer to %s...\n", fname);

@@ -34,6 +34,7 @@
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/pc_event.hh"
+#include "cpu/thread_context.hh"
 #include "kern/linux/events.hh"
 #include "sim/kernel_workload.hh"
 #include "sim/sim_exit.hh"
@@ -44,6 +45,50 @@ namespace gem5
 
 namespace CHERIRiscvISA
 {
+
+namespace
+{
+
+// ── Bring-up fixup for the firmware-less, physical-entry boot. ──
+// CheriBSD locore builds rvbp->kern_l1pt via PC-relative (auipcc) addressing
+// while it is still running at PHYSICAL PC (we enter physically so its satp
+// computation, which uses the PC-relative L1PT address directly as the PPN, is
+// correct). So kern_l1pt -- and hence kernel_pmap->pm_top -- arrives PHYSICAL.
+// This kernel expects it already virtual: initriscv passes rvbp->kern_l1pt
+// straight to pmap_bootstrap, which stores it as pm_top with no conversion, and
+// pmap_pinit0 later does vtophys(pm_top). With a physical pm_top,
+// pmap_kextract() treats it as a VA, finds no L2, and panics "pmap_kextract:
+// No l2". Fire at pmap_bootstrap entry and rewrite arg0 (ca0 = kern_l1pt) from
+// its physical address to the kernel VA so pm_top is a mapped kernel pointer.
+// (A real loader hands the kernel a virtual kern_l1pt; we have no loader.)
+class KernL1ptFixupEvent : public PCEvent
+{
+  public:
+    KernL1ptFixupEvent(PCEventScope *s, const std::string &desc, Addr addr)
+        : PCEvent(s, desc, addr) {}
+
+    void
+    process(ThreadContext *tc) override
+    {
+        constexpr Addr VA_BASE = 0xffffffc000000000ULL;
+        constexpr Addr PA_BASE = 0x80200000ULL;
+        constexpr Addr RAM_LO  = 0x80000000ULL;
+        constexpr Addr RAM_HI  = 0x140000000ULL;
+
+        CapRegContainer cap;
+        tc->getReg(cap_reg::CA0, &cap);
+        Addr pa = cap.getAddress();
+        if (pa >= RAM_LO && pa < RAM_HI) {
+            Addr va = pa - PA_BASE + VA_BASE;
+            CapRegContainer fixed = CapRegContainer::almighty(va);
+            tc->setReg(cap_reg::CA0, &fixed);
+            warn("pmap_bootstrap: rewrote kern_l1pt PA %#x -> VA %#x "
+                 "(firmware-less boot handoff)\n", pa, va);
+        }
+    }
+};
+
+} // anonymous namespace
 
 void
 FsLinux::initState()
@@ -369,6 +414,13 @@ BootloaderKernelWorkload::initState()
     loadBootloader();
     loadKernel();
     loadDtb();
+
+    // Rewrite rvbp->kern_l1pt (arg0) from physical to the kernel VA when
+    // pmap_bootstrap is entered -- see KernL1ptFixupEvent above.
+    kernL1ptFixupEvent = addFuncEvent<KernL1ptFixupEvent>(
+        kernelSymbolTable, "pmap_bootstrap");
+    warn_if(!kernL1ptFixupEvent,
+            "Failed to find kernel symbol 'pmap_bootstrap' for kern_l1pt fixup");
 
     // ── Enter the kernel PHYSICALLY (not at its virtual link address). ──
     // CheriBSD's early locore runs *before* it enables paging and derives the
