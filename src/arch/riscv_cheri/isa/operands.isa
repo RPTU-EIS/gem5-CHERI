@@ -98,13 +98,25 @@ let {{
             return f'capRegClass[{self.reg_spec}]'
 
         # READ: expose the capability's 64-bit address as this operand's
-        # integer value. Reading x0 reads cnull, whose address is 0.
+        # integer value. x0 (cnull) ALWAYS reads as 0, regardless of what is
+        # physically in c0 -- RISC-V zero-register semantics. Cap-writing
+        # instructions with rd=c0 (jal cnull, jalr cnull, auipcc cnull, cmove
+        # ...,cnull) can pollute c0's address; without this guard an integer
+        # read of x0 (e.g. `beq csp, cnull` in the trap trampoline) returns that
+        # garbage, so a null csp is not recognised as null and the kernel-origin
+        # trap path is skipped -> wild stack pointer -> fault cascade -> hang.
+        # (CapReg.makeRead applies the same guard for capability reads of c0.)
         @overrideInOperand
         def makeRead(self):
+            ob = '{'
+            cb = '}'
             tmp = f'tmp_s{self.src_reg_idx}'
+            ns = self.parser.namespace
             return (
-                f'{self.parser.namespace}::CapRegContainer {tmp};\n'
-                f'xc->getRegOperand(this, {self.src_reg_idx}, &{tmp});\n'
+                f'{ns}::CapRegContainer {tmp};\n'
+                f'if (({self.reg_spec}) != 0) {ob}\n'
+                f'    xc->getRegOperand(this, {self.src_reg_idx}, &{tmp});\n'
+                f'{cb}\n'
                 f'{self.base_name} = {tmp}.getAddress();\n'
             )
 

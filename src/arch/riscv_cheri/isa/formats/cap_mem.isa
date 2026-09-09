@@ -83,23 +83,23 @@ def template CapLoadExecute {{
         // ── Capability permission and bounds check ──
         %(cap_check_code)s;
 
-        // ── Atomic 16-byte read with cap flag ──
+        // ── Atomic 16-byte capability read ──
+        // readCapMem sets the CHERI_CAP_LOAD flag; the atomic CPU looks up the
+        // tag from the tag table (by physical address) and stashes it, which we
+        // read back via getLoadedCapTag(). (The timing CPU instead uses the
+        // split initiateAcc/completeAcc path and reads the tag in completeAcc.)
         uint8_t capData[16] = {0};
         const std::vector<bool> byte_enable(16, true);
         {
-            Fault fault = xc->readMem(
-                EA, capData, 16,
-                memAccessFlags | Request::CHERI_CAP_LOAD,
-                byte_enable);
+            Fault fault = xc->readCapMem(
+                EA, capData, 16, memAccessFlags, byte_enable);
             if (fault != NoFault)
                 return fault;
         }
 
-        // Assemble capability from data
-        // (In atomic mode, tag retrieval needs special handling —
-        //  for bringup, use tag=false and test with timing mode)
+        // Assemble capability from data, with the tag the atomic load produced.
         CapRegContainer _loadedCap;
-        _loadedCap.fromMemory(capData, false);
+        _loadedCap.fromMemory(capData, xc->getLoadedCapTag());
 
         %(memacc_code)s;
         %(op_wb)s;
@@ -221,17 +221,19 @@ def template CapStoreExecute {{
         // ── Prepare source capability for store ──
         %(memacc_code)s;
 
-        // ── Pack into 16 bytes and write ──
+        // ── Pack into 16 bytes and write, carrying the tag ──
+        // writeCapMem sets the CHERI_CAP_STORE flag and hands the source tag to
+        // the CPU (_pendingCapTag); the atomic CPU records it in the tag table
+        // by physical address. Without this the stored capability reloads with
+        // tag=0 and cjr/cjalr later refuse the (untagged) return capability.
         {
             uint8_t capData[16];
             _storeCap.toMemory(capData);
 
             const std::vector<bool> byte_enable(16, true);
-            Fault fault = xc->writeMem(
-                capData, 16, EA,
-                memAccessFlags | Request::CHERI_CAP_STORE,
-                nullptr, byte_enable);
-            // TODO: tag in atomic mode
+            Fault fault = xc->writeCapMem(
+                capData, 16, EA, memAccessFlags, nullptr,
+                _storeCap.getTag(), byte_enable);
             if (fault != NoFault)
                 return fault;
         }
@@ -493,6 +495,13 @@ def template CapDataStoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
+        // ── CHERI: S[BHWD].CAP stores integer data through a capability base,
+        // so it clears the tag of the granule(s) it writes (same invariant as
+        // StoreCompleteAcc). This is the common case for the kernel (memset
+        // uses sb.cap, struct writes use sd.cap): without clearing, a scalar
+        // write over old capability bytes leaves a stale valid tag behind.
+        xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
+            pkt->getAddr(), pkt->getSize());
         return NoFault;
     }
 }};

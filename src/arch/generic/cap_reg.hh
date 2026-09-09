@@ -375,7 +375,10 @@ namespace gem5
             cap.address = addr;
 
             CHERIRiscvISA::CAPTYPE meta = 0;
-            meta.perm = CHERIPerms::ALL;
+            // Include software-defined permissions (bits 12-15) so the root
+            // cap can grant CheriBSD's syscall permission (bit 15) to derived
+            // caps; without it every userspace syscall fails with ECAPMODE.
+            meta.perm = CHERIPerms::ALL_WITH_SW;
             meta.otype = CHERIMeta::OTYPE_UNSEALED;
             // Full address space bounds using Concentrate:
             // IE=1, E=52 gives enough exponent to cover 2^64

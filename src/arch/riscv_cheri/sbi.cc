@@ -3,6 +3,9 @@
  */
 #include "arch/riscv_cheri/sbi.hh"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <cstdint>
 #include <iostream>
 
@@ -47,9 +50,41 @@ wrReg(ThreadContext *tc, int idx, uint64_t val)
 void
 putConsole(char ch)
 {
+    // Flush every character so interactive prompts that lack a trailing newline
+    // (e.g. the single-user "...RETURN for /bin/sh: ") appear immediately rather
+    // than staying stuck in the buffer until the next newline / Ctrl-C.
     std::cout << ch;
-    if (ch == '\n')
-        std::cout.flush();
+    std::cout.flush();
+}
+
+// Read one byte from gem5's own stdin (the terminal gem5 was launched in),
+// without blocking. Returns the byte (0-255) or -1 if nothing is available.
+// This makes the SBI console (rcons0, which FreeBSD selects as /dev/console
+// here) INTERACTIVE: keystrokes typed in gem5's window reach the guest shell.
+// Requires gem5 to be run with an interactive stdin (i.e. not piped/redirected
+// as csp_dump.py does). stdout stays the SBI console output.
+int
+getConsole()
+{
+    static bool inited = false;
+    if (!inited) {
+        int fl = ::fcntl(STDIN_FILENO, F_GETFL);
+        if (fl != -1)
+            ::fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
+        inited = true;
+        // DEBUG: fires the first time the guest polls console input at all.
+        warn("SBI getConsole: first poll (guest IS reading console input; "
+             "stdin isatty=%d)\n", ::isatty(STDIN_FILENO));
+    }
+    unsigned char ch;
+    ssize_t n = ::read(STDIN_FILENO, &ch, 1);
+    if (n == 1) {
+        // DEBUG: a keystroke actually reached the guest.
+        warn("SBI getConsole: delivered 0x%02x '%c'\n", ch,
+             (ch >= 32 && ch < 127) ? ch : '?');
+        return (int)ch;
+    }
+    return -1;
 }
 
 // SBI error codes
@@ -108,7 +143,8 @@ handleSbiEcall(ThreadContext *tc)
             putConsole((char)a0);
             break;
           case EXT_CONSOLE_GETCHAR:
-            ret = (uint64_t)(int64_t)(-1); // no input available
+            // Return a byte from gem5's stdin, or -1 if none (SBI convention).
+            ret = (uint64_t)(int64_t)getConsole();
             break;
           case EXT_SHUTDOWN:
             std::cout.flush();
@@ -165,7 +201,22 @@ handleSbiEcall(ThreadContext *tc)
             std::cout.flush();
             val = num;              // bytes written
         } else if (fid == 1) {
-            val = 0;                // console_read: nothing available
+            // console_read(num_bytes=a0, base_lo=a1, base_hi=a2): read up to num
+            // bytes from gem5's stdin into the guest buffer; return count read.
+            const uint64_t num = a0;
+            const uint64_t alo = rdReg(tc, A1);
+            const uint64_t ahi = rdReg(tc, A2);
+            const Addr paddr = ahi ? ((ahi << 32) | (alo & 0xffffffffULL)) : alo;
+            PortProxy &proxy = tc->getSystemPtr()->physProxy;
+            uint64_t got = 0;
+            for (; got < num; got++) {
+                int c = getConsole();
+                if (c < 0)
+                    break;
+                uint8_t b = (uint8_t)c;
+                proxy.writeBlob(paddr + got, &b, 1);
+            }
+            val = got;              // bytes read
         } else if (fid == 2) {
             putConsole((char)a0);
         } else {

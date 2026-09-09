@@ -303,6 +303,9 @@ class SimpleExecContext : public ExecContext
         return cpu->readCapMem(addr, data, size, flags, byte_enable);
     }
 
+    // CHERI: tag stashed by the atomic CPU's most recent capability load.
+    bool getLoadedCapTag() const override { return cpu->getLoadedCapTag(); }
+
     Fault
     initiateCapMemRead(Addr addr, unsigned int size,
                        Request::Flags flags,

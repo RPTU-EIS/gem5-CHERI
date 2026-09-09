@@ -161,7 +161,13 @@ class ExecContext
                        flags | Request::CHERI_CAP_LOAD,
                        byte_enable);
     }
-    
+
+    // CHERI: tag bit produced by the most recent capability load. Only
+    // meaningful in atomic mode, where the load completes inside readMem/
+    // readCapMem (no packet reaches the ISA execute() template). CPU models
+    // that support atomic CHERI loads override this; default is untagged.
+    virtual bool getLoadedCapTag() const { return false; }
+
 
     /**
      * Initiate a memory management command with no valid address.

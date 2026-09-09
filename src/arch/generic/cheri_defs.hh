@@ -23,6 +23,14 @@ namespace CHERIPerms
     constexpr uint32_t ASR           = 1 << 10;
     constexpr uint32_t SETCID        = 1 << 11;
     constexpr uint32_t ALL           = 0xFFF;
+
+    // Software-defined (user) permissions occupy the top 4 bits of the
+    // 16-bit permission field (bits 12-15). CheriBSD uses bit 15 as the
+    // syscall permission: cheri_syscall_authorize() rejects any syscall
+    // whose PCC lacks it (ECAPMODE/94). The root capability must carry
+    // these so they can propagate to the userspace PCC at exec.
+    constexpr uint32_t SW            = 0xF000;      // bits 12-15
+    constexpr uint32_t ALL_WITH_SW   = ALL | SW;   // 0xFFFF
 }
 
 // ── Metadata layout constants ──

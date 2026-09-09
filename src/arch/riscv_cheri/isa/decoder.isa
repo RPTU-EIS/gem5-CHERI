@@ -502,32 +502,48 @@ decode QUADRANT default Unknown::unknown() {
                     xc->tcBase()->getReg(capRegClass[cs1_idx], &_target);
 
                     if (!_target.getTag()) {
-                        // Tag violation
-                        // raise fault
-                    } else {
+                        // ── Bring-up: c.jr to an UNTAGGED target ──
+                        // Real CHERI-RISC-V raises a tag-violation fault here.
+                        // The empty stub used to do NEITHER jump nor fault, so
+                        // c.jr silently FELL THROUGH to PC+2 -- a loop function's
+                        // `c.jr cra` ran into adjacent code with stale registers,
+                        // giving a bogus struct pointer and a misaligned clc /
+                        // SIGBUS in userspace startup. During bring-up we jump to
+                        // the target ADDRESS anyway (a merely-detagged but
+                        // otherwise-valid return/function cap still transfers
+                        // control), matching the relaxed checks elsewhere.
+                        // warn_once surfaces the upstream tag loss to fix later.
+                        warn_once("c_jr: untagged target c%d addr=%#lx meta=%#lx;"
+                            " jumping anyway (bring-up)\n", cs1_idx,
+                            (unsigned long)_target.getAddress(),
+                            (unsigned long)(uint64_t)_target.getMetadata());
+                        // The bare-integer target (meta=0) has no bounds/exec perm.
+                        // Re-home it on the CURRENT PCC (a valid executable cap) at
+                        // the target address, so the resulting PCC stays usable for
+                        // fetch and PC-relative derivation.
+                        {
+                            Addr _taddr = _target.getAddress();
+                            _target = xc->pcState().as<PCState>().pcc();
+                            _target.setAddress(_taddr);
+                        }
+                    }
+                    {
                         const PCStateBase &pcBaseConst = xc->pcState();
                         const PCState &pc_state_in = pcBaseConst.as<PCState>();
 
                         Addr inst_pc = pc_state_in.instAddr();
-                        Addr ret_addr = inst_pc + 2;                       // c.jalr is 2 bytes
                         Addr target_addr = _target.getAddress() & ~1ULL;
 
                         DPRINTF(CheriDecode,
-                            "c_jr ENTRY: inst_pc=0x%lx, ret_addr=0x%lx, target=0x%lx, "
+                            "c_jr ENTRY: inst_pc=0x%lx, target=0x%lx, "
                             "cs1_idx=%d, cs1.addr=0x%lx, cs1.tag=%d\n",
-                            inst_pc, ret_addr, target_addr, cs1_idx,
+                            inst_pc, target_addr, cs1_idx,
                             _target.getAddress(), _target.getTag());
 
-                        // ── Build return capability ──
-                        CapRegContainer current_pcc = pc_state_in.pcc();
-                        CapRegContainer ret_cap = current_pcc;
-                        CAPTYPE ret_meta = current_pcc.getMetadata();
-                        ret_meta.otype = (1ULL << 18) - 2;  // sentry
-                        ret_cap.setMetadata(ret_meta);
-                        ret_cap.setAddress(ret_addr);
-
-                        // Write return cap to c1 (cra) manually
-                        xc->tcBase()->setReg(capRegClass[1], &ret_cap);
+                        // NOTE: c.jr is a pure jump (jalr x0, 0(rs1)); it must
+                        // NOT write a link register. Only c.jalr links to cra.
+                        // (Previously this clobbered cra on every c.jr, which
+                        // corrupted all subsequent returns.)
 
                         // ── Build new PCC from target capability ──
                         CapRegContainer new_pcc = _target;
@@ -578,9 +594,24 @@ decode QUADRANT default Unknown::unknown() {
                         xc->tcBase()->getReg(capRegClass[cs1_idx], &_target);
 
                         if (!_target.getTag()) {
-                            // Tag violation
-                            // raise fault
-                        } else {
+                            // ── Bring-up: c.jalr to an UNTAGGED target ──
+                            // Same empty-stub fall-through bug as c.jr (see above):
+                            // real CHERI faults, the stub did nothing, so the call
+                            // silently fell through to PC+2. Jump to the target
+                            // address anyway during bring-up and surface the loss.
+                            warn_once("c_jalr: untagged target c%d addr=%#lx meta=%#lx;"
+                                " jumping anyway (bring-up)\n", cs1_idx,
+                                (unsigned long)_target.getAddress(),
+                                (unsigned long)(uint64_t)_target.getMetadata());
+                            // Re-home the bare-integer target on the current PCC
+                            // (valid executable cap) at the target address; see c_jr.
+                            {
+                                Addr _taddr = _target.getAddress();
+                                _target = xc->pcState().as<PCState>().pcc();
+                                _target.setAddress(_taddr);
+                            }
+                        }
+                        {
                             const PCStateBase &pcBaseConst = xc->pcState();
                             const PCState &pc_state_in = pcBaseConst.as<PCState>();
 
@@ -2050,6 +2081,157 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x0b: decode FUNCT3 {
+            // ── Zabha: byte atomics (FUNCT3=0) ──
+            // CheriBSD (compiled with Zabha) uses LR.B/SC.B/AMO*.B for byte-
+            // granular atomics (e.g. vm_page_set_valid_range); without these
+            // the kernel takes an illegal-instruction panic on the first one.
+            0x0: decode AMOFUNCT {
+                0x2: LoadReserved::lr_b({{
+                    Rd_sd = Mem_sb;
+                }}, mem_flags=LLSC);
+                0x3: StoreCond::sc_b({{
+                    Mem_ub = Rs2_ub;
+                }}, {{
+                    Rd = rvSext(result);
+                }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
+                0x0: AtomicMemOp::amoadd_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<int8_t> *amo_op =
+                          new AtomicGenericOp<int8_t>(Rs2_sb,
+                                  [](int8_t* b, int8_t a){ *b += a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1: AtomicMemOp::amoswap_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<uint8_t> *amo_op =
+                          new AtomicGenericOp<uint8_t>(Rs2_ub,
+                                  [](uint8_t* b, uint8_t a){ *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x4: AtomicMemOp::amoxor_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<uint8_t> *amo_op =
+                          new AtomicGenericOp<uint8_t>(Rs2_ub,
+                                  [](uint8_t* b, uint8_t a){ *b ^= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x8: AtomicMemOp::amoor_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<uint8_t> *amo_op =
+                          new AtomicGenericOp<uint8_t>(Rs2_ub,
+                                  [](uint8_t* b, uint8_t a){ *b |= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0xc: AtomicMemOp::amoand_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<uint8_t> *amo_op =
+                          new AtomicGenericOp<uint8_t>(Rs2_ub,
+                                  [](uint8_t* b, uint8_t a){ *b &= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x10: AtomicMemOp::amomin_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<int8_t> *amo_op =
+                      new AtomicGenericOp<int8_t>(Rs2_sb,
+                        [](int8_t* b, int8_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x14: AtomicMemOp::amomax_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<int8_t> *amo_op =
+                      new AtomicGenericOp<int8_t>(Rs2_sb,
+                        [](int8_t* b, int8_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x18: AtomicMemOp::amominu_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<uint8_t> *amo_op =
+                      new AtomicGenericOp<uint8_t>(Rs2_ub,
+                        [](uint8_t* b, uint8_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1c: AtomicMemOp::amomaxu_b({{
+                    Rd_sd = Mem_sb;
+                }}, {{
+                    TypedAtomicOpFunctor<uint8_t> *amo_op =
+                      new AtomicGenericOp<uint8_t>(Rs2_ub,
+                        [](uint8_t* b, uint8_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+            }
+            // ── Zabha: halfword atomics (FUNCT3=1) ──
+            0x1: decode AMOFUNCT {
+                0x2: LoadReserved::lr_h({{
+                    Rd_sd = Mem_sh;
+                }}, mem_flags=LLSC);
+                0x3: StoreCond::sc_h({{
+                    Mem_uh = Rs2_uh;
+                }}, {{
+                    Rd = rvSext(result);
+                }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
+                0x0: AtomicMemOp::amoadd_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<int16_t> *amo_op =
+                          new AtomicGenericOp<int16_t>(Rs2_sh,
+                                  [](int16_t* b, int16_t a){ *b += a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1: AtomicMemOp::amoswap_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<uint16_t> *amo_op =
+                          new AtomicGenericOp<uint16_t>(Rs2_uh,
+                                  [](uint16_t* b, uint16_t a){ *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x4: AtomicMemOp::amoxor_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<uint16_t> *amo_op =
+                          new AtomicGenericOp<uint16_t>(Rs2_uh,
+                                  [](uint16_t* b, uint16_t a){ *b ^= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x8: AtomicMemOp::amoor_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<uint16_t> *amo_op =
+                          new AtomicGenericOp<uint16_t>(Rs2_uh,
+                                  [](uint16_t* b, uint16_t a){ *b |= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0xc: AtomicMemOp::amoand_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<uint16_t> *amo_op =
+                          new AtomicGenericOp<uint16_t>(Rs2_uh,
+                                  [](uint16_t* b, uint16_t a){ *b &= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x10: AtomicMemOp::amomin_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<int16_t> *amo_op =
+                      new AtomicGenericOp<int16_t>(Rs2_sh,
+                        [](int16_t* b, int16_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x14: AtomicMemOp::amomax_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<int16_t> *amo_op =
+                      new AtomicGenericOp<int16_t>(Rs2_sh,
+                        [](int16_t* b, int16_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x18: AtomicMemOp::amominu_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<uint16_t> *amo_op =
+                      new AtomicGenericOp<uint16_t>(Rs2_uh,
+                        [](uint16_t* b, uint16_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1c: AtomicMemOp::amomaxu_h({{
+                    Rd_sd = Mem_sh;
+                }}, {{
+                    TypedAtomicOpFunctor<uint16_t> *amo_op =
+                      new AtomicGenericOp<uint16_t>(Rs2_uh,
+                        [](uint16_t* b, uint16_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+            }
             0x2: decode AMOFUNCT {
                 0x2: LoadReserved::lr_w({{
                     Rd_sd = Mem_sw;
@@ -2209,6 +2391,40 @@ decode QUADRANT default Unknown::unknown() {
             // Without these, the kernel's purecap lock/atomic-pointer code hits
             // an illegal instruction and panics.
             0x4: decode AMOFUNCT {
+                // AMOSWAP.C cd, cs2, (cs1): atomically swap the 16-byte
+                // capability at [cs1] with cs2, returning the old value in cd.
+                // Single in-order hart -> no real concurrency, so implement it
+                // functionally as a register-format op (like cloadtags):
+                // translate cs1's address ourselves, read the old cap + tag via
+                // physProxy + the tag table into cd, then write cs2 (+ its tag).
+                // The kernel uses this for atomic capability pointer exchange
+                // (e.g. exec_alloc_args); without it -> illegal-instruction panic.
+                0x1: COp::amoswap_c({{
+                    using namespace gem5::CHERIRiscvISA;
+                    auto *_ctc = xc->tcBase();
+                    uint64_t _va = Cs1.getAddress();
+                    RequestPtr _rq = std::make_shared<Request>(
+                        _va, 16, Request::Flags(), Request::funcRequestorId,
+                        /*pc*/0, _ctc->contextId());
+                    Fault _tf = _ctc->getMMUPtr()->translateFunctional(
+                        _rq, _ctc, BaseMMU::Write);
+                    Addr _pa = (_tf == NoFault) ? _rq->getPaddr() : _va;
+                    System *_sys = _ctc->getSystemPtr();
+                    // read old value + tag
+                    uint8_t _ob[16] = {0};
+                    _sys->physProxy.readBlob(_pa, _ob, 16);
+                    bool _ot = _sys->cheritagtable.getTag(_pa);
+                    CapRegContainer _old;
+                    _old.fromMemory(_ob, _ot);
+                    // store new value (cs2) + tag
+                    CapRegContainer _new = Cs2;
+                    uint8_t _nb[16];
+                    _new.toMemory(_nb);
+                    _sys->physProxy.writeBlob(_pa, _nb, 16);
+                    _sys->cheritagtable.setTag(_pa, _new.getTag());
+                    // result: old value
+                    Cd = _old;
+                }});
                 0x2: CapLoad::lr_c({{
                     Cd = _loadedCap;
                 }},
@@ -5800,10 +6016,17 @@ decode QUADRANT default Unknown::unknown() {
                                 DPRINTF(CheriDecode, "Source capability invalid, clearing tag\n");
                             } else {
                                 CAPTYPE meta = Cs1.getMetadata();
-                                
-                                // Get permission mask (16 bits for permissions)
-                                uint64_t perm_mask = Rs2 & 0xFFFF;
-                                
+
+                                // The architectural permission mask has arch perms at
+                                // 0-11 and user perms SW0..SW3 at bits 15..18. Compact
+                                // it into our stored layout (SW1/SW2/SW3 at stored bits
+                                // 12/13/14; SW0 stays at 15) before ANDing -- the old
+                                // `Rs2 & 0xFFFF` silently dropped SW1(=SW_VMEM)/SW2/SW3
+                                // at bits 16-18. Mirror of cgetperm's expansion.
+                                uint64_t arch_mask = (uint64_t)Rs2;
+                                uint64_t perm_mask = (arch_mask & 0x8FFFULL) |
+                                                     ((arch_mask >> 4) & 0x7000ULL);
+
                                 // AND current permissions with mask
                                 uint64_t new_perms = meta.perm & perm_mask;
                                 
@@ -6510,11 +6733,22 @@ decode QUADRANT default Unknown::unknown() {
                                     cs1Idx, dstIdx);
 
                             CAPTYPE meta = Cs1.getMetadata();
-                            
-                            Rd = meta.perm;
 
-                                DPRINTF(CheriDecode, "The permissions are = %#llx\n",
-                                    (unsigned long long)meta.perm);
+                            // ── CHERI-RISC-V user-perm layout ──
+                            // Architecturally CGetPerm returns arch perms at 0-11 and
+                            // the four user perms SW0..SW3 at bits 15,16,17,18
+                            // (SW0/15=syscall, SW1/16=SW_VMEM, ...). Our 16-bit stored
+                            // perm field can't hold bits 16-18, so we pack SW1/SW2/SW3
+                            // into the otherwise-unused stored bits 12/13/14 and keep
+                            // SW0 at stored bit 15. Expand back to the architectural
+                            // layout here: stored 12/13/14 -> out 16/17/18.
+                            uint64_t stored = (uint64_t)meta.perm;
+                            uint64_t out = (stored & 0x8FFFULL) |
+                                           ((stored & 0x7000ULL) << 4);
+                            Rd = out;
+
+                                DPRINTF(CheriDecode, "The permissions (stored=%#llx) = %#llx\n",
+                                    (unsigned long long)stored, (unsigned long long)out);
                         }});
 
                         0x01: cgettype({{
@@ -6627,10 +6861,29 @@ decode QUADRANT default Unknown::unknown() {
                             if (false /* bring-up: decode untagged caps too (stack caps are untagged) */) {
                                 Rd = 0;
                                 DPRINTF(CheriDecode, "Capability is invalid, length = 0\n");
+                            } else if (!Cs1.getTag() &&
+                                       (uint64_t)Cs1.getMetadata() == 0 &&
+                                       Cs1.getAddress() != 0) {
+                                // ── Bring-up: null-derived "integer pointer" ──
+                                // cincoffset(cnull, VA) yields an UNTAGGED cap with
+                                // null bounds (metadata==0) but a non-zero address.
+                                // The kernel uses this as a hint address passed to
+                                // vm_map_fixed, which rejects it if cgetlen(addr) <
+                                // mapping_len. An unbounded integer pointer conceptually
+                                // spans the address space, so report a large length so
+                                // the reservation-size check passes (otherwise the map
+                                // fails, the out-param slot stays uninitialised, and its
+                                // stale value became a bogus kernel-address AT_TIMEKEEP
+                                // that faulted rtld). Narrow: only null-bounds untagged
+                                // caps -- csetbounds-derived untagged caps have meta!=0.
+                                Rd = ~0ULL;
+                                DPRINTF(CheriDecode, "Null-derived integer pointer "
+                                        "(untagged, addr=%#llx): length = MAX\n",
+                                        (unsigned long long)Cs1.getAddress());
                             } else {
                                 uint64_t a = Cs1.getAddress();
                                 CAPTYPE meta = Cs1.getMetadata();
-                                
+
                                 // Extract and reconstruct fields (same as cgetbase)
                                 uint64_t B_hi = meta.B;
                                 uint64_t T_hi = meta.T;
