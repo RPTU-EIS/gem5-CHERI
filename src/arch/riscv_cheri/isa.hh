@@ -40,6 +40,8 @@
 #include "arch/generic/isa.hh"
 #include "arch/riscv_cheri/pcstate.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
+#include "arch/generic/cap_reg.hh"
 #include "arch/riscv_cheri/types.hh"
 #include "base/types.hh"
 
@@ -75,6 +77,8 @@ class ISA : public BaseISA
     CHERIRiscvType _rvType;
     std::vector<RegVal> miscRegFile;
     bool enableRvv;
+
+    std::vector<CapRegContainer> capMiscRegFile;
 
     bool hpmCounterEnabled(int counter) const;
 
@@ -115,6 +119,29 @@ class ISA : public BaseISA
     RegVal readMiscReg(RegIndex idx) override;
     void setMiscRegNoEffect(RegIndex idx, RegVal val) override;
     void setMiscReg(RegIndex idx, RegVal val) override;
+
+    // Misc registers that are capability registers. These are accessed by custom CSRs in the same way as other CSRs, but they are stored separately in the ISA class and accessed through separate read/set functions.
+    CapRegContainer readCapMiscRegNoEffect(RegIndex idx) const;
+    CapRegContainer readCapMiscReg(RegIndex idx);
+    void setCapMiscRegNoEffect(RegIndex idx, const CapRegContainer& val);
+    void setCapMiscReg(RegIndex idx, const CapRegContainer& val);
+
+    bool isCapabilityMiscReg(RegIndex idx) const{
+        return isCapMiscReg(idx);
+    }
+
+    // Get capability misc reg file index from MISCREG index
+    int getCapMiscRegFileIndex(RegIndex idx) const{
+        if (idx == MISCREG_PCC) return -1;  // PCC is special
+        if (idx == MISCREG_DDC) return 0;
+        if (idx >= MISCREG_UTCC && idx <= MISCREG_UEPCC) 
+            return 1 + (idx - MISCREG_UTCC);
+        if (idx >= MISCREG_STCC && idx <= MISCREG_SEPCC)
+            return 5 + (idx - MISCREG_STCC);
+        if (idx >= MISCREG_MTCC && idx <= MISCREG_MEPCC)
+            return 9 + (idx - MISCREG_MTCC);
+        return -1;  // Invalid
+    }
 
     // Derived class could provide knowledge of non-standard CSRs to other
     // components by overriding the two getCSRxxxMap here and properly

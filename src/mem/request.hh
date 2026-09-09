@@ -251,6 +251,11 @@ class Request : public Extensible<Request>
             remote TLB Sync request has completed */
         TLBI_EXT_SYNC_COMP          = 0x0000800000000000,
 
+        /** CHERI: The request is a capability load (16-byte, aligned) */
+        CHERI_CAP_LOAD              = 0x0001000000000000,
+        /** CHERI: The request is a capability store (16-byte, aligned) */
+        CHERI_CAP_STORE             = 0x0002000000000000,
+
         /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
@@ -470,6 +475,12 @@ class Request : public Extensible<Request>
     /** The cause for HTM transaction abort */
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
+    /** CHERI: tag bit carried with capability loads/stores */
+    bool _cheriCapTag = false;
+
+    /** CHERI: should the tag be cleared on load (page permission) */
+    bool _cheriClearTagOnLoad = false;
+
   public:
 
     /**
@@ -515,7 +526,8 @@ class Request : public Extensible<Request>
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
-          accessDelta(other.accessDelta), depth(other.depth)
+          accessDelta(other.accessDelta), depth(other.depth), 
+          _cheriCapTag(other._cheriCapTag), _cheriClearTagOnLoad(other._cheriClearTagOnLoad)
     {
         atomicOpFunctor.reset(other.atomicOpFunctor ?
                                 other.atomicOpFunctor->clone() : nullptr);
@@ -1120,6 +1132,20 @@ class Request : public Extensible<Request>
     bool isCacheInvalidate() const { return _flags.isSet(INVALIDATE); }
     bool isCacheMaintenance() const { return _flags.isSet(CLEAN|INVALIDATE); }
     /** @} */
+
+    // ── CHERI capability request accessors ──
+    bool isCapLoad() const { return _flags.isSet(CHERI_CAP_LOAD); }
+    bool isCapStore() const { return _flags.isSet(CHERI_CAP_STORE); }
+    bool isCapAccess() const { return isCapLoad() || isCapStore(); }
+
+    void setCapLoad() { _flags.set(CHERI_CAP_LOAD); }
+    void setCapStore() { _flags.set(CHERI_CAP_STORE); }
+
+    bool getCapTag() const { return _cheriCapTag; }
+    void setCapTag(bool t) { _cheriCapTag = t; }
+
+    bool getClearTagOnLoad() const { return _cheriClearTagOnLoad; }
+    void setClearTagOnLoad(bool c) { _cheriClearTagOnLoad = c; }
 };
 
 } // namespace gem5

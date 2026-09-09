@@ -1,0 +1,428 @@
+{
+  "_comment": [
+    "CHERI-RISC-V ISA encoding database.",
+    "",
+    "Adding a new instruction:",
+    "  1. Add an entry under 'instructions'.",
+    "  2. Specify its format (R/I/S/U/B/J/CHERI_R).",
+    "  3. Specify fixed encoding fields (opcode + funct fields).",
+    "  4. List operands in source order with {name, type, field}:",
+    "       - name  : how it appears in assembly (cd, cs1, rs2, imm12, ...)",
+    "       - type  : 'capability', 'integer', or 'immediate'",
+    "       - field : which encoding field it goes into",
+    "                 (rd, rs1, rs2, imm12, imm20, imm_split_s, imm_split_b, imm_split_j)",
+    "",
+    "Formats supported (encoding field → bit positions):",
+    "  R         : funct7[31:25] rs2[24:20] rs1[19:15] funct3[14:12] rd[11:7] opcode[6:0]",
+    "  I         : imm12[31:20] rs1[19:15] funct3[14:12] rd[11:7] opcode[6:0]",
+    "  S         : imm[11:5]→[31:25] rs2[24:20] rs1[19:15] funct3[14:12] imm[4:0]→[11:7] opcode[6:0]",
+    "  U         : imm20[31:12] rd[11:7] opcode[6:0]",
+    "  B         : same shape as S but imm reshuffled for branches",
+    "  J         : imm20 reshuffled for JAL",
+    "  CHERI_R   : R-type with funct7+rs2 jointly identifying the op (used by inspect, set, mem ops)"
+  ],
+
+  "registers": {
+    "_comment": "Register name → index map. Both integer (xN/ABI names) and capability (cN/ABI names) live here.",
+    "integer": {
+      "x0":  0, "x1":  1, "x2":  2, "x3":  3, "x4":  4, "x5":  5,
+      "x6":  6, "x7":  7, "x8":  8, "x9":  9, "x10": 10, "x11": 11,
+      "x12": 12, "x13": 13, "x14": 14, "x15": 15, "x16": 16, "x17": 17,
+      "x18": 18, "x19": 19, "x20": 20, "x21": 21, "x22": 22, "x23": 23,
+      "x24": 24, "x25": 25, "x26": 26, "x27": 27, "x28": 28, "x29": 29,
+      "x30": 30, "x31": 31,
+      "zero": 0, "ra": 1, "sp": 2, "gp": 3, "tp": 4,
+      "t0": 5, "t1": 6, "t2": 7,
+      "s0": 8, "fp": 8, "s1": 9,
+      "a0": 10, "a1": 11, "a2": 12, "a3": 13, "a4": 14, "a5": 15,
+      "a6": 16, "a7": 17,
+      "s2": 18, "s3": 19, "s4": 20, "s5": 21, "s6": 22, "s7": 23,
+      "s8": 24, "s9": 25, "s10": 26, "s11": 27,
+      "t3": 28, "t4": 29, "t5": 30, "t6": 31
+    },
+    "capability": {
+      "c0":  0, "c1":  1, "c2":  2, "c3":  3, "c4":  4, "c5":  5,
+      "c6":  6, "c7":  7, "c8":  8, "c9":  9, "c10": 10, "c11": 11,
+      "c12": 12, "c13": 13, "c14": 14, "c15": 15, "c16": 16, "c17": 17,
+      "c18": 18, "c19": 19, "c20": 20, "c21": 21, "c22": 22, "c23": 23,
+      "c24": 24, "c25": 25, "c26": 26, "c27": 27, "c28": 28, "c29": 29,
+      "c30": 30, "c31": 31,
+      "cnull": 0, "cra": 1, "csp": 2, "cgp": 3, "ctp": 4,
+      "ct0": 5, "ct1": 6, "ct2": 7,
+      "cs0": 8, "cfp": 8, "cs1": 9,
+      "ca0": 10, "ca1": 11, "ca2": 12, "ca3": 13, "ca4": 14, "ca5": 15,
+      "ca6": 16, "ca7": 17
+    }
+  },
+
+  "scrs": {
+    "_comment": "Special Capability Register indices for CSpecialRW",
+    "pcc":     0,
+    "ddc":     1,
+    "utcc":   4,  "utdc":   5,  "uscratchc":  6,  "uepcc":  7,
+    "stcc":   12, "stdc":  13, "sscratchc": 14, "sepcc": 15,
+    "mtcc":   28, "mtdc":  29, "mscratchc": 30, "mepcc": 31
+  },
+
+  "perms_table": {
+    "_comment": "Must match CHERIPerms namespace in cap_reg.hh",
+    "GLOBAL":      "0x001",
+    "EXECUTE":     "0x002",
+    "LOAD":        "0x004",
+    "STORE":       "0x008",
+    "LOAD_CAP":    "0x010",
+    "STORE_CAP":   "0x020",
+    "STORE_LOCAL": "0x040",
+    "SEAL":        "0x080",
+    "CINVOKE":     "0x100",
+    "UNSEAL":      "0x200",
+    "ASR":         "0x400",
+    "SETCID":      "0x800",
+    "ALL":         "0xfff"
+  },
+
+  "instructions": {
+
+    "_comment_baseline_int": "── Baseline RV64I integer ops ──",
+
+    "addi": {
+      "format": "I",
+      "fields": {"opcode": "0x13", "funct3": "0x0"},
+      "operands": [
+        {"name": "rd",    "type": "integer",   "field": "rd"},
+        {"name": "rs1",   "type": "integer",   "field": "rs1"},
+        {"name": "imm12", "type": "immediate", "field": "imm12"}
+      ]
+    },
+
+    "lui": {
+      "format": "U",
+      "fields": {"opcode": "0x37"},
+      "operands": [
+        {"name": "rd",    "type": "integer",   "field": "rd"},
+        {"name": "imm20", "type": "immediate", "field": "imm20"}
+      ]
+    },
+
+    "auipc": {
+      "format": "U",
+      "fields": {"opcode": "0x17"},
+      "operands": [
+        {"name": "rd",    "type": "integer",   "field": "rd"},
+        {"name": "imm20", "type": "immediate", "field": "imm20"}
+      ]
+    },
+
+    "add": {
+      "format": "R",
+      "fields": {"opcode": "0x33", "funct3": "0x0", "funct7": "0x00"},
+      "operands": [
+        {"name": "rd",  "type": "integer", "field": "rd"},
+        {"name": "rs1", "type": "integer", "field": "rs1"},
+        {"name": "rs2", "type": "integer", "field": "rs2"}
+      ]
+    },
+
+    "sub": {
+      "format": "R",
+      "fields": {"opcode": "0x33", "funct3": "0x0", "funct7": "0x20"},
+      "operands": [
+        {"name": "rd",  "type": "integer", "field": "rd"},
+        {"name": "rs1", "type": "integer", "field": "rs1"},
+        {"name": "rs2", "type": "integer", "field": "rs2"}
+      ]
+    },
+
+    "slli": {
+      "format": "I",
+      "fields": {"opcode": "0x13", "funct3": "0x1", "imm12": "0x000"},
+      "operands": [
+        {"name": "rd",     "type": "integer",   "field": "rd"},
+        {"name": "rs1",    "type": "integer",   "field": "rs1"},
+        {"name": "shamt",  "type": "immediate", "field": "imm12"}
+      ]
+    },
+
+    "srli": {
+      "format": "I",
+      "fields": {"opcode": "0x13", "funct3": "0x5", "imm12": "0x000"},
+      "operands": [
+        {"name": "rd",     "type": "integer",   "field": "rd"},
+        {"name": "rs1",    "type": "integer",   "field": "rs1"},
+        {"name": "shamt",  "type": "immediate", "field": "imm12"}
+      ]
+    },
+
+    "ebreak": {
+      "format": "I",
+      "fields": {
+        "opcode": "0x73", "funct3": "0x0",
+        "rd": "0x00", "rs1": "0x00", "imm12": "0x001"
+      },
+      "operands": []
+    },
+
+    "ecall": {
+      "format": "I",
+      "fields": {
+        "opcode": "0x73", "funct3": "0x0",
+        "rd": "0x00", "rs1": "0x00", "imm12": "0x000"
+      },
+      "operands": []
+    },
+
+    "_comment_cheri_mem_store": "── CHERI scalar stores via capability ──",
+
+    "sb.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7c", "rd": "0x08"},
+      "operands": [
+        {"name": "rs2", "type": "integer",    "field": "rs2"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "sh.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7c", "rd": "0x09"},
+      "operands": [
+        {"name": "rs2", "type": "integer",    "field": "rs2"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "sw.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7c", "rd": "0x0a"},
+      "operands": [
+        {"name": "rs2", "type": "integer",    "field": "rs2"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "sd.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7c", "rd": "0x0b"},
+      "operands": [
+        {"name": "rs2", "type": "integer",    "field": "rs2"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "sc.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7c", "rd": "0x0c"},
+      "operands": [
+        {"name": "cs2", "type": "capability", "field": "rs2"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+
+    "_comment_cheri_mem_load": "── CHERI scalar loads via capability ──",
+
+    "lb.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x08"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "lh.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x09"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "lw.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x0a"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "ld.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x0b"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "lc.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x0c"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "lbu.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x10"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "lhu.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x11"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "lwu.cap": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7d", "rs2": "0x12"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+
+    "_comment_cheri_inspect": "── CHERI inspect ops (funct7=0x7f, subop in rs2 field) ──",
+
+    "cgetperm": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x00"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgettype": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x01"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgetbase": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x02"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgetlen": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x03"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgettag": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x04"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgetsealed": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x05"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgetoffset": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x06"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgetflags": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x07"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgethigh": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x17"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+    "cgettop": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x7f", "rs2": "0x18"},
+      "operands": [
+        {"name": "rd",  "type": "integer",    "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    },
+
+    "_comment_cheri_set": "── CHERI set ops (3-operand: cd, cs1, rs2) ──",
+
+    "csetaddr": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x10"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"},
+        {"name": "rs2", "type": "integer",    "field": "rs2"}
+      ]
+    },
+    "csetbounds": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x08"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"},
+        {"name": "rs2", "type": "integer",    "field": "rs2"}
+      ]
+    },
+    "candperm": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x0d"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"},
+        {"name": "rs2", "type": "integer",    "field": "rs2"}
+      ]
+    },
+    "csetflags": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x0e"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"},
+        {"name": "rs2", "type": "integer",    "field": "rs2"}
+      ]
+    },
+    "csethigh": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x16"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "cs1", "type": "capability", "field": "rs1"},
+        {"name": "rs2", "type": "integer",    "field": "rs2"}
+      ]
+    },
+
+    "_comment_cspecialrw": "── CSpecialRW: read/write Special Capability Registers (PCC, DDC, etc.) ──",
+    "_comment_cspecialrw_2": "Operand scr is named like a capability but refers to the SCR index, not c0-c31.",
+
+    "cspecialrw": {
+      "format": "CHERI_R",
+      "fields": {"opcode": "0x5b", "funct3": "0x0", "funct7": "0x01"},
+      "operands": [
+        {"name": "cd",  "type": "capability", "field": "rd"},
+        {"name": "scr", "type": "scr",        "field": "rs2"},
+        {"name": "cs1", "type": "capability", "field": "rs1"}
+      ]
+    }
+  }
+}

@@ -89,7 +89,20 @@ class BaseSimpleCPU : public BaseCPU
     void checkPcEventQueue();
     void swapActiveThread();
 
+    bool _pendingCapTag = false;
+    bool _hasPendingCapTag = false;
+
+    // CHERI: tag of the most recent capability load. The atomic CPU does its
+    // memory access to completion inside readMem(), so (unlike the timing CPU's
+    // split initiate/complete) there is no packet left for the ISA execute()
+    // template to read the tag from. readMem() stashes the looked-up tag here
+    // and the CapLoad execute template reads it via getLoadedCapTag().
+    bool _loadedCapTag = false;
+
   public:
+    // CHERI: tag bit produced by the most recent capability load (atomic CPU).
+    bool getLoadedCapTag() const { return _loadedCapTag; }
+
     BaseSimpleCPU(const BaseSimpleCPUParams &params);
     virtual ~BaseSimpleCPU();
     void wakeup(ThreadID tid) override;
@@ -166,6 +179,16 @@ class BaseSimpleCPU : public BaseCPU
     {
         panic("writeMem() is not implemented\n");
     }
+
+    // Cap Aware Read and Write Functions
+    virtual Fault readCapMem(Addr addr, uint8_t *data, unsigned size,
+                    Request::Flags flags,
+                    const std::vector<bool>& byte_enable);
+
+    virtual Fault writeCapMem(uint8_t *data, unsigned size, Addr addr,
+                    Request::Flags flags, uint64_t *res,
+                    bool capTag,
+                    const std::vector<bool>& byte_enable);
 
     virtual Fault
     amoMem(Addr addr, uint8_t* data, unsigned size, Request::Flags flags,

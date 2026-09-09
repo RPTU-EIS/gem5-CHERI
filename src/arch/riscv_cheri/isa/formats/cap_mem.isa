@@ -1,0 +1,551 @@
+////////////////////////////////////////////////////////////////////
+// ══════════════════════════════════════════════════════════════ //
+// Memory operation instructions for capabilties                  //
+// ══════════════════════════════════════════════════════════════ //
+// CHERI Capability Load/Store Templates                          //
+// ══════════════════════════════════════════════════════════════ //
+////////////////////////////////////////////////////////////////////
+
+def template CapLoadDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+        private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(PacketPtr, ExecContext *,
+                          trace::InstRecord *) const override;
+    };
+}};
+
+def template CapLoadConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst):
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        %(offset_code)s;
+    }
+}};
+
+let {{
+def CapLoadStoreBase(name, Name, offset_code, ea_code, memacc_code,
+        cap_check_code, mem_flags, inst_flags, base_class,
+        postacc_code='', decode_template=BasicDecode,
+        exec_template_base='CapLoad'):
+
+    mem_flags = makeList(mem_flags)
+    inst_flags = makeList(inst_flags)
+
+    iop = InstObjParams(name, Name, base_class,
+        {'offset_code': offset_code,
+         'ea_code': ea_code,
+         'memacc_code': memacc_code,
+         'postacc_code': postacc_code,
+         'cap_check_code': cap_check_code },
+        inst_flags)
+
+    mem_flags = [ 'Request::%s' % flag for flag in mem_flags ]
+    if mem_flags:
+        s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
+        iop.constructor += s
+
+    fullExecTemplate = eval(exec_template_base + 'Execute')
+    initiateAccTemplate = eval(exec_template_base + 'InitiateAcc')
+    completeAccTemplate = eval(exec_template_base + 'CompleteAcc')
+    declareTemplate = eval(exec_template_base + 'Declare')
+    constructTemplate = eval(exec_template_base + 'Constructor')
+
+    # (header_output, decoder_output, decode_block, exec_output)
+    return (declareTemplate.subst(iop),
+        constructTemplate.subst(iop),
+        decode_template.subst(iop),
+        fullExecTemplate.subst(iop) +
+        initiateAccTemplate.subst(iop) +
+        completeAccTemplate.subst(iop))
+}};
+
+def template CapLoadExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        // ── Capability permission and bounds check ──
+        %(cap_check_code)s;
+
+        // ── Atomic 16-byte capability read ──
+        // readCapMem sets the CHERI_CAP_LOAD flag; the atomic CPU looks up the
+        // tag from the tag table (by physical address) and stashes it, which we
+        // read back via getLoadedCapTag(). (The timing CPU instead uses the
+        // split initiateAcc/completeAcc path and reads the tag in completeAcc.)
+        uint8_t capData[16] = {0};
+        const std::vector<bool> byte_enable(16, true);
+        {
+            Fault fault = xc->readCapMem(
+                EA, capData, 16, memAccessFlags, byte_enable);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        // Assemble capability from data, with the tag the atomic load produced.
+        CapRegContainer _loadedCap;
+        _loadedCap.fromMemory(capData, xc->getLoadedCapTag());
+
+        %(memacc_code)s;
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+def template CapLoadInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_src_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        // ── Capability permission and bounds check ──
+        %(cap_check_code)s;
+
+        // ── Initiate 16-byte capability read ──
+        // Same pattern as vector initiateMemRead, but with
+        // CHERI_CAP_LOAD flag so AbstractMemory::access()
+        // looks up the tag from CheriTagTable.
+        const std::vector<bool> byte_enable(16, true);
+        return xc->initiateCapMemRead(EA, 16,
+            memAccessFlags, byte_enable);
+    }
+}};
+
+def template CapLoadCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+
+        // ── Extract 16 data bytes from the packet ──
+        // Same as vector: memcpy from packet into local buffer
+        const uint8_t *data = pkt->getConstPtr<uint8_t>();
+
+        // ── Read the tag from the CHERI tag table by physical address ──
+        // Look the tag up CPU-side here rather than reading it back from the
+        // memory Request. With a cache hierarchy the packet that reaches
+        // memory is a cache-line fill (NOT the exact 16-byte cap access), so
+        // AbstractMemory::access() cannot attach the tag to this request.
+        // pkt->getAddr() is the physical address of this 16-byte load, and the
+        // tag table is indexed by physical address, so this is correct with or
+        // without caches.
+        // (ORIGINAL request-piggyback, kept for revert:)
+        //   bool tag = pkt->req->getCapTag();
+        bool tag = xc->tcBase()->getSystemPtr()->
+            cheritagtable.getTag(pkt->getAddr());
+        if (pkt->req->getClearTagOnLoad()) {
+            tag = false;
+        }
+
+        // ── Assemble into CapRegContainer ──
+        CapRegContainer _loadedCap;
+        _loadedCap.fromMemory(data, tag);
+
+        %(memacc_code)s;
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+
+// // ════════════════════════════════════════════════════════
+// // CHERI Capability Store Templates
+// // ════════════════════════════════════════════════════════
+
+def template CapStoreDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(PacketPtr, ExecContext *,
+                          trace::InstRecord *) const override;
+    };
+}};
+
+def template CapStoreConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst):
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        %(offset_code)s;
+    }
+}};
+
+def template CapStoreExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        // ── Capability permission and bounds check ──
+        %(cap_check_code)s;
+
+        CapRegContainer _storeCap;
+
+        // ── Prepare source capability for store ──
+        %(memacc_code)s;
+
+        // ── Pack into 16 bytes and write, carrying the tag ──
+        // writeCapMem sets the CHERI_CAP_STORE flag and hands the source tag to
+        // the CPU (_pendingCapTag); the atomic CPU records it in the tag table
+        // by physical address. Without this the stored capability reloads with
+        // tag=0 and cjr/cjalr later refuse the (untagged) return capability.
+        {
+            uint8_t capData[16];
+            _storeCap.toMemory(capData);
+
+            const std::vector<bool> byte_enable(16, true);
+            Fault fault = xc->writeCapMem(
+                capData, 16, EA, memAccessFlags, nullptr,
+                _storeCap.getTag(), byte_enable);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(postacc_code)s;
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+def template CapStoreInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        // ── Capability permission and bounds check ──
+        %(cap_check_code)s;
+
+        CapRegContainer _storeCap;
+
+        // ── Prepare source capability ──
+        %(memacc_code)s;
+
+        // ── Pack and send through writeCapMem ──
+        // writeCapMem carries both the 16 data bytes AND the
+        // tag bit through the memory system, unlike writeMem.
+        {
+            uint8_t capData[16];
+            _storeCap.toMemory(capData);
+
+            return xc->writeCapMem(
+                capData, 16, EA,
+                memAccessFlags, nullptr,
+                _storeCap.getTag(),
+                std::vector<bool>(16, true));
+        }
+    }
+}};
+
+def template CapStoreCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        // ── CHERI: record the capability tag CPU-side, by physical address ──
+        // Done here (not in AbstractMemory) so it works with a write-back
+        // cache: the store's 16 data bytes sit in L1 and may never reach
+        // memory, but pkt->getAddr() is the physical address and the tag table
+        // is a side structure keyed by physical address. pkt->req->getCapTag()
+        // carries the tag that writeCapMem attached. Without this, a stored
+        // capability reloads with tag=0, and cjr/cjalr then refuse to jump to
+        // the (untagged) return capability and fall through -> crash.
+        xc->tcBase()->getSystemPtr()->cheritagtable.setTag(
+            pkt->getAddr(), pkt->req->getCapTag());
+
+        // ── Optional result writeback (store-conditional: SC.C) ──
+        // Most cap stores have no destination register, so op_decl/postacc/
+        // op_wb expand to nothing. SC.C sets Rd here (=0, success) via
+        // postacc_code and writes it back after the store completes.
+        %(op_decl)s;
+        %(op_rd)s;
+        %(postacc_code)s;
+        %(op_wb)s;
+        return NoFault;
+    }
+}};
+
+// ════════════════════════════════════════════════════════════════
+// Capability-authorized SCALAR Load/Store (L[BHWD].CAP, S[BHWD].CAP)
+//
+// These store/load integer data (1/2/4/8 bytes) but use a
+// capability register as the base address, with permission
+// and bounds checking. They reuse the standard Mem operand.
+// ════════════════════════════════════════════════════════════════
+
+def template CapDataLoadDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(PacketPtr, ExecContext *,
+                          trace::InstRecord *) const override;
+    };
+}};
+
+def template CapDataLoadConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst):
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        %(offset_code)s;
+    }
+}};
+
+def template CapDataLoadExecute {{
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        %(cap_check_code)s;
+
+        {
+            Fault fault =
+                readMemAtomicLE(xc, traceData, EA, Mem, memAccessFlags);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(memacc_code)s;
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+def template CapDataLoadInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_src_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        %(cap_check_code)s;
+
+        return initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+    }
+}};
+
+def template CapDataLoadCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+        %(op_rd)s;
+
+        getMemLE(pkt, Mem, traceData);
+
+        %(memacc_code)s;
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+
+def template CapDataStoreDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(PacketPtr, ExecContext *,
+                          trace::InstRecord *) const override;
+    };
+}};
+
+def template CapDataStoreConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst):
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+        %(offset_code)s;
+    }
+}};
+
+def template CapDataStoreExecute {{
+    Fault
+    %(class_name)s::execute(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        
+
+        %(cap_check_code)s;
+
+        %(memacc_code)s;
+
+        {
+            Fault fault =
+                writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
+                        nullptr);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(postacc_code)s;
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+def template CapDataStoreInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        %(cap_check_code)s;
+
+        %(memacc_code)s;
+
+        {
+            Fault fault = writeMemTimingLE(xc, traceData, Mem, EA,
+                memAccessFlags, nullptr);
+            if (fault != NoFault)
+                return fault;
+        }
+
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+def template CapDataStoreCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        // ── CHERI: S[BHWD].CAP stores integer data through a capability base,
+        // so it clears the tag of the granule(s) it writes (same invariant as
+        // StoreCompleteAcc). This is the common case for the kernel (memset
+        // uses sb.cap, struct writes use sd.cap): without clearing, a scalar
+        // write over old capability bytes leaves a stale valid tag behind.
+        xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
+            pkt->getAddr(), pkt->getSize());
+        return NoFault;
+    }
+}};
+
+
+// ════════════════════════════════════════════════════════
+// Format helpers and definitions
+// ════════════════════════════════════════════════════════
+
+
+def format CapLoad(memacc_code, ea_code, cap_check_code,
+        offset_code={{offset = sext<12>(IMM12);}},
+        mem_flags=[], inst_flags=[IsLoad]) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        CapLoadStoreBase(name, Name, offset_code, ea_code,
+        memacc_code, cap_check_code, mem_flags, inst_flags,
+        'CapLoad', exec_template_base='CapLoad')
+}};
+
+
+def format CapStore(memacc_code, ea_code, cap_check_code,
+        offset_code={{offset = sext<12>(IMM5 | (IMM7 << 5));}},
+        postacc_code={{ }}, mem_flags=[], inst_flags=[IsStore]) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        CapLoadStoreBase(name, Name, offset_code, ea_code,
+        memacc_code, cap_check_code, mem_flags, inst_flags,
+        'CapStore', postacc_code=postacc_code, exec_template_base='CapStore')
+}};
+
+def format CapDataLoad(memacc_code, ea_code, cap_check_code,
+        offset_code={{offset = sext<12>(IMM12);}},
+        mem_flags=[], inst_flags=[IsLoad]) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        CapLoadStoreBase(name, Name, offset_code, ea_code,
+        memacc_code, cap_check_code, mem_flags, inst_flags,
+        'CapLoad', exec_template_base='CapDataLoad')
+}};
+
+def format CapDataStore(memacc_code, ea_code, cap_check_code,
+        offset_code={{offset = sext<12>(IMM5 | (IMM7 << 5));}},
+        mem_flags=[], inst_flags=[IsStore]) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        CapLoadStoreBase(name, Name, offset_code, ea_code,
+        memacc_code, cap_check_code, mem_flags, inst_flags,
+        'CapStore',
+        exec_template_base='CapDataStore')
+}};

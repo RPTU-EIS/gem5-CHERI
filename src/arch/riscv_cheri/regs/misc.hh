@@ -261,8 +261,98 @@ enum MiscRegIndex
     MISCREG_SIP,
     MISCREG_SIE,
 
-    NUM_MISCREGS
+    NUM_MISCREGS,
+
+    // CHERI Special Capability Registers
+    MISCREG_PCC,           // Program Counter Capability
+    MISCREG_DDC,           // Default Data Capability
+    MISCREG_MTCC,          // Machine Trap Code Capability
+    MISCREG_MTDC,          // Machine Trap Data Capability
+    MISCREG_MSCRATCHC,     // Machine Scratch Capability
+    MISCREG_MEPCC,         // Machine Exception PC Capability
+    MISCREG_STCC,          // Supervisor Trap Code Capability
+    MISCREG_STDC,          // Supervisor Trap Data Capability
+    MISCREG_SSCRATCHC,     // Supervisor Scratch Capability
+    MISCREG_SEPCC,         // Supervisor Exception PC Capability
+    MISCREG_UTCC,          // User Trap Code Capability
+    MISCREG_UTDC,          // User Trap Data Capability
+    MISCREG_USCRATCHC,     // User Scratch Capability
+    MISCREG_UEPCC,         // User Exception PC Capability
+
+    NUM_CHERI_MISCREGS
 };
+
+constexpr int NUM_TOTAL_MISCREGS = NUM_CHERI_MISCREGS;
+constexpr int NUM_CAP_MISCREGS = NUM_CHERI_MISCREGS - NUM_MISCREGS;
+
+inline bool isCapMiscReg(int misc_reg)
+{
+    return misc_reg >= MISCREG_PCC && misc_reg < NUM_CHERI_MISCREGS;
+}
+
+inline bool isIntMiscReg(int misc_reg)
+{
+    return misc_reg >= 0 && misc_reg < NUM_MISCREGS;
+}
+
+inline int scrToMiscReg(uint8_t scr_idx)
+{
+    switch (scr_idx) {
+        case 0:  return MISCREG_PCC;
+        case 1:  return MISCREG_DDC;
+        case 4:  return MISCREG_UTCC;
+        case 5:  return MISCREG_UTDC;
+        case 6:  return MISCREG_USCRATCHC;
+        case 7:  return MISCREG_UEPCC;
+        case 12: return MISCREG_STCC;
+        case 13: return MISCREG_STDC;
+        case 14: return MISCREG_SSCRATCHC;
+        case 15: return MISCREG_SEPCC;
+        case 28: return MISCREG_MTCC;
+        case 29: return MISCREG_MTDC;
+        case 30: return MISCREG_MSCRATCHC;
+        case 31: return MISCREG_MEPCC;
+        default: return -1;
+    }
+}
+
+inline bool isValidSCR(uint8_t scr_idx)
+{
+    return scrToMiscReg(scr_idx) != -1;
+}
+
+inline bool isSCRReadOnly(uint8_t scr_idx)
+{
+    return scr_idx == 0;  // Only PCC
+}
+
+inline uint8_t getSCRPrivLevel(uint8_t scr_idx)
+{
+    if (scr_idx >= 28 && scr_idx <= 31) return 3;  // Machine
+    if (scr_idx >= 12 && scr_idx <= 15) return 1;  // Supervisor
+    if (scr_idx >= 4 && scr_idx <= 7) return 0;    // User
+    if (scr_idx == 0 || scr_idx == 1) return 0;    // PCC/DDC
+    return 3;
+}
+
+inline bool scrNeedsASR(uint8_t scr_idx)
+{
+    return scr_idx != 0 && scr_idx != 1;
+}
+
+// Debug names
+const std::vector<std::string> CapMiscRegNames = {
+    "pcc", "ddc", "utcc", "utdc", "uscratchc", "uepcc",
+    "stcc", "stdc", "sscratchc", "sepcc",
+    "mtcc", "mtdc", "mscratchc", "mepcc"
+};
+
+inline const std::string& getCapMiscRegName(int misc_reg)
+{
+    static const std::string invalid = "invalid";
+    if (!isCapMiscReg(misc_reg)) return invalid;
+    return CapMiscRegNames[misc_reg - MISCREG_PCC];
+}
 
 inline constexpr RegClass miscRegClass(MiscRegClass, MiscRegClassName,
         NUM_MISCREGS, debug::MiscRegs);

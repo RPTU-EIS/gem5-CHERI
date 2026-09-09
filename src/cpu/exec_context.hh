@@ -141,6 +141,34 @@ class ExecContext
         panic("ExecContext::initiateMemRead() should be overridden\n");
     }
 
+    virtual Fault
+    initiateCapMemRead(Addr addr, unsigned int size,
+                       Request::Flags flags,
+                       const std::vector<bool>& byte_enable = std::vector<bool>())
+    {
+        return initiateMemRead(addr, size,
+                               flags | Request::CHERI_CAP_LOAD,
+                               byte_enable);
+    }
+
+    // CHERI: 16-byte capability load (atomic mode).
+    virtual Fault
+    readCapMem(Addr addr, uint8_t *data, unsigned int size,
+               Request::Flags flags,
+               const std::vector<bool>& byte_enable = std::vector<bool>())
+    {
+        return readMem(addr, data, size,
+                       flags | Request::CHERI_CAP_LOAD,
+                       byte_enable);
+    }
+
+    // CHERI: tag bit produced by the most recent capability load. Only
+    // meaningful in atomic mode, where the load completes inside readMem/
+    // readCapMem (no packet reaches the ISA execute() template). CPU models
+    // that support atomic CHERI loads override this; default is untagged.
+    virtual bool getLoadedCapTag() const { return false; }
+
+
     /**
      * Initiate a memory management command with no valid address.
      * Currently, these instructions need to bypass squashing in the O3 model
@@ -158,6 +186,18 @@ class ExecContext
                            Request::Flags flags, uint64_t *res,
                            const std::vector<bool>& byte_enable) = 0;
 
+
+    virtual Fault
+    writeCapMem(uint8_t *data, unsigned int size, Addr addr,
+                Request::Flags flags, uint64_t *res, bool capTag,
+                const std::vector<bool>& byte_enable = std::vector<bool>())
+    {
+        // Default: fall back to writeMem with cap store flag.
+        // CPU models that support CHERI override this.
+        return writeMem(data, size, addr,
+                        flags | Request::CHERI_CAP_STORE,
+                        res, byte_enable);
+    }
     /**
      * For atomic-mode contexts, perform an atomic AMO (a.k.a., Atomic
      * Read-Modify-Write Memory Operation)

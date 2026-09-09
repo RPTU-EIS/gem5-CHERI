@@ -281,7 +281,27 @@ ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
 
 
     miscRegFile.resize(NUM_PHYS_MISCREGS);
+    // Capability misc registers (DDC, UTCC, STCC, MTCC, etc.)
+    capMiscRegFile.resize(NUM_CAP_MISCREGS);
     clear();
+
+    // 13 registers: DDC + 4 User + 4 Supervisor + 4 Machine
+    capMiscRegFile.resize(13);
+    
+    // Initialize all capability registers to NULL (tag=false)
+    for (auto &cap : capMiscRegFile) {
+        cap.setTag(false);
+        cap.setAddress(0);
+        cap.setMetadata(0);
+    }
+    
+    // Initialize PCC to full address space capability
+    capMiscRegFile[MISCREG_PCC - MISCREG_PCC] = CapRegContainer::almighty(0);
+
+    // Initialize DDC to almighty 
+    capMiscRegFile[MISCREG_DDC - MISCREG_PCC] = CapRegContainer::almighty(0);
+
+    DPRINTF(RiscvMisc, "Initialized CHERI capability registers\n");
 }
 
 bool ISA::inUserMode() const
@@ -297,8 +317,11 @@ ISA::copyRegsFrom(ThreadContext *src)
         tc->setReg(id, src->getReg(id));
 
     // Second loop through the capability registers.
-    for (auto &id: capRegClass)
-        tc->setReg(id, src->getReg(id));
+    CHERIRiscvISA::CapRegContainer capc;
+    for (auto &id: capRegClass) {
+        src->getReg(id, &capc);
+        tc->setReg(id, &capc);
+    }
 
     // Third loop through the float registers.
     for (auto &id: floatRegClass)
@@ -315,18 +338,37 @@ ISA::copyRegsFrom(ThreadContext *src)
     for (int i = 0; i < NUM_PHYS_MISCREGS; i++)
         tc->setMiscRegNoEffect(i, src->readMiscRegNoEffect(i));
 
-    // Lastly copy PC/NPC
-    tc->pcState(src->pcState());
+    auto src_isa = dynamic_cast<ISA*>(src->getIsaPtr());
+    if (src_isa) {
+        for (int i = 0; i < capMiscRegFile.size(); i++) {
+            capMiscRegFile[i] = src_isa->capMiscRegFile[i];
+        }
+        
+        DPRINTF(RiscvMisc, "Copied %d capability misc registers\n", 
+                capMiscRegFile.size());
+    }
+    
+    // Copy PCC from PC state
+    auto src_pc = src->pcState().as<PCState>();
+    auto dst_pc = tc->pcState().as<PCState>();
+    dst_pc.pcc(src_pc.pcc());
+    tc->pcState(dst_pc);
 }
 
 void ISA::clear()
 {
     std::fill(miscRegFile.begin(), miscRegFile.end(), 0);
 
-    miscRegFile[MISCREG_PRV] = PRV_M;
-    miscRegFile[MISCREG_VENDORID] = 0;
-    miscRegFile[MISCREG_ARCHID] = 0;
-    miscRegFile[MISCREG_IMPID] = 0;
+    std::fill(capMiscRegFile.begin(), capMiscRegFile.end(), CapRegContainer{});
+
+    for (auto &cap : capMiscRegFile) {
+        cap.setTag(false);
+        cap.setAddress(0);
+        cap.setMetadata(0);
+    }
+    
+    // Re-initialize DDC
+    capMiscRegFile[0] = CapRegContainer::almighty(0);
 
     MISA misa = 0;
     STATUS status = 0;
@@ -416,6 +458,13 @@ ISA::hpmCounterEnabled(int misc_reg) const
 RegVal
 ISA::readMiscRegNoEffect(RegIndex idx) const
 {
+
+    // Capability misc registers must be accessed through readCapMiscReg*()
+    panic_if(isCapMiscReg(idx),
+             "Attempt to read capability misc reg %s (%d) via readMiscReg*\n",
+             getCapMiscRegName(idx).c_str(), idx);
+
+
     // Illegal CSR
     panic_if(idx > NUM_PHYS_MISCREGS, "Illegal CSR index %#x\n", idx);
     DPRINTF(RiscvMisc, "Reading MiscReg %s (%d): %#x.\n",
@@ -644,12 +693,90 @@ ISA::readMiscReg(RegIndex idx)
 
 void
 ISA::setMiscRegNoEffect(RegIndex idx, RegVal val)
-{
+{   
+    // Capability misc registers must be accessed through setCapMiscReg*()
+    panic_if(isCapMiscReg(idx),
+             "Attempt to write capability misc reg %s (%d) via setMiscReg*\n",
+             getCapMiscRegName(idx).c_str(), idx);
+
     // Illegal CSR
     panic_if(idx > NUM_PHYS_MISCREGS, "Illegal CSR index %#x\n", idx);
     DPRINTF(RiscvMisc, "Setting MiscReg %s (%d) to %#x.\n",
             MiscRegNames[idx], idx, val);
     miscRegFile[idx] = val;
+}
+
+CapRegContainer
+ISA::readCapMiscRegNoEffect(RegIndex idx) const
+{
+    // Check if it's a valid capability misc register
+    if (!isCapMiscReg(idx)) {
+        panic("Illegal capability misc reg index %#x (MISCREG_PCC=%#x, NUM=%#x)\n",
+              idx, MISCREG_PCC, NUM_CHERI_MISCREGS);
+    }
+    
+    if (idx == MISCREG_PCC) {
+        auto pc_state = tc->pcState().as<PCState>();
+        return pc_state.pcc();
+    }
+    
+    // Get index in capMiscRegFile array
+    int file_idx = getCapMiscRegFileIndex(idx);
+    if (file_idx < 0 || file_idx >= capMiscRegFile.size()) {
+        panic("Invalid capability misc reg file index for %#x\n", idx);
+    }
+    
+    DPRINTF(RiscvMisc, "Reading Cap MiscReg %s (%d): tag=%d addr=%#x\n",
+            getCapMiscRegName(idx).c_str(), idx, 
+            capMiscRegFile[file_idx].getTag(),
+            capMiscRegFile[file_idx].getAddress());
+    
+    return capMiscRegFile[file_idx];
+}
+
+CapRegContainer
+ISA::readCapMiscReg(RegIndex idx)
+{
+    // For now, no special handling for capability registers
+    // Future: could add access permission checks here? 
+    return readCapMiscRegNoEffect(idx);
+}
+
+void
+ISA::setCapMiscRegNoEffect(RegIndex idx, const CapRegContainer& val)
+{
+    // Check if it's a valid capability misc register
+    if (!isCapMiscReg(idx)) {
+        panic("Illegal capability misc reg index %#x\n", idx);
+    }
+    
+    DPRINTF(RiscvMisc, "Setting Cap MiscReg %s (%d): tag=%d addr=%#x\n",
+            getCapMiscRegName(idx).c_str(), idx,
+            val.getTag(), val.getAddress());
+    
+    // PCC is special - it's stored in PCState
+    if (idx == MISCREG_PCC) {
+        auto pc_state = tc->pcState().as<PCState>();
+        pc_state.pcc(val);
+        tc->pcState(pc_state);
+        return;
+    }
+    
+    // Get index in capMiscRegFile array
+    int file_idx = getCapMiscRegFileIndex(idx);
+    if (file_idx < 0 || file_idx >= capMiscRegFile.size()) {
+        panic("Invalid capability misc reg file index for %#x\n", idx);
+    }
+    
+    capMiscRegFile[file_idx] = val;
+}
+
+void
+ISA::setCapMiscReg(RegIndex idx, const CapRegContainer& val)
+{
+    // For now, no special handling needed
+    // Future: could add privilege checks, permission updates, etc.
+    setCapMiscRegNoEffect(idx, val);
 }
 
 void
@@ -897,6 +1024,20 @@ ISA::serialize(CheckpointOut &cp) const
 
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
+
+
+    for (size_t i = 0; i < capMiscRegFile.size(); i++) {
+        uint64_t cap_addr = capMiscRegFile[i].getAddress();
+        uint64_t cap_meta = capMiscRegFile[i].getMetadata();
+        bool cap_tag = capMiscRegFile[i].getTag();
+        
+        paramOut(cp, csprintf("capMiscReg%d_addr", i), cap_addr);
+        paramOut(cp, csprintf("capMiscReg%d_meta", i), cap_meta);
+        paramOut(cp, csprintf("capMiscReg%d_tag", i), cap_tag);
+    }
+    
+    DPRINTF(RiscvMisc, "Serialized %d capability misc registers\n",
+            capMiscRegFile.size());
 }
 
 void
@@ -904,6 +1045,22 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
+
+    for (size_t i = 0; i < capMiscRegFile.size(); i++) {
+        uint64_t cap_addr, cap_meta;
+        bool cap_tag;
+        
+        paramIn(cp, csprintf("capMiscReg%d_addr", i), cap_addr);
+        paramIn(cp, csprintf("capMiscReg%d_meta", i), cap_meta);
+        paramIn(cp, csprintf("capMiscReg%d_tag", i), cap_tag);
+        
+        capMiscRegFile[i].setAddress(cap_addr);
+        capMiscRegFile[i].setMetadata(cap_meta);
+        capMiscRegFile[i].setTag(cap_tag);
+    }
+    
+    DPRINTF(RiscvMisc, "Unserialized %d capability misc registers\n",
+            capMiscRegFile.size());
 }
 
 void
@@ -990,6 +1147,16 @@ void
 ISA::resetThread()
 {
     Reset().invoke(tc);
+
+    for (auto &cap : capMiscRegFile) {
+        cap.setTag(false);
+        cap.setAddress(0);
+        cap.setMetadata(0);
+    }
+
+    capMiscRegFile[0] = CapRegContainer::almighty(0);
+    
+    DPRINTF(RiscvMisc, "Reset CHERI capability registers\n");
 }
 
 Addr
@@ -1018,3 +1185,5 @@ operator<<(std::ostream &os, gem5::CHERIRiscvISA::CHERIPrivilegeMode pm)
     }
     return os << "PRV_<invalid>";
 }
+
+ 

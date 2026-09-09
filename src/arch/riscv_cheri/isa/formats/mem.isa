@@ -234,6 +234,15 @@ def template StoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
+        // ── CHERI: a non-capability store clears the tag of the granule(s)
+        // it writes (the "any raw write invalidates a stored capability"
+        // invariant). Done CPU-side by physical address so it is cache-
+        // independent, mirroring CapStoreCompleteAcc's setTag. Without this,
+        // stale valid tags persist on reused memory and later read back as
+        // wild capabilities (e.g. an uninitialised kernel-stack slot became a
+        // bogus AT_TIMEKEEP cap that faulted rtld).
+        xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
+            pkt->getAddr(), pkt->getSize());
         return NoFault;
     }
 }};
@@ -297,6 +306,10 @@ def template CacheBlockBasedStoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
+        // ── CHERI: a cache-block raw write (e.g. cbo.zero) clears every tag
+        // in the block it overwrites. See StoreCompleteAcc for rationale.
+        xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
+            pkt->getAddr(), pkt->getSize());
         return NoFault;
     }
 }};

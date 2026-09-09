@@ -110,6 +110,12 @@ def bitfield RP2 <4:2>;
 def bitfield FC1 <11:7>;
 def bitfield FC2 <6:2>;
 def bitfield FP2 <4:2>;
+// Compressed capability register fields (purecap c.lq/c.sq/c.lqsp/c.sqsp),
+// mirroring the integer/float compressed reg encodings.
+def bitfield CC1 <11:7>;   // CI/CSS rd|rs1 (c.lqsp dest)
+def bitfield CC2 <6:2>;    // CSS rs2 (c.sqsp src)
+def bitfield CP1 <9:7>;    // CL/CS rs1' (base, +8)
+def bitfield CP2 <4:2>;    // CL/CS rd'/rs2' (+8)
 def bitfield CJUMPIMM <12:2>;
 def bitfield CJUMPIMM3TO1 <5:3>;
 def bitfield CJUMPIMM4TO4 <11:11>;

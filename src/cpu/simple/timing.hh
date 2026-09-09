@@ -263,6 +263,11 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
     Cycles previousCycle;
 
+    // ── CHERI: pending tag for capability stores ──
+    // Here or base.hh? 
+    bool _pendingCapTag = false;
+    bool _hasPendingCapTag = false;
+
   protected:
 
      /** Return a reference to the data port. */
@@ -293,6 +298,16 @@ class TimingSimpleCPU : public BaseSimpleCPU
                    Addr addr, Request::Flags flags, uint64_t *res,
                    const std::vector<bool>& byte_enable = std::vector<bool>())
         override;
+    
+    // ── CHERI capability memory access ──
+    Fault initiateCapMemRead(Addr addr, unsigned size,
+            Request::Flags flags,
+            const std::vector<bool>& byte_enable = std::vector<bool>());
+
+    Fault writeCapMem(uint8_t *data, unsigned size,
+                      Addr addr, Request::Flags flags, uint64_t *res,
+                      bool capTag,
+                      const std::vector<bool>& byte_enable = std::vector<bool>());
 
     Fault initiateMemAMO(Addr addr, unsigned size, Request::Flags flags,
                          AtomicOpFunctorPtr amo_op) override;

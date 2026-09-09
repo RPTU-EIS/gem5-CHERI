@@ -102,12 +102,19 @@ class BootloaderKernelWorkload: public Workload
     PCEvent *kernelPanicPcEvent = nullptr;
     PCEvent *kernelOopsPcEvent = nullptr;
 
+    /**
+     * Bring-up fixup: rewrites rvbp->kern_l1pt (physical -> kernel VA) at
+     * pmap_bootstrap entry for the firmware-less physical-entry boot.
+     */
+    PCEvent *kernL1ptFixupEvent = nullptr;
+
   private:
     void loadBootloaderSymbolTable();
     void loadKernelSymbolTable();
     void loadBootloader();
     void loadKernel();
     void loadDtb();
+    void processCapRelocs(); 
     void addExitOnKernelPanicEvent();
     void addExitOnKernelOopsEvent();
 
@@ -128,6 +135,9 @@ class BootloaderKernelWorkload: public Workload
         }
         if (kernelOopsPcEvent != nullptr) {
             delete kernelOopsPcEvent;
+        }
+        if (kernL1ptFixupEvent != nullptr) {
+            delete kernL1ptFixupEvent;
         }
     }
 

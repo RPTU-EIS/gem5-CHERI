@@ -45,7 +45,11 @@ namespace gem5
 {
 
 VirtIOBlock::VirtIOBlock(const Params &params)
-    : VirtIODeviceBase(params, ID_BLOCK, sizeof(Config), 0),
+    // BRING-UP EXPERIMENT: advertise VIRTIO_BLK_F_RO (bit 5) so the guest
+    // mounts root read-only (non-exclusive in GEOM). This tests whether the
+    // GEOM re-taste storm that starves init is driven by the exclusive rw
+    // root mount spoiling other consumers. Revert to 0 once diagnosed.
+    : VirtIODeviceBase(params, ID_BLOCK, sizeof(Config), (1 << 5)),
       qRequests(params.system->physProxy, byteOrder,
                 params.queueSize, *this),
       image(*params.image)

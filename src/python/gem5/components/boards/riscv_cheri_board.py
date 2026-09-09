@@ -91,7 +91,7 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         if processor.get_isa() != ISA.RISCV_CHERI:
             raise Exception(
                 "The RISCV CHERI Board requires a processor using the "
-                "RISCV ISA. Current processor ISA: "
+                "RISCV CHERI ISA. Current processor ISA: "
                 f"'{processor.get_isa().name}'."
             )
 
@@ -127,9 +127,14 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         )
 
         # The virtio rng
+        # Distinct PLIC source from the disk (0x8). Sharing one source made the
+        # RNG's handler run on every disk interrupt; it notifies its queue and
+        # VirtIORng (always has entropy) immediately re-kicks the shared source
+        # -> external-interrupt storm that livelocks the kernel right after
+        # start_init. UART is 0xA, disk is 0x8, so 0x9 is free.
         self.rng = RiscvCHERIMmioVirtIO(
             vio=VirtIORng(),
-            interrupt_id=0x8,
+            interrupt_id=0x9,
             pio_size=4096,
             pio_addr=0x10007000,
         )
@@ -261,6 +266,11 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         bootargs = self.workload.command_line
         node.append(FdtPropertyStrings("bootargs", [bootargs]))
         node.append(FdtPropertyStrings("stdout-path", ["/uart@10000000"]))
+        # FreeBSD/CheriBSD's initriscv() reads the boot hart id from
+        # /chosen "boot-hartid" (normally injected by OpenSBI/U-Boot). Without
+        # it, OF_getencprop returns -1 and the kernel panics with
+        # "Boot hart ID was not properly set." Single hart -> hart 0.
+        node.append(FdtPropertyWords("boot-hartid", [0]))
         root.append(node)
 
         # See Documentation/devicetree/bindings/riscv/cpus.txt for details.
@@ -292,13 +302,20 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             node.append(FdtPropertyStrings("status", "okay"))
             node.append(
                 FdtPropertyStrings(
-                    "riscv_cheri,isa", core.core.isa[0].get_isa_string()
+                    # Must be the standard "riscv,isa" -- the kernel parses this
+                    # to build the CPU's extension set; a "riscv_cheri,isa" name
+                    # is invisible to it ("Empty extension set for CPU 0").
+                    "riscv,isa", core.core.isa[0].get_isa_string()
                 )
             )
             # TODO: Should probably get this from the core.
             freq = self.clk_domain.clock[0].frequency
             node.append(FdtPropertyWords("clock-frequency", freq))
-            node.appendCompatible(["riscv_cheri"])
+            # Must advertise "riscv": the kernel's identify_cpu_features_fdt()
+            # skips any /cpus child that is not compatible with "riscv" when
+            # locating the CPU node to parse riscv,isa -- without it CPU 0 is
+            # never found and isa_extensions stays 0 ("Empty extension set").
+            node.appendCompatible(["riscv", "riscv_cheri"])
             int_phandle = state.phandle(f"cpu@{i}.int_state")
             node.appendPhandle(f"cpu@{i}")
 
@@ -307,7 +324,12 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             int_phandle = int_state.phandle(f"cpu@{i}.int_state")
             int_node.append(int_state.interruptCellsProperty())
             int_node.append(FdtProperty("interrupt-controller"))
-            int_node.appendCompatible("riscv_cheri,cpu-intc")
+            # FreeBSD's per-hart local interrupt controller driver (intc)
+            # matches "riscv,cpu-intc". With the "riscv_cheri," prefix it does
+            # not attach, so no interrupt routing exists at all -- the UART
+            # falls back to polled mode and virtio_mmio "Can't allocate
+            # interrupt" (root disk fails to attach).
+            int_node.appendCompatible("riscv,cpu-intc")
             int_node.append(FdtPropertyWords("phandle", [int_phandle]))
 
             node.append(int_node)
@@ -352,8 +374,10 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
 
         phandle = int_state.phandle(plic)
         plic_node.append(FdtPropertyWords("phandle", [phandle]))
+        # FreeBSD's PLIC driver reads the "riscv,ndev" property (number of
+        # interrupt sources); the "riscv_cheri," name is not read.
         plic_node.append(
-            FdtPropertyWords("riscv_cheri,ndev", [plic.n_src - 1])
+            FdtPropertyWords("riscv,ndev", [plic.n_src - 1])
         )
 
         int_extended = list()
@@ -373,7 +397,9 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
 
         plic_node.append(FdtPropertyWords("interrupts-extended", int_extended))
         plic_node.append(FdtProperty("interrupt-controller"))
-        plic_node.appendCompatible(["riscv_cheri,plic0"])
+        # FreeBSD's PLIC driver matches "riscv,plic0" (stock gem5 Plic.py uses
+        # this too); "riscv_cheri,plic0" leaves the PLIC with no driver.
+        plic_node.appendCompatible(["riscv,plic0"])
 
         soc_node.append(plic_node)
 
@@ -505,10 +531,14 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             self.workload.bootloader_addr = 0x0
             self.workload.bootloader_filename = self._bootloader[0]
             self.workload.kernel_addr = 0x80200000
-            self.workload.entry_point = 0x80000000  # Bootloader starting point
+            self.workload.entry_point = 0x80200000  # Bootloader starting point
+        
         else:
             self.workload.kernel_addr = 0x0
-            self.workload.entry_point = 0x80000000
+            # self.workload.entry_point = 0x80200044
+            self.workload.entry_point = 0xffffffc000000044   
+            # self.workload.entry_point = 0x80200000
+
         self._connect_things()
 
     @overrides(KernelDiskWorkload)
@@ -536,6 +566,11 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
     @overrides(KernelDiskWorkload)
     def get_default_kernel_args(self) -> List[str]:
         return [
+            # FreeBSD reads /chosen/bootargs and honors "-s" = boot single-user:
+            # init sets up the console and runs /bin/sh directly, SKIPPING /etc/rc
+            # (which currently loops on the read-only-disk bring-up hack). This
+            # gives an interactive shell to demonstrate the booted userspace.
+            "-s",
             "console=ttyS0",
             "root={root_value}",
             "disk_device={disk_device}",

@@ -84,7 +84,8 @@ class CHERIRiscvBootloaderKernelWorkload(Workload):
     type = "CHERIRiscvBootloaderKernelWorkload"
     cxx_class = "gem5::CHERIRiscvISA::BootloaderKernelWorkload"
     cxx_header = "arch/riscv_cheri/linux/fs_workload.hh"
-
+    
+    
     bootloader_filename = Param.String(
         "", "File that contains the bootloader. Don't use bootloader if empty."
     )
@@ -123,9 +124,10 @@ class CHERIRiscvBootloaderKernelWorkload(Workload):
 
     # Note: Duplicated from KernelWorkload for now
     on_panic = Param.KernelPanicOopsBehaviour(
-        "DumpDmesgAndExit",
-        "Define how gem5 should behave after a Linux Kernel Panic. "
-        "Handler might not be implemented for all architectures.",
+        "Continue",
+        # "DumpDmesgAndExit",
+        "Define how gem5 should behave after a guest Kernel Panic. "
+        "Continue lets CheriBSD's panic() print via the SBI console.",
     )
 
     on_oops = Param.KernelPanicOopsBehaviour(

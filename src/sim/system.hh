@@ -55,6 +55,7 @@
 #include "enums/MemoryMode.hh"
 #include "mem/mem_requestor.hh"
 #include "mem/physical.hh"
+#include "mem/cheri_tag_table.hh"
 #include "mem/port.hh"
 #include "mem/port_proxy.hh"
 #include "params/System.hh"
@@ -610,6 +611,14 @@ class System : public SimObject, public PCEventScope
     // to be redirected to the faux-filesystem (a duplicate filesystem
     // intended to replace certain files on the host filesystem).
     std::vector<RedirectPath*> redirectPaths;
+
+  public: 
+    CheriTagTable cheritagtable;
+
+    CheriTagTable& getCheriTagTable() { 
+        return cheritagtable; 
+    }
+
 };
 
 void printSystems();

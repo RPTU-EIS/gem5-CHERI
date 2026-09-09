@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "Capability register startup state.",
+    "",
+    "Each entry maps a capability register name to its initial state.",
+    "Fields:",
+    "  tag:      true | false   — whether the cap is valid",
+    "  address: '0x...'         — the 64-bit address field",
+    "  metadata: '0x...'        — the full 64-bit metadata word",
+    "                             (perms in low 16, otype + bounds above)",
+    "",
+    "The assembler emits CSpecialRW + CSetAddr + CSetHigh (and similar)",
+    "as a prologue before the user's assembly. Each register is materialized",
+    "by:",
+    "  1. CSpecialRW <cd>, ddc, c0     # cd = almighty DDC (tag=1, full perms)",
+    "  2. li tmp, <address>             # tmp = desired address",
+    "  3. CSetAddr <cd>, <cd>, tmp      # cd.address = tmp",
+    "  4. li tmp, <metadata>            # tmp = desired metadata",
+    "  5. CSetHigh <cd>, <cd>, tmp      # cd.metadata = tmp",
+    "",
+    "If tag is false, the assembler emits an instruction that clears the tag.",
+    "(In practice: copy from c0/CNull which is untagged.)"
+  ],
+
+  "startup_registers": {
+    "c1": {
+      "tag": true,
+      "address": "0x80010000",
+      "metadata": "0x0fff1ffffe018004"
+    },
+    "c2": {
+      "tag": true,
+      "address": "0x80020000",
+      "metadata": "0x0fff1ffffe018004"
+    },
+    "c10": {
+      "tag": true,
+      "address": "0x80030000",
+      "metadata": "0x0fff1ffffe018004"
+    }
+  }
+}

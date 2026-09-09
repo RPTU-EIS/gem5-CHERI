@@ -139,6 +139,17 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         }
 
         // Set fault cause, privilege, and return PC
+        // ── Determine which CHERI SCRs to use, matching the privilege level
+        // we're entering. PCC saves to xEPCC; new PCC loads from xTCC. ──
+        MiscRegIndex epcc_idx, tcc_idx;
+        switch (prv) {
+          case PRV_U: epcc_idx = MISCREG_UEPCC; tcc_idx = MISCREG_UTCC; break;
+          case PRV_S: epcc_idx = MISCREG_SEPCC; tcc_idx = MISCREG_STCC; break;
+          case PRV_M: epcc_idx = MISCREG_MEPCC; tcc_idx = MISCREG_MTCC; break;
+          default: panic("Unknown privilege mode %d.", prv);
+        }
+
+        // Set fault cause, privilege, and return PC
         uint64_t _cause = _code;
         if (isInterrupt()) {
            _cause |= CAUSE_INTERRUPT_MASKS[pc_state.rvType()];
@@ -148,30 +159,66 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         tc->setMiscReg(tval, trap_value());
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
-        // Temporarily mask NMI while we're in NMI handler. Otherweise, the
-        // checkNonMaskableInterrupt will always return true and we'll be
-        // stucked in an infinite loop.
+
         if (isNonMaskableInterrupt()) {
             tc->setMiscReg(MISCREG_NMIE, 0);
         }
 
-        // Clear load reservation address
+        // Clear load reservation
         auto isa = static_cast<CHERIRiscvISA::ISA*>(tc->getIsaPtr());
         isa->clearLoadReservation(tc->contextId());
 
-        // Set PC to fault handler address
-        Addr addr = isa->getFaultHandlerAddr(tvec, _code, isInterrupt());
+        // ── CHERI: save current PCC into xEPCC ──
+        // Address of saved PCC = faulting instruction's PC. Bounds/perms
+        // are the existing PCC's. CheriBSD reads MEPCC/SEPCC on xret and
+        // restores PCC from it.
+        CapRegContainer saved_pcc = pc_state.pcc();
+        saved_pcc.setAddress(pc_state.instAddr());
+        isa->setCapMiscReg(epcc_idx, saved_pcc);
+
+        // ── CHERI: load new PCC from xTCC ──
+        // The trap vector cap holds bounds/perms for the handler.
+        // Its address is the handler entry point (matching MTVEC address).
+        CapRegContainer new_pcc = isa->readCapMiscReg(tcc_idx);
+
+        // Compute handler address per RISC-V tvec format (direct vs vectored).
+        // In CHERI-RISC-V the trap vector IS xTCC; its address field serves as
+        // xTVEC. The purecap kernel programs xTCC (via cspecialrw), NOT the
+        // legacy xTVEC CSR (which stays 0), so derive the handler address from
+        // xTCC's address rather than getFaultHandlerAddr(tvec)/xTVEC (which
+        // returned 0 and vectored every trap to PC=0 -> fetch-fault loop).
+        (void)tvec;  // legacy xTVEC index unused on the purecap trap path
+        uint64_t vec = new_pcc.getAddress();
+        Addr addr = mbits(vec, 63, 2);
+        if (isInterrupt() && bits(vec, 1, 0) == 1)
+            addr += 4 * _code;
+        new_pcc.setAddress(addr);
+
+        pc_state.pcc(new_pcc);
         pc_state.set(addr);
         tc->pcState(pc_state);
-    } else {
-        invokeSE(tc, inst);
     }
 }
 
 void
 Reset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 {
-    tc->setMiscReg(MISCREG_PRV, PRV_M);
+    // ── Emulate the OpenSBI -> kernel handoff (no firmware in this setup). ──
+    // On real hardware M-mode firmware (OpenSBI) delegates traps to S-mode and
+    // drops to S-mode before entering the S-mode kernel. We have no OpenSBI, so
+    // do the equivalent here: enter the kernel directly in S-mode with traps
+    // delegated. Otherwise the kernel runs in M-mode and its page faults etc.
+    // are delivered to the unset MTVEC (the kernel only programs STVEC) and the
+    // machine hangs. faults.cc already honours MEDELEG/MIDELEG when the faulting
+    // privilege is < M. To revert, set PRV_M and drop the two deleg writes.
+    tc->setMiscReg(MISCREG_PRV, PRV_S);
+    // Delegate exceptions to S-mode, EXCEPT ecall-from-S (9) / ecall-from-M
+    // (11), which must stay in M-mode so our inline SBI emulation still fires.
+    // Bits: 0-8 (misaligned/access/illegal/breakpoint/ecall-U) + 12/13/15
+    // (instr/load/store page fault) = 0xB1FF.
+    tc->setMiscReg(MISCREG_MEDELEG, 0xB1FF);
+    // Delegate S-mode interrupts (SSIP/STIP/SEIP = bits 1/5/9) = 0x222.
+    tc->setMiscReg(MISCREG_MIDELEG, 0x222);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
     status.mie = 0;
     status.mprv = 0;
@@ -249,6 +296,18 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
     tc->getSystemPtr()->workload->syscall(tc);
 }
 
+void
+CheriCapFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
+{
+    // Try to drop into the debugger when available, otherwise fail loudly.
+    if (!tc->getSystemPtr()->trapToGdb(GDBSignal::ILL, tc->contextId())) {
+        // Report the CHERI fault type and any associated information.
+        panic("CHERI capability fault (code=%u, creg=%d, addr=%#llx) at pc %s",
+              static_cast<unsigned>(_cheri_code), _cap_reg,
+              static_cast<unsigned long long>(_addr), tc->pcState());
+    }
+}
+
 bool
 getFaultVAddr(Fault fault, Addr &va)
 {
@@ -261,6 +320,12 @@ getFaultVAddr(Fault fault, Addr &va)
     auto pgt_fault = dynamic_cast<GenericPageTableFault *>(fault.get());
     if (pgt_fault) {
         va = pgt_fault->getFaultVAddr();
+        return true;
+    }
+
+    auto cheri_fault = dynamic_cast<CheriCapFault *>(fault.get());
+    if (cheri_fault) {
+        va = static_cast<Addr>(cheri_fault->trap_value());
         return true;
     }
 

@@ -49,9 +49,12 @@
 #include <string>
 #include <vector>
 
+#include "arch/generic/cap_reg.hh"
+#include "arch/generic/cheri_defs.hh"
 #include "base/bitunion.hh"
 #include "cpu/reg_class.hh"
 #include "debug/CapRegs.hh"
+
 
 namespace gem5
 {
@@ -77,31 +80,26 @@ namespace gem5
 
                 _CUreg0Idx = NumArchCapRegs,
 
-                _CNullDataIdx, _CRaDataIdx, _CSpDataIdx,  _CGpDataIdx,
-                _CTpDataIdx,   _CT0DataIdx, _CT1DataIdx,  _CT2DataIdx,
-                _CS0DataIdx,   _CS1DataIdx, _CA0DataIdx,  _CA1DataIdx,
-                _CA2DataIdx,   _CA3DataIdx, _CA4DataIdx,  _CA5DataIdx,
-                _CA6DataIdx,   _CA7DataIdx, _CS2DataIdx,  _CS3DataIdx,
-                _CS4DataIdx,   _CS5DataIdx, _CS6DataIdx,  _CS7DataIdx,
-                _CS8DataIdx,   _CS9DataIdx, _CS10DataIdx, _CS11DataIdx,
-                _CT3DataIdx,   _CT4DataIdx, _CT5DataIdx,  _CT6DataIdx,
-
-                _CNullTagIdx, _CRaTagIdx, _CSpTagIdx,  _CGpTagIdx,
-                _CTpTagIdx,   _CT0TagIdx, _CT1TagIdx,  _CT2TagIdx,
-                _CS0TagIdx,   _CS1TagIdx, _CA0TagIdx,  _CA1TagIdx,
-                _CA2TagIdx,   _CA3TagIdx, _CA4TagIdx,  _CA5TagIdx,
-                _CA6TagIdx,   _CA7TagIdx, _CS2TagIdx,  _CS3TagIdx,
-                _CS4TagIdx,   _CS5TagIdx, _CS6TagIdx,  _CS7TagIdx,
-                _CS8TagIdx,   _CS9TagIdx, _CS10TagIdx, _CS11TagIdx,
-                _CT3TagIdx,   _CT4TagIdx, _CT5TagIdx,  _CT6TagIdx,
-
                 NumCapRegs
             };
 
         } // namespace cap_reg
+        
+        using CapRegContainer = gem5::CapRegContainer;
+        using capreg_t = CapRegContainer;
 
-        inline constexpr RegClass capRegClass(CapRegClass, CapRegClassName,
-                cap_reg::NumCapRegs, debug::CapRegs);
+        const int NumCapStandardRegs = 32;
+        const int NumCapInternalRegs = 1;  // CUreg0 for atomics
+        const int NumTotalCapRegs = NumCapStandardRegs + NumCapInternalRegs;
+
+        static inline TypedRegClassOps<CHERIRiscvISA::CapRegContainer> capRegClassOps;
+
+        inline constexpr RegClass capRegClass =
+            RegClass(CapRegClass, CapRegClassName,
+                NumTotalCapRegs, debug::CapRegs).
+                ops(capRegClassOps).
+                regType<CapRegContainer>();
+
 
         namespace cap_reg
         {
@@ -139,74 +137,7 @@ namespace gem5
                     CT4 = capRegClass[_CT4Idx],
                     CT5 = capRegClass[_CT5Idx],
                     CT6 = capRegClass[_CT6Idx],
-                    CUreg0 = capRegClass[_CUreg0Idx],
-                    //Additional Registers for the
-                    // information going alongside the address
-            CNullData = capRegClass[_CNullDataIdx],
-                    CRaData = capRegClass[_CRaDataIdx],
-                    CSpData = capRegClass[_CSpDataIdx],
-                    CGpData = capRegClass[_CGpDataIdx],
-                    CTpData = capRegClass[_CTpDataIdx],
-                    CT0Data = capRegClass[_CT0DataIdx],
-                    CT1Data = capRegClass[_CT1DataIdx],
-                    CT2Data = capRegClass[_CT2DataIdx],
-                    CS0Data = capRegClass[_CS0DataIdx],
-                    CS1Data = capRegClass[_CS1DataIdx],
-                    CA0Data = capRegClass[_CA0DataIdx],
-                    CA1Data = capRegClass[_CA1DataIdx],
-                    CA2Data = capRegClass[_CA2DataIdx],
-                    CA3Data = capRegClass[_CA3DataIdx],
-                    CA4Data = capRegClass[_CA4DataIdx],
-                    CA5Data = capRegClass[_CA5DataIdx],
-                    CA6Data = capRegClass[_CA6DataIdx],
-                    CA7Data = capRegClass[_CA7DataIdx],
-                    CS2Data = capRegClass[_CS2DataIdx],
-                    CS3Data = capRegClass[_CS3DataIdx],
-                    CS4Data = capRegClass[_CS4DataIdx],
-                    CS5Data = capRegClass[_CS5DataIdx],
-                    CS6Data = capRegClass[_CS6DataIdx],
-                    CS7Data = capRegClass[_CS7DataIdx],
-                    CS8Data = capRegClass[_CS8DataIdx],
-                    CS9Data = capRegClass[_CS9DataIdx],
-                    CS10Data = capRegClass[_CS10DataIdx],
-                    CS11Data = capRegClass[_CS11DataIdx],
-                    CT3Data = capRegClass[_CT3DataIdx],
-                    CT4Data = capRegClass[_CT4DataIdx],
-                    CT5Data = capRegClass[_CT5DataIdx],
-                    CT6Data = capRegClass[_CT6DataIdx],
-                //Additional Registers for the tags
-                CNullTag = capRegClass[_CNullTagIdx],
-                    CRaTag = capRegClass[_CRaTagIdx],
-                    CSpTag = capRegClass[_CSpTagIdx],
-                    CGpTag = capRegClass[_CGpTagIdx],
-                    CTpTag = capRegClass[_CTpTagIdx],
-                    CT0Tag = capRegClass[_CT0TagIdx],
-                    CT1Tag = capRegClass[_CT1TagIdx],
-                    CT2Tag = capRegClass[_CT2TagIdx],
-                    CS0Tag = capRegClass[_CS0TagIdx],
-                    CS1Tag = capRegClass[_CS1TagIdx],
-                    CA0Tag = capRegClass[_CA0TagIdx],
-                    CA1Tag = capRegClass[_CA1TagIdx],
-                    CA2Tag = capRegClass[_CA2TagIdx],
-                    CA3Tag = capRegClass[_CA3TagIdx],
-                    CA4Tag = capRegClass[_CA4TagIdx],
-                    CA5Tag = capRegClass[_CA5TagIdx],
-                    CA6Tag = capRegClass[_CA6TagIdx],
-                    CA7Tag = capRegClass[_CA7TagIdx],
-                    CS2Tag = capRegClass[_CS2TagIdx],
-                    CS3Tag = capRegClass[_CS3TagIdx],
-                    CS4Tag = capRegClass[_CS4TagIdx],
-                    CS5Tag = capRegClass[_CS5TagIdx],
-                    CS6Tag = capRegClass[_CS6TagIdx],
-                    CS7Tag = capRegClass[_CS7TagIdx],
-                    CS8Tag = capRegClass[_CS8TagIdx],
-                    CS9Tag = capRegClass[_CS9TagIdx],
-                    CS10Tag = capRegClass[_CS10TagIdx],
-                    CS11Tag = capRegClass[_CS11TagIdx],
-                    CT3Tag = capRegClass[_CT3TagIdx],
-                    CT4Tag = capRegClass[_CT4TagIdx],
-                    CT5Tag = capRegClass[_CT5TagIdx],
-                    CT6Tag = capRegClass[_CT6TagIdx];
+                    CUreg0 = capRegClass[_CUreg0Idx];
 
             const std::vector<std::string> RegNames = {
                     "cnull", "cra", "csp", "cgp",
@@ -216,7 +147,12 @@ namespace gem5
                     "ca6", "ca7", "cs2", "cs3",
                     "cs4", "cs5", "cs6", "cs7",
                     "cs8", "cs9", "cs10", "cs11",
-                    "ct3", "ct4", "ct5", "ct6"
+                    "ct3", "ct4", "ct5", "ct6",
+                    // Index 32 = CUreg0 (internal atomic temp). Must be present:
+                    // registerName() bounds-checks against NumCapRegs (33), so a
+                    // missing 33rd entry made RegNames[32] an out-of-bounds
+                    // vector access -> segfault when disassembling it.
+                    "cureg0"
             };
 
         } // namespace cap_reg
@@ -234,20 +170,6 @@ namespace gem5
         cap_reg::CA0, cap_reg::CA1, cap_reg::CA2, cap_reg::CA3,
         cap_reg::CA4, cap_reg::CA5, cap_reg::CA6, cap_reg::CA7
     };
-
-    //! CHERI Concentrate Register
-    BitUnion64(CAPTYPE)
-    Bitfield<63, 48> perm;
-    Bitfield<47> flag;
-    Bitfield<46, 45> reserved;
-    Bitfield<44, 27> otype;
-    Bitfield<26> IE;
-    Bitfield<25, 17> T;
-    Bitfield<16, 14> TE;
-    Bitfield<13, 3> B;
-    Bitfield<2, 0> BE;
-    EndBitUnion(CAPTYPE)
-
 
 } // namespace CHERIRiscvISA
 } // namespace gem5

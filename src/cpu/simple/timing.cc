@@ -57,6 +57,11 @@
 #include "sim/full_system.hh"
 #include "sim/system.hh"
 
+#include "arch/riscv_cheri/pcstate.hh"
+#include  "arch/generic/cap_reg.hh"
+#include "arch/riscv_cheri/faults.hh"
+
+
 namespace gem5
 {
 
@@ -551,6 +556,13 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
 
     req->taskId(taskId());
 
+    // ── CHERI: attach tag to capability store requests ──
+    if (_hasPendingCapTag && req->isCapStore()) {
+        req->setCapTag(_pendingCapTag);
+        DPRINTF(SimpleCPU, "CHERI: attaching tag=%d to cap store "
+                "at %#x\n", _pendingCapTag, addr);
+    }
+
     Addr split_addr = roundDown(addr + size - 1, block_size);
     assert(split_addr <= addr || split_addr - addr < block_size);
 
@@ -583,6 +595,33 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
 
     // Translation faults will be returned via finishTranslation()
     return NoFault;
+}
+
+Fault
+TimingSimpleCPU::initiateCapMemRead(Addr addr, unsigned size,
+                                    Request::Flags flags,
+                                    const std::vector<bool>& byte_enable)
+{
+    return initiateMemRead(addr, size,
+                           flags | Request::CHERI_CAP_LOAD,
+                           byte_enable);
+}
+
+Fault
+TimingSimpleCPU::writeCapMem(uint8_t *data, unsigned size,
+                             Addr addr, Request::Flags flags,
+                             uint64_t *res, bool capTag,
+                             const std::vector<bool>& byte_enable)
+{
+    _pendingCapTag = capTag;
+    _hasPendingCapTag = true;
+
+    Fault fault = writeMem(data, size, addr,
+                           flags | Request::CHERI_CAP_STORE,
+                           res, byte_enable);
+
+    _hasPendingCapTag = false;
+    return fault;
 }
 
 Fault
@@ -697,6 +736,29 @@ TimingSimpleCPU::fetch()
     bool needToFetch = !isRomMicroPC(upc) && !curMacroStaticInst;
 
     if (needToFetch) {
+        // Pcc validation being done here. If Pcc is valid the fetch will proceed. 
+        auto &cheri_pc = thread->pcState().as<CHERIRiscvISA::PCState>();
+        const auto &pcc = cheri_pc.pcc();
+        DPRINTF(SimpleCPU, "Fetch initiated with PCC\n");
+
+        if (!pcc.getTag()) {
+            DPRINTF(SimpleCPU, "PCC tag violation at %#x\n", cheri_pc.instAddr());
+            Fault fault = std::make_shared<CHERIRiscvISA::CheriCapFault>(CHERIRiscvISA::CheriCapException::TagViolation);
+            advanceInst(fault);
+            return;
+        }
+
+        CHERIRiscvISA::CAPTYPE meta = pcc.getMetadata();
+        if (meta.perm == 0) {
+            DPRINTF(SimpleCPU, "PCC execute permission violation at %#x\n", cheri_pc.instAddr());
+            Fault fault = std::make_shared<CHERIRiscvISA::CheriCapFault>(CHERIRiscvISA::CheriCapException::PermitExecuteViolation);
+            advanceInst(fault);
+            return;
+        }
+
+        //Check sentry and bounds violations in the same way
+        DPRINTF(SimpleCPU, "Fetch with PCC continues. No violations found\n");
+
         _status = BaseSimpleCPU::Running;
         RequestPtr ifetch_req = std::make_shared<Request>();
         ifetch_req->taskId(taskId());
