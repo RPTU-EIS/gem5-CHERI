@@ -27,6 +27,7 @@
 
 #include "arch/riscv_cheri/reg_abi.hh"
 
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/int.hh"
 
 namespace gem5
@@ -35,9 +36,14 @@ namespace gem5
 namespace CHERIRiscvISA
 {
 
+// M5Op/pseudo-inst arguments are read through the merged register file's
+// capability view (see reg_abi.hh's Argument<RegABI64, ...> override), so
+// these need to be the capability RegIds, not the disconnected int_reg
+// ones -- see arch/riscv_cheri/sbi.cc for the same pattern used by SBI
+// ecalls.
 const std::vector<RegId> RegABI64::ArgumentRegs = {
-    int_reg::A0, int_reg::A1, int_reg::A2, int_reg::A3,
-    int_reg::A4, int_reg::A5, int_reg::A6
+    cap_reg::CA0, cap_reg::CA1, cap_reg::CA2, cap_reg::CA3,
+    cap_reg::CA4, cap_reg::CA5, cap_reg::CA6
 };
 
 const std::vector<RegId> RegABI32::ArgumentRegs = {

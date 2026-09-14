@@ -30,6 +30,7 @@
 
 #include <vector>
 
+#include "arch/generic/cap_reg.hh"
 #include "sim/syscall_abi.hh"
 
 namespace gem5
@@ -90,6 +91,59 @@ struct Argument<CHERIRiscvISA::RegABI32, pseudo_inst::GuestAddr>
                 "Ran out of syscall argument registers.");
 
         return (Arg)bits(tc->getReg(ABI::ArgumentRegs[state++]), 31, 0);
+    }
+};
+
+// On this ISA the integer and capability register classes are modeled as
+// separate state, but physically there is only one merged register file:
+// the plain-integer value of a register is the address field of its
+// capability (see arch/riscv_cheri/sbi.cc). M5Op/pseudo-inst arguments,
+// whether plain integers or pointers, must therefore be read through the
+// capability register and its address field rather than through
+// intRegClass, or they come back as whatever unrelated value happens to
+// be sitting in the (unused for this purpose) integer register file.
+//
+// These need to be full (explicit) specializations rather than a single
+// partial one constrained with enable_if: partial-ordering can't resolve
+// an enable_if-guarded partial specialization against the pre-existing
+// generic one in syscall_abi.hh (both match via a dummy 3rd parameter),
+// which makes the instantiation ambiguous. A full specialization is
+// always preferred over any partial one, so there's no ambiguity. The
+// only concrete argument types pseudo_inst functions use are uint64_t
+// (Tick is just a typedef for it) and GuestAddr.
+template <>
+struct Argument<CHERIRiscvISA::RegABI64, uint64_t>
+{
+    using ABI = CHERIRiscvISA::RegABI64;
+    using Arg = uint64_t;
+
+    static Arg
+    get(ThreadContext *tc, typename ABI::State &state)
+    {
+        panic_if(state >= ABI::ArgumentRegs.size(),
+                "Ran out of syscall argument registers.");
+
+        CapRegContainer c;
+        tc->getReg(ABI::ArgumentRegs[state++], &c);
+        return c.getAddress();
+    }
+};
+
+template <>
+struct Argument<CHERIRiscvISA::RegABI64, pseudo_inst::GuestAddr>
+{
+    using ABI = CHERIRiscvISA::RegABI64;
+    using Arg = pseudo_inst::GuestAddr;
+
+    static Arg
+    get(ThreadContext *tc, typename ABI::State &state)
+    {
+        panic_if(state >= ABI::ArgumentRegs.size(),
+                "Ran out of syscall argument registers.");
+
+        CapRegContainer c;
+        tc->getReg(ABI::ArgumentRegs[state++], &c);
+        return (Arg)c.getAddress();
     }
 };
 

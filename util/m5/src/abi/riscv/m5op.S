@@ -44,9 +44,12 @@
 
 .macro	m5op_func, name, func
         .globl \name
+	.type \name, @function
         \name:
         .long 0x0000007b | (\func << 25)
-        ret
+        cjalr	cra
+	//ret
+	.size \name, . - \name
 .endm
 
 .text
