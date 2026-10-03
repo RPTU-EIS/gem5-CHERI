@@ -1769,9 +1769,9 @@ decode QUADRANT default Unknown::unknown() {
                     }},
                     cap_check_code = {{
                         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
-                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                        //     return std::make_shared<
-                        //         CHERIRiscvISA::CheriCapFault>(_cf);
+                        if (Fault _f = CHERIRiscvISA::capEnforce(
+                                xc->tcBase(), _cf, -1, EA))
+                            return _f;
                 }});
 
                 0x1: sh_cap({{
@@ -1782,9 +1782,9 @@ decode QUADRANT default Unknown::unknown() {
                     }},
                     cap_check_code = {{
                         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
-                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                        //     return std::make_shared<
-                        //         CHERIRiscvISA::CheriCapFault>(_cf);
+                        if (Fault _f = CHERIRiscvISA::capEnforce(
+                                xc->tcBase(), _cf, -1, EA))
+                            return _f;
                     }});
 
                 // SW.CAP rs2, cs1 — store word
@@ -1796,9 +1796,9 @@ decode QUADRANT default Unknown::unknown() {
                     }},
                     cap_check_code = {{
                         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
-                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                        //     return std::make_shared<
-                        //         CHERIRiscvISA::CheriCapFault>(_cf);
+                        if (Fault _f = CHERIRiscvISA::capEnforce(
+                                xc->tcBase(), _cf, -1, EA))
+                            return _f;
                     }});
 
                 0x3: sd_cap({{
@@ -1809,9 +1809,9 @@ decode QUADRANT default Unknown::unknown() {
                     }},
                     cap_check_code = {{
                         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
-                        // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                        //     return std::make_shared<
-                        //         CHERIRiscvISA::CheriCapFault>(_cf);
+                        if (Fault _f = CHERIRiscvISA::capEnforce(
+                                xc->tcBase(), _cf, -1, EA))
+                            return _f;
                     }});
 
             }

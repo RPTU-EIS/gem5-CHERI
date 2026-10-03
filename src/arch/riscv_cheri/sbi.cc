@@ -73,15 +73,15 @@ getConsole()
             ::fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
         inited = true;
         // DEBUG: fires the first time the guest polls console input at all.
-        warn("SBI getConsole: first poll (guest IS reading console input; "
-             "stdin isatty=%d)\n", ::isatty(STDIN_FILENO));
+        // warn("SBI getConsole: first poll (guest IS reading console input; "
+        //      "stdin isatty=%d)\n", ::isatty(STDIN_FILENO));
     }
     unsigned char ch;
     ssize_t n = ::read(STDIN_FILENO, &ch, 1);
     if (n == 1) {
         // DEBUG: a keystroke actually reached the guest.
-        warn("SBI getConsole: delivered 0x%02x '%c'\n", ch,
-             (ch >= 32 && ch < 127) ? ch : '?');
+        // warn("SBI getConsole: delivered 0x%02x '%c'\n", ch,
+        //      (ch >= 32 && ch < 127) ? ch : '?');
         return (int)ch;
     }
     return -1;

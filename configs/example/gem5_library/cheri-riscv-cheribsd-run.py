@@ -56,6 +56,16 @@ board.set_kernel_disk_workload(
         local_path="/import/public/Linux/gem5/CHERI-RISCV/cheribsd-riscv64-purecap.img",
         root_partition="1",
     ),
+    readfile="./tests/overflow",
+    kernel_args=[
+        "-s",
+        "console=ttyS0",
+        "root={root_value}",
+        "disk_device={disk_device}",
+        "rw",
+        "init_script=/etc/m5_init.sh",
+        "init_shell=/bin/sh",
+    ],
 )
 
 # Override entry to skip bootloader stage

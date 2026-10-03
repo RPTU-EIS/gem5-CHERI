@@ -34,12 +34,18 @@ namespace CHERIPerms
 }
 
 // ── Metadata layout constants ──
+// These MUST match the CAPTYPE bitunion below (the cc128 metadata layout):
+//   perm  = Bitfield<63,48> (16 bits)   otype = Bitfield<44,27> (18 bits)
+// They were previously PERM_SHIFT=0 / OTYPE_SHIFT=16 (a pre-cc128 layout), so
+// getPerms()/isSealed() read the TE/B/BE and IE/T bounds bits instead: every
+// capability looked sealed (SealViolation) with garbage perms, which masked
+// the bounds check in checkForLoad/checkForStore.
 namespace CHERIMeta
 {
-    constexpr int PERM_SHIFT = 0;
+    constexpr int PERM_SHIFT = 48;
     constexpr uint64_t PERM_MASK = 0xFFFFULL;
 
-    constexpr int OTYPE_SHIFT = 16;
+    constexpr int OTYPE_SHIFT = 27;
     constexpr uint64_t OTYPE_MASK = 0x3FFFFULL;
     constexpr uint64_t OTYPE_UNSEALED = 0x3FFFFULL;
 

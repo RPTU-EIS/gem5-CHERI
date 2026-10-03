@@ -299,6 +299,13 @@ namespace gem5
 
             if (accessAddr < base)
                 return false;
+            // An access starting past the top is out of bounds. Without this,
+            // (top - accessAddr) underflows to a huge value and the size check
+            // below wrongly passes (e.g. buf[17] on a 16-byte buffer). top == 0
+            // means top == 2^64 (a full-range capability; the carry is lost in
+            // 64 bits), where the unsigned subtraction below is already right.
+            if (top != 0 && accessAddr > top)
+                return false;
             if (accessSize > (top - accessAddr))
                 return false;
             return true;

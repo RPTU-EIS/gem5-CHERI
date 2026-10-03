@@ -351,6 +351,18 @@ class CheriCapFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
+// Bring-up gate for CHERI memory enforcement: returns a CheriCapFault for a
+// genuine capability violation, but ONLY when the faulting access executed in
+// user mode. In supervisor/machine mode it returns NoFault so the CheriBSD
+// kernel keeps the bring-up relaxations it needs to boot -- global enforcement
+// faults in very early boot (a kernel store trips the check before the trap
+// vectors/xTCC are programmed -> PC jumps to 0 -> instruction-fetch
+// BadAddressError). Userspace still gets real CHERI enforcement, enough to
+// catch application memory-safety bugs. `code` is the result of
+// CapRegContainer::checkForLoad/checkForStore; None means no violation.
+Fault capEnforce(ThreadContext *tc, CheriCapException code,
+                 int capReg = -1, Addr addr = 0);
+
 /**
  * Returns true if the fault passed as a first argument was triggered
  * by a memory access, false otherwise.

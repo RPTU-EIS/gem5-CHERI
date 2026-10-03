@@ -296,6 +296,39 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
     tc->getSystemPtr()->workload->syscall(tc);
 }
 
+Fault
+capEnforce(ThreadContext *tc, CheriCapException code,
+           int capReg, Addr addr)
+{
+    if (code == CheriCapException::None)
+        return NoFault;
+    // Bring-up gate 1: enforce only in user mode. Global enforcement faults in
+    // very early boot -- a kernel store trips the check before the trap
+    // vectors are programmed, so the trap jumps to PC=0 and the next fetch
+    // dies with BadAddressError. Gating to user mode lets the kernel boot with
+    // its relaxations while userspace gets real CHERI enforcement. In full-
+    // system mode RiscvFault::invoke delivers the fault to the kernel (the
+    // faulting process gets a fatal signal); the SE-mode panic path is unused.
+    if ((CHERIPrivilegeMode)tc->readMiscReg(MISCREG_PRV) != PRV_U)
+        return NoFault;
+    // Bring-up gate 2: enforce only BOUNDS (LengthViolation) for now. Our
+    // capability metadata still carries boot-relaxation artefacts -- untagged
+    // return capabilities (see the c_jr "untagged target" warnings) and
+    // remapped permissions -- which make checkForStore report Tag/Seal/Perm
+    // violations on otherwise-legit userspace stores and would kill /sbin/init
+    // before it even starts. Bounds tracking (csetbounds/malloc) IS reliable,
+    // and a bounds violation is exactly what a buffer overflow trips, so
+    // enforce that and tolerate the rest until the tag/permission relaxations
+    // are cleaned up.
+    if (code != CheriCapException::LengthViolation) {
+        warn_once("CHERI: tolerating capability violation code %llu in user "
+                  "mode (bring-up); only LengthViolation is enforced\n",
+                  (unsigned long long)code);
+        return NoFault;
+    }
+    return std::make_shared<CheriCapFault>(code, capReg, addr);
+}
+
 void
 CheriCapFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
 {
