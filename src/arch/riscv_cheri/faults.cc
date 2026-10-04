@@ -305,11 +305,11 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
 bool
 cheriEnforcingAt(CHERIPrivilegeMode prv)
 {
-    // Bring-up gate: enforce only in user mode. The kernel still depends on
-    // relaxations of the firmware-less boot (it runs at a physical PC under a
-    // PCC with virtual bounds until the DRAM identity passthrough in tlb.cc is
-    // retired), so supervisor/machine-mode violations are not raised yet.
-    return prv == PRV_U;
+    // CHERI violations are raised at every privilege level. This is the one
+    // place to relax enforcement (e.g. return prv == PRV_U to exempt the
+    // kernel) when bringing up a new boot path.
+    (void)prv;
+    return true;
 }
 
 bool
