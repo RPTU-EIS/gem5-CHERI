@@ -62,8 +62,12 @@ const Addr LEVEL_BITS  = 9;
 const Addr LEVEL_MASK  = (1 << LEVEL_BITS) - 1;
 
 BitUnion64(PTESv39)
-    Bitfield<63>     cw;      // Capability Write: capability stores require this bit
-    Bitfield<62, 61> crg;     // Capability Read Generation (revocation)
+    // CHERI-RISC-V PTE extension (CheriBSD machine/pte.h layout).
+    Bitfield<63> cw;   // Capability Write: tagged stores need it (else 27)
+    Bitfield<62> cr;   // Capability Read  } CR/CRM: 00 clear loaded tags,
+    Bitfield<61> cd;   // Capability Dirty (set by hardware on tagged store)
+    Bitfield<60> crm;  // Cap Read Modifier } 01 trap, 10 ok, 11 generation
+    Bitfield<59> crg;  // Capability Read Generation (revocation)
 
     Bitfield<53, 10> ppn;
     Bitfield<53, 28> ppn2;

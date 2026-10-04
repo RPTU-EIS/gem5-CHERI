@@ -297,6 +297,59 @@ TLB::createPagefault(Addr vaddr, BaseMMU::Mode mode)
     return std::make_shared<AddressFault>(vaddr, code);
 }
 
+Fault
+TLB::checkCheriPte(ThreadContext *tc, const RequestPtr &req, Addr vaddr,
+                   BaseMMU::Mode mode, PTESv39 pte, bool &set_cd)
+{
+    set_cd = false;
+    if (!req)
+        return NoFault;
+    if (req->isCapAccess()) {
+        DPRINTF(TLB, "CHERI PTE check va %#x %s%s pte %#x (cw %d cr %d cd %d "
+                "crm %d crg %d u %d)\n", vaddr,
+                req->isCapLoad() ? "capload" : "capstore",
+                req->isCapStore() && req->getCapTag() ? " tagged" : "",
+                (uint64_t)pte, (int)pte.cw, (int)pte.cr, (int)pte.cd,
+                (int)pte.crm, (int)pte.crg, (int)pte.u);
+    }
+
+    if (mode == BaseMMU::Read && req->isCapLoad()) {
+        // Set explicitly every time: the atomic CPU reuses one Request
+        // object for all of its loads, so a stale `true` would strip the
+        // tags of later capability loads from ordinary pages.
+        // CR = CRM = 0: tags never load from this page.
+        req->setClearTagOnLoad(!pte.cr && !pte.crm);
+        if (!pte.cr && pte.crm) {
+            DPRINTF(TLB, "CHERI: CR=0 CRM=1, capability load page fault\n");
+            return std::make_shared<AddressFault>(
+                vaddr, ExceptionCode::LOAD_CAP_PAGE);
+        } else if (pte.crm) {
+            // Load-side revocation barrier: the page's capability read
+            // generation must match the current one (user or supervisor).
+            // Trapping regardless of the loaded tag (data-independent) is
+            // permitted and handled by CheriBSD.
+            auto *isa = static_cast<ISA *>(tc->getIsaPtr());
+            RegVal gen_bit = pte.u ? (1ULL << 3) : (1ULL << 2);
+            bool gen = (isa->cheriSccsr & gen_bit) != 0;
+            if ((bool)pte.crg != gen) {
+                DPRINTF(TLB, "CHERI: CRG %d != CLG %d, capability load "
+                        "page fault\n", (int)pte.crg, (int)gen);
+                return std::make_shared<AddressFault>(
+                    vaddr, ExceptionCode::LOAD_CAP_PAGE);
+            }
+        }
+    } else if (mode == BaseMMU::Write && req->isCapStore() &&
+               req->getCapTag()) {
+        if (!pte.cw) {
+            DPRINTF(TLB, "CHERI: CW=0, capability store page fault\n");
+            return std::make_shared<AddressFault>(
+                vaddr, ExceptionCode::STORE_AMO_CAP_PAGE);
+        }
+        set_cd = !pte.cd;
+    }
+    return NoFault;
+}
+
 Addr
 TLB::translateWithTLB(Addr vaddr, uint16_t asid, Addr xmode,
                       BaseMMU::Mode mode)
@@ -347,6 +400,21 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
             return fault;
     }
 
+    bool set_cd = false;
+    fault = checkCheriPte(tc, req, vaddr, mode, e->pte, set_cd);
+    if (fault != NoFault)
+        return fault;
+    if (set_cd) {
+        // First tagged capability store to the page: walk again so the
+        // walker sets the hardware-managed capability-dirty bit.
+        DPRINTF(TLB, "CHERI: CD not set, repeating PT walk\n");
+        fault = walker->start(tc, translation, req, mode);
+        if (translation != nullptr || fault != NoFault) {
+            delayed = true;
+            return fault;
+        }
+    }
+
     Addr paddr = e->paddr << PageShift | (vaddr & mask(e->logBytes));
     DPRINTF(TLBVerbose, "translate(vaddr=%#x, vpn=%#x, asid=%#x): %#x\n",
             vaddr, vpn, satp.asid, paddr);
@@ -372,6 +440,9 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
                bool &delayed)
 {
     delayed = false;
+    // Only checkCheriPte() may request tag clearing for this access (the
+    // atomic CPU reuses Request objects across accesses).
+    req->setClearTagOnLoad(false);
 
     if (FullSystem) {
         DPRINTF(TLB, "Full system\n");

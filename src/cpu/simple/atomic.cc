@@ -487,6 +487,11 @@ AtomicSimpleCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
         predicate = genMemFragmentRequest(req, frag_addr, size, flags,
                                           byte_enable, frag_size, size_left);
 
+        // CHERI: the translation needs the stored tag (tagged capability
+        // stores are subject to the PTE CW/CD bits).
+        if (_hasPendingCapTag && req->isCapStore())
+            req->setCapTag(_pendingCapTag);
+
         // translate to physical address
         if (predicate)
             fault = thread->mmu->translateAtomic(req, thread->getTC(),

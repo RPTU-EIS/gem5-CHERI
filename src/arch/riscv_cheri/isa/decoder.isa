@@ -5892,153 +5892,187 @@ decode QUADRANT default Unknown::unknown() {
                     }
 
 
+                    // Explicit capability-addressed stores (CheriStore_r,
+                    // funct7 0x7c): the operation is in the rd field, data
+                    // in rs2, the
+                    // authorising capability in cs1, no offset. The .ddc
+                    // (hybrid) variants are not implemented.
                     0x7c: decode RD {
-                        // SB.CAP rs2, cs1 - store byte
-                        // format CapDataStore{
-                            // 0x08: sb_cap({{
-                            //         Mem_ub = Rs2_ub;
-                            //     }},
-                            //     ea_code = {{
-                            //         // Cs1 = CapRegContainer::almighty(0x80010000);
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
-                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                            //         //     return std::make_shared<
-                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
-                            // }});
-
-                            // 0x09: sh_cap({{
-                            //     Mem_uh = Rs2_uh;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
-                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                            //         //     return std::make_shared<
-                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
-                            //     }});
-
-                            // // SW.CAP rs2, cs1 — store word
-                            // 0x0a: sw_cap({{
-                            //         Mem_uw = Rs2_uw;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
-                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                            //         //     return std::make_shared<
-                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
-                            //     }});
-
-                            // 0x0b: sd_cap({{
-                            //         Mem_ud = Rs2_ud;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         auto _cf = Cs1.checkForStore(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
-                            //         // if (_cf != CHERIRiscvISA::CheriCapException::None)
-                            //         //     return std::make_shared<
-                            //         //         CHERIRiscvISA::CheriCapFault>(_cf);
-                            //     }});
-
-                        // }
-                        format CapStore{
+                        format CapDataStore {
+                            0x08: sb_cap_x({{
+                                Mem_ub = Rs2_ub;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 1, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x09: sh_cap_x({{
+                                Mem_uh = Rs2_uh;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 2, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0a: sw_cap_x({{
+                                Mem_uw = Rs2_uw;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 4, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0b: sd_cap_x({{
+                                Mem_ud = Rs2_ud;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 8, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                        }
+                        format CapStore {
                             0x0c: sc_cap({{
                                 _storeCap = Cs2;
                             }},
-                            ea_code = {{
-                                EA = rvZext(Cs1.getAddress());
-                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
                                 CHERI_CHECK_CAP_STORE(CS1, EA, Cs2);
                             }},
                             offset_code = {{ offset = 0; }});
+                            // sc.c.cap: single in-order hart, the
+                            // reservation always holds (as sc.c); the result
+                            // goes to the rs2 register.
+                            0x1c: sc_c_cap({{
+                                _storeCap = Cs2;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_CAP_STORE(CS1, EA, Cs2);
+                            }},
+                            offset_code = {{ offset = 0; }},
+                            postacc_code = {{ Rs2 = 0; }});
+                        }
+                        // sc.[bhwd].cap: result (0 = success) goes to rs2.
+                        format StoreCond {
+                            0x18: sc_b_cap({{
+                                Mem_ub = Rs2_ub;
+                            }}, {{
+                                Rs2_ub = result;
+                            }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
+                            0x19: sc_h_cap({{
+                                Mem_uh = Rs2_uh;
+                            }}, {{
+                                Rs2_uh = result;
+                            }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
+                            0x1a: sc_w_cap({{
+                                Mem_uw = Rs2_uw;
+                            }}, {{
+                                Rs2_uw = result;
+                            }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
+                            0x1b: sc_d_cap({{
+                                Mem_ud = Rs2_ud;
+                            }}, {{
+                                Rs2_ud = result;
+                            }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
                         }
                     }
 
-
+                    // Explicit capability-addressed loads (CheriLoad_r,
+                    // funct7 0x7d): the operation is in the rs2 field.
                     0x7d: decode RS2 {
-                        // format CapDataLoad{
-                            // 0x08: lb_cap({{
-                            //         Rd_sd = Mem_sb;
-                            //     }},
-                            //     ea_code = {{
-                            //         // Cs1 = CapRegContainer::almighty(0x80010000);
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
-                            //         // if (_cf != CheriCapException::None)
-                            //         //     return std::make_shared<CheriCapFault>(_cf);
-                            //     }});
-                            // 0x09: lh_cap({{
-                            //         Rd_sd = Mem_sh;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 2, false);
-                            //         if (_cf != CheriCapException::None)
-                            //             return std::make_shared<CheriCapFault>(_cf);
-                            //     }});
-                            // 0x0a: lw_cap({{
-                            //         Rd_sd = Mem_sw;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 4, false);
-                            //         if (_cf != CheriCapException::None)
-                            //             return std::make_shared<CheriCapFault>(_cf);
-                            //     }});
-
-                            // 0x0b: ld_cap({{
-                            //         Rd_sd = Mem_sd;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 8, false);
-                            //         if (_cf != CheriCapException::None)
-                            //             return std::make_shared<CheriCapFault>(_cf);
-                            //      }});
-
-                        // }
-                        format CapLoad{
-                            // 0x0c: lbu_cap({{
-                            //         // Rd_sd = Mem_sb;
-                            //     }},
-                            //     ea_code = {{
-                            //         EA = rvZext(Cs1.getAddress());
-                            //     }},
-                            //     cap_check_code = {{
-                            //         CheriCapException _cf = Cs1.checkForLoad(Cs1.getMetadata(), Cs1.getAddress(), Cs1.getTag(), Cs1.isSealed(), EA, 1, false);
-                            //         if (_cf != CheriCapException::None)
-                            //             return std::make_shared<CheriCapFault>(_cf);
-                            //      }});
-
-                            0x0c: lc_cap({{
-                                    Cd = capLoadResult(_loadedCap, Cs1);
-                                }},
-                                ea_code = {{
-                                    EA = rvZext(Cs1.getAddress());
-                                }},
-                                cap_check_code = {{
-                                    CHERI_CHECK_MEM(CS1, EA, 16,
-                                        CheriAccLoad | CheriAccCap);
-                                }},
-                                offset_code = {{ offset = 0; }});
+                        format CapDataLoad {
+                            0x08: lb_cap_x({{
+                                Rd_sd = Mem_sb;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 1, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x09: lh_cap_x({{
+                                Rd_sd = Mem_sh;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 2, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0a: lw_cap_x({{
+                                Rd_sd = Mem_sw;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 4, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0b: ld_cap_x({{
+                                Rd_sd = Mem_sd;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 8, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0c: lbu_cap_x({{
+                                Rd = Mem_ub;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 1, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0d: lhu_cap_x({{
+                                Rd = Mem_uh;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 2, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x0e: lwu_cap_x({{
+                                Rd = Mem_uw;
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 4, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                        }
+                        format LoadReserved {
+                            0x18: lr_b_cap({{
+                                Rd_sd = Mem_sb;
+                            }}, mem_flags=LLSC);
+                            0x19: lr_h_cap({{
+                                Rd_sd = Mem_sh;
+                            }}, mem_flags=LLSC);
+                            0x1a: lr_w_cap({{
+                                Rd_sd = Mem_sw;
+                            }}, mem_flags=LLSC);
+                            0x1b: lr_d_cap({{
+                                Rd_sd = Mem_sd;
+                            }}, mem_flags=LLSC);
+                        }
+                        format CapLoad {
+                            0x1c: lr_c_cap({{
+                                Cd = capLoadResult(_loadedCap, Cs1);
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 16,
+                                    CheriAccLoad | CheriAccCap);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x1f: lc_cap({{
+                                Cd = capLoadResult(_loadedCap, Cs1);
+                            }},
+                            ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM(CS1, EA, 16,
+                                    CheriAccLoad | CheriAccCap);
+                            }},
+                            offset_code = {{ offset = 0; }});
                         }
                     }
                 }
@@ -6190,7 +6224,7 @@ decode QUADRANT default Unknown::unknown() {
                                 }
 
                                 using namespace gem5::CHERIRiscvISA;
-                                if (Fault _f = cheriCheckXret(xc))
+                                if (Fault _f = cheriCheckPccAsr(xc))
                                     return _f;
 
                                 xc->setMiscReg(MISCREG_PRV, status.spp);
@@ -6255,7 +6289,7 @@ decode QUADRANT default Unknown::unknown() {
                         }
 
                         using namespace gem5::CHERIRiscvISA;
-                        if (Fault _f = cheriCheckXret(xc))
+                        if (Fault _f = cheriCheckPccAsr(xc))
                             return _f;
 
                         // Restore privilege state

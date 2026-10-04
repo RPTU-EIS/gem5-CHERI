@@ -357,6 +357,11 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                 doEndWalk = true;
                 fault = walker->tlb->checkPermissions(status, pmode,
                                                     entry.vaddr, mode, pte);
+                bool set_cd = false;
+                if (fault == NoFault && !functional) {
+                    fault = walker->tlb->checkCheriPte(tc, req, entry.vaddr,
+                                                       mode, pte, set_cd);
+                }
 
                 // step 6
                 if (fault == NoFault) {
@@ -380,6 +385,10 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     }
                     if (!pte.d && mode == BaseMMU::Write) {
                         pte.d = 1;
+                        doWrite = true;
+                    }
+                    if (set_cd) {
+                        pte.cd = 1;
                         doWrite = true;
                     }
                     // Performing PMA/PMP checks

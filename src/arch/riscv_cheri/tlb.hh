@@ -113,6 +113,14 @@ class TLB : public BaseTLB
                            BaseMMU::Mode mode, PTESv39 pte);
     Fault createPagefault(Addr vaddr, BaseMMU::Mode mode);
 
+    // CHERI PTE checks for a capability load/store `req` against leaf
+    // `pte`: may raise a capability page fault (cause 26/27) or mark the
+    // request so the loaded tag is cleared. Sets `set_cd` when a tagged
+    // capability store must set the hardware-managed CD bit.
+    Fault checkCheriPte(ThreadContext *tc, const RequestPtr &req,
+                        Addr vaddr, BaseMMU::Mode mode, PTESv39 pte,
+                        bool &set_cd);
+
     CHERIPrivilegeMode getMemPriv(ThreadContext *tc, BaseMMU::Mode mode);
 
     // Checkpointing

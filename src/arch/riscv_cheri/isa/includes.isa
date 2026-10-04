@@ -196,9 +196,10 @@ cheriReturnTo(ExecContext *xc, CapRegContainer epcc)
     xc->pcState(next);
 }
 
-// xRET requires PCC.PERMIT_ACCESS_SYSTEM_REGISTERS (fault against PCC).
+// xRET and privileged CSR/SCR access require
+// PCC.PERMIT_ACCESS_SYSTEM_REGISTERS (fault against PCC).
 inline Fault
-cheriCheckXret(ExecContext *xc)
+cheriCheckPccAsr(ExecContext *xc)
 {
     const PCState &cur = xc->pcState().as<PCState>();
     if (capHasPerm(cur.pcc(), CHERIPerms::ASR))
@@ -206,6 +207,19 @@ cheriCheckXret(ExecContext *xc)
     return capEnforce(xc->tcBase(),
                       CheriCapException::PermitAccessSystemRegistersViolation,
                       CHERI_CAPIDX_PCC);
+}
+
+// CHERI (Sail ext_check_CSR): CSRs above user level, and the user trap
+// CSRs that have capability counterparts (utvec, uscratch, uepc), need
+// PCC.PERMIT_ACCESS_SYSTEM_REGISTERS; the fault is reported against PCC.
+inline Fault
+cheriCheckCsrAccess(ExecContext *xc, uint64_t csr)
+{
+    if (bits(csr, 9, 8) == 0 && csr != 0x005 && csr != 0x040 &&
+            csr != 0x041) {
+        return NoFault;
+    }
+    return cheriCheckPccAsr(xc);
 }
 
 // Indirect jump through capability `target` (register `capIdx`) plus `imm`:
