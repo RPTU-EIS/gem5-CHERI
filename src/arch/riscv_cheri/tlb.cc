@@ -418,23 +418,15 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB, "xlate va=%#lx pmode=%d satp.mode=%d satp=%#lx rvs=%d\n",
                 vaddr, (int)pmode, (int)satp.mode, (uint64_t)satp,
                 (int)misa.rvs);
-        // Physical DRAM identity window for the physical->virtual paging
-        // handoff. CheriBSD's locore enables satp (with a correct physical
-        // root) and then executes a few more *physical*-PC instructions before
-        // it jumps to its virtual (0xffffffc0...) address. Its early page
-        // tables only map the high half, so those physical fetches would fault
-        // and loop. On real HW the loader leaves a transient identity map for
-        // exactly this handoff; we skip the loader, so pass physical DRAM
-        // addresses through untranslated even when paging is on. (Comment out
-        // the else-if branch to require a real page-table walk instead.)
-        constexpr Addr DRAM_ID_BASE = 0x80000000ULL;
-        constexpr Addr DRAM_ID_END  = 0x100000000ULL;
+        // With paging enabled every access is translated, as on hardware.
+        // (A former "DRAM identity passthrough" let VAs 0x80000000-0xffffffff
+        // bypass the page tables. That kept CheriBSD's locore running at its
+        // physical PC: on hardware the identity map locore builds is not
+        // executable, so the first fetch after `csrw satp` page-faults into
+        // STCC = the virtual `va:` label. It also let user VAs in that window
+        // reach physical memory directly.)
         if (!misa.rvs || satp.mode == AddrXlateMode::BARE) {
             req->setFlags(Request::PHYSICAL);
-        } else if (vaddr >= DRAM_ID_BASE && vaddr < DRAM_ID_END) {
-            req->setFlags(Request::PHYSICAL);
-            DPRINTF(TLB, "CHERI identity passthrough (paging on): %#lx\n",
-                    vaddr);
         }
 
         if (fault == NoFault) {
