@@ -350,6 +350,42 @@ TLB::checkCheriPte(ThreadContext *tc, const RequestPtr &req, Addr vaddr,
     return NoFault;
 }
 
+Fault
+TLB::checkCheriPteFunctional(ThreadContext *tc, Addr vaddr,
+                             BaseMMU::Mode mode, bool cap_load,
+                             bool tagged_store, bool &clear_tags)
+{
+    clear_tags = false;
+    MISA misa = tc->readMiscRegNoEffect(MISCREG_ISA);
+    SATP satp = tc->readMiscReg(MISCREG_SATP);
+    if (!FullSystem || !misa.rvs || satp.mode == AddrXlateMode::BARE ||
+            getMemPriv(tc, mode) == CHERIPrivilegeMode::PRV_M)
+        return NoFault;
+
+    Addr paddr = vaddr;
+    unsigned log_bytes;
+    Fault fault = walker->startFunctional(tc, paddr, log_bytes, mode);
+    if (fault != NoFault)
+        return fault;
+
+    RequestPtr req = std::make_shared<Request>(
+        vaddr, 16, cap_load ? Request::CHERI_CAP_LOAD :
+                              Request::CHERI_CAP_STORE,
+        Request::funcRequestorId, 0, tc->contextId());
+    req->setCapTag(tagged_store);
+    bool set_cd = false;
+    fault = checkCheriPte(tc, req, vaddr, mode,
+                          walker->lastFunctionalPte(), set_cd);
+    if (fault != NoFault)
+        return fault;
+    if (set_cd) {
+        return std::make_shared<AddressFault>(
+            vaddr, ExceptionCode::STORE_AMO_CAP_PAGE);
+    }
+    clear_tags = req->getClearTagOnLoad();
+    return NoFault;
+}
+
 Addr
 TLB::translateWithTLB(Addr vaddr, uint16_t asid, Addr xmode,
                       BaseMMU::Mode mode)

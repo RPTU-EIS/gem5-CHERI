@@ -121,6 +121,15 @@ class TLB : public BaseTLB
                         Addr vaddr, BaseMMU::Mode mode, PTESv39 pte,
                         bool &set_cd);
 
+    // checkCheriPte() for instructions that access memory functionally
+    // (amoswap.c, cloadtags): `cap_load` / `tagged_store` describe the
+    // access; `clear_tags` reports a CR = CRM = 0 page. A clear CD bit is
+    // reported as a capability store page fault (the kernel sets CD and
+    // retries) since a functional walk cannot update the PTE.
+    Fault checkCheriPteFunctional(ThreadContext *tc, Addr vaddr,
+                                  BaseMMU::Mode mode, bool cap_load,
+                                  bool tagged_store, bool &clear_tags);
+
     CHERIPrivilegeMode getMemPriv(ThreadContext *tc, BaseMMU::Mode mode);
 
     // Checkpointing

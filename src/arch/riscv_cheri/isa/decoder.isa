@@ -66,8 +66,11 @@ decode QUADRANT default Unknown::unknown() {
             _tc->getReg(cap_reg::CSp, &_csp);
             uint64_t _na = rvSext(sp + imm);
             _tc->setReg(intRegClass[RP2 + 8], _na);
-            _csp.setAddress(_na);
-            _tc->setReg(capRegClass[RP2 + 8], &_csp);
+            // CIncOffset semantics: tag cleared if csp is sealed or the new
+            // address is not representable.
+            CapRegContainer _r = cheriResult(xc, capSetAddr(_csp, _na),
+                                             _csp.getTag());
+            _tc->setReg(capRegClass[RP2 + 8], &_r);
         }}, uint64_t);
         format CompressedLoad {
             // PURECAP: this encoding (C0, funct3=001) is c.lq (load 128-bit
@@ -291,8 +294,10 @@ decode QUADRANT default Unknown::unknown() {
                 _tc->getReg(cap_reg::CSp, &_csp);
                 uint64_t _na = rvSext(sp + imm);
                 _tc->setReg(int_reg::Sp, _na);
-                _csp.setAddress(_na);
-                _tc->setReg(cap_reg::CSp, &_csp);
+                // CIncOffset semantics (see c_addi4spn).
+                CapRegContainer _r = cheriResult(xc, capSetAddr(_csp, _na),
+                                                 _csp.getTag());
+                _tc->setReg(cap_reg::CSp, &_r);
             }});
             default: CIOp::c_lui({{
                 imm = sext<6>(CIMM5 | (CIMM1 << 5)) << 12;
@@ -2179,12 +2184,28 @@ decode QUADRANT default Unknown::unknown() {
                         _rq, _ctc, BaseMMU::Write);
                     if (_tf != NoFault && CHERIRiscvISA::cheriEnforcing(_ctc))
                         return _tf;
+                    // Capability PTE bits: the swap stores Cs2 (CW/CD) and
+                    // loads a capability (CR/CRM/CRG).
+                    bool _clr = false;
+                    if (_tf == NoFault &&
+                            CHERIRiscvISA::cheriEnforcing(_ctc)) {
+                        auto *_mmu = static_cast<CHERIRiscvISA::MMU *>(
+                            _ctc->getMMUPtr());
+                        bool _unused;
+                        if (Fault _f = _mmu->checkCheriPteFunctional(_ctc,
+                                _va, BaseMMU::Write, false, Cs2.getTag(),
+                                _unused))
+                            return _f;
+                        if (Fault _f = _mmu->checkCheriPteFunctional(_ctc,
+                                _va, BaseMMU::Read, true, false, _clr))
+                            return _f;
+                    }
                     Addr _pa = (_tf == NoFault) ? _rq->getPaddr() : _va;
                     System *_sys = _ctc->getSystemPtr();
                     // read old value + tag
                     uint8_t _ob[16] = {0};
                     _sys->physProxy.readBlob(_pa, _ob, 16);
-                    bool _ot = _sys->cheritagtable.getTag(_pa);
+                    bool _ot = _sys->cheritagtable.getTag(_pa) && !_clr;
                     CapRegContainer _old;
                     _old.fromMemory(_ob, _ot);
                     // store new value (cs2) + tag
@@ -5780,6 +5801,16 @@ decode QUADRANT default Unknown::unknown() {
                             uint64_t tag_bits = 0;
                             Addr pa = vaddr;
                             System *csys = ctc->getSystemPtr();
+                            bool clear_tags = false;
+                            if (tf == NoFault &&
+                                    CHERIRiscvISA::cheriEnforcing(ctc)) {
+                                auto *mmu = static_cast<CHERIRiscvISA::MMU *>(
+                                    ctc->getMMUPtr());
+                                if (Fault f = mmu->checkCheriPteFunctional(
+                                        ctc, vaddr, BaseMMU::Read, true,
+                                        false, clear_tags))
+                                    return f;
+                            }
                             if (tf == NoFault) {
                                 pa = treq->getPaddr();
                             } else if (CHERIRiscvISA::cheriEnforcing(ctc)) {
@@ -5796,7 +5827,9 @@ decode QUADRANT default Unknown::unknown() {
                                 pa = vaddr;
                                 DPRINTF(CheriDecode, "cloadtags translate failed for vaddr %#llx, using identity pa\n", (unsigned long long)vaddr);
                             }
-                            for (uint64_t i = 0; i < caps_per_cache_line; i++) {
+                            for (uint64_t i = 0;
+                                    !clear_tags && i < caps_per_cache_line;
+                                    i++) {
                                 if (csys->cheritagtable.getTag(pa + i * cap_size))
                                     tag_bits |= (1ULL << i);
                             }

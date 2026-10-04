@@ -130,6 +130,8 @@ namespace CHERIRiscvISA
                            bool _isTiming = false);
             Fault startWalk();
             Fault startFunctional(Addr &addr, unsigned &logBytes);
+            // Leaf PTE found by the last completed walk.
+            PTESv39 leafPte() const { return entry.pte; }
             bool recvPacket(PacketPtr pkt);
             unsigned numInflight() const;
             bool isRetrying();
@@ -165,6 +167,9 @@ namespace CHERIRiscvISA
         // Kick off the state machine.
         Fault start(ThreadContext * _tc, BaseMMU::Translation *translation,
                 const RequestPtr &req, BaseMMU::Mode mode);
+        // Leaf PTE of the last startFunctional() walk.
+        PTESv39 lastFunctionalPte() const { return funcState.leafPte(); }
+
         Fault startFunctional(ThreadContext * _tc, Addr &addr,
                 unsigned &logBytes, BaseMMU::Mode mode);
         Port &getPort(const std::string &if_name,

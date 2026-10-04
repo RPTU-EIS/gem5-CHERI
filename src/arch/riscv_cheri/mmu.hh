@@ -73,6 +73,15 @@ class MMU : public BaseMMU
         return static_cast<TLB*>(dtb)->getMemPriv(tc, mode);
     }
 
+    Fault
+    checkCheriPteFunctional(ThreadContext *tc, Addr vaddr, Mode mode,
+                            bool cap_load, bool tagged_store,
+                            bool &clear_tags)
+    {
+        return static_cast<TLB*>(dtb)->checkCheriPteFunctional(
+            tc, vaddr, mode, cap_load, tagged_store, clear_tags);
+    }
+
     Walker *
     getDataWalker()
     {
