@@ -48,6 +48,8 @@ class BaseISA;
 namespace CHERIRiscvISA
 {
 
+class ISA;
+
 class Decoder : public InstDecoder
 {
   private:
@@ -62,6 +64,9 @@ class Decoder : public InstDecoder
 
     uint32_t vlen;
     uint32_t elen;
+
+    // Needed for the CHERI instruction-fetch (PCC) check in decode().
+    ISA *isa;
 
     virtual StaticInstPtr decodeInst(ExtMachInst mach_inst);
 

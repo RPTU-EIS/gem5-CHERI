@@ -29,10 +29,16 @@
 
 #include "arch/riscv_cheri/decoder.hh"
 
+#include "arch/riscv_cheri/cheri_checks.hh"
+#include "arch/riscv_cheri/faults.hh"
+#include "arch/riscv_cheri/insts/pseudo.hh"
 #include "arch/riscv_cheri/isa.hh"
+#include "arch/riscv_cheri/regs/misc.hh"
 #include "arch/riscv_cheri/types.hh"
 #include "base/bitfield.hh"
 #include "debug/Decode.hh"
+#include "debug/Faults.hh"
+#include "sim/full_system.hh"
 
 namespace gem5
 {
@@ -40,9 +46,37 @@ namespace gem5
 namespace CHERIRiscvISA
 {
 
+namespace
+{
+
+// Stands in for an instruction whose fetch PCC does not authorise it:
+// executing it raises the CHERI exception against PCC (cap_idx 32). Doing the
+// check at decode covers every fetched instruction, including the second
+// half-word instruction of a parcel the CPU already fetched.
+class CheriFetchFault : public PseudoOp
+{
+  private:
+    const CheriCapException code;
+
+  public:
+    CheriFetchFault(ExtMachInst mach_inst, CheriCapException _code)
+        : PseudoOp("cheri_fetch_fault", mach_inst, No_OpClass), code(_code)
+    {
+        flags[IsNonSpeculative] = true;
+    }
+
+    Fault
+    execute(ExecContext *, trace::InstRecord *) const override
+    {
+        return std::make_shared<CheriCapFault>(code, CHERI_CAPIDX_PCC);
+    }
+};
+
+} // anonymous namespace
+
 Decoder::Decoder(const CHERIRiscvDecoderParams &p) : InstDecoder(p, &machInst)
 {
-    ISA *isa = dynamic_cast<ISA*>(p.isa);
+    isa = dynamic_cast<ISA*>(p.isa);
     vlen = isa->getVecLenInBits();
     elen = isa->getVecElemLenInBits();
     reset();
@@ -129,7 +163,29 @@ Decoder::decode(PCStateBase &_next_pc)
     emi.vill    = next_pc.vtype().vill;
     emi.rv_type = static_cast<int>(next_pc.rvType());
 
-    return decode(emi, next_pc.instAddr());
+    StaticInstPtr si = decode(emi, next_pc.instAddr());
+
+    // CHERI: the whole instruction must lie within PCC, and PCC must be a
+    // tagged, unsealed, executable capability.
+    if (FullSystem && cheriEnforcingAt((CHERIPrivilegeMode)
+                isa->readMiscRegNoEffect(MISCREG_PRV))) {
+        CapRegContainer pcc = next_pc.pcc();
+        pcc.setAddress(next_pc.instAddr());
+        CheriCapException code =
+            capCheckFetch(pcc, next_pc.instAddr(), si->size());
+        if (code != CheriCapException::None) {
+            CapBounds b = capDecodeBounds(pcc);
+            DPRINTF(Faults, "CHERI fetch violation cause %#x pc %#x size %d "
+                    "PCC %s base %#x top %#x%016x otype %#x perms %#x\n",
+                    (unsigned)code, next_pc.instAddr(), (int)si->size(),
+                    pcc.getString(), b.base, (uint64_t)(b.top >> 64),
+                    (uint64_t)b.top, capOtype(pcc), capPerms(pcc));
+            StaticInstPtr fault_si = new CheriFetchFault(emi, code);
+            fault_si->size(si->size());
+            return fault_si;
+        }
+    }
+    return si;
 }
 
 } // namespace CHERIRiscvISA

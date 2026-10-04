@@ -35,10 +35,11 @@
 #include <cstdint>
 #include <string>
 
+#include "arch/generic/cheri_defs.hh"
+#include "arch/riscv_cheri/cheri_checks.hh"
 #include "arch/riscv_cheri/isa.hh"
 #include "cpu/null_static_inst.hh"
 #include "sim/faults.hh"
-#include "arch/generic/cheri_defs.hh"
 
 namespace gem5
 {
@@ -85,6 +86,12 @@ enum ExceptionCode : uint64_t
     LOAD_PAGE = 13,
     STORE_PAGE = 15,
     AMO_PAGE = 15,
+    // CHERI-RISC-V (ISAv9): capability page faults (PTE CR/CW) and CHERI
+    // capability exceptions. CheriBSD: SCAUSE_LOAD_CAP_PAGE_FAULT,
+    // SCAUSE_STORE_AMO_CAP_PAGE_FAULT and SCAUSE_CHERI.
+    LOAD_CAP_PAGE = 26,
+    STORE_AMO_CAP_PAGE = 27,
+    CHERI_CAPABILITY = 28,
 
     INT_SOFTWARE_USER = 0,
     INT_SOFTWARE_SUPER = 1,
@@ -331,37 +338,64 @@ class SyscallFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
+// CHERI capability exception (ISAv9): xCAUSE = 28 and
+// xTVAL = {cap_idx[10:5], cause[4:0]}, where cap_idx is the capability
+// register that authorised the operation (0-31), or 32 + the special
+// capability register index (PCC = 32, DDC = 33, ...). This is what
+// CheriBSD's TVAL_CAP_CAUSE()/TVAL_CAP_IDX() decode into SIGPROT si_code /
+// si_capreg.
 class CheriCapFault : public RiscvFault
 {
   private:
     const CheriCapException _cheri_code;
-    const int _cap_reg; // index of capability register involved (-1 if N/A)
-    const Addr _addr;   // faulting address (if applicable)
+    const int _cap_reg; // capability register index (see above)
+    const Addr _addr;   // faulting address, for debugging only
 
   public:
-    CheriCapFault(CheriCapException code, int capReg = -1, Addr addr = 0)
-        : RiscvFault("cheri_cap", FaultType::OTHERS, INST_ILLEGAL),
-          _cheri_code(code), _cap_reg(capReg), _addr(addr)
+    CheriCapFault(CheriCapException code, int capReg = 0, Addr addr = 0)
+        : RiscvFault("cheri_cap", FaultType::OTHERS, CHERI_CAPABILITY),
+          _cheri_code(code), _cap_reg(capReg < 0 ? 0 : capReg), _addr(addr)
     {}
 
     CheriCapException cheriCode() const { return _cheri_code; }
     int capReg() const { return _cap_reg; }
+    Addr faultAddr() const { return _addr; }
 
-    RegVal trap_value() const override { return _addr; }
+    RegVal
+    trap_value() const override
+    {
+        return ((RegVal(_cap_reg) & 0x3f) << 5) |
+               (RegVal(_cheri_code) & 0x1f);
+    }
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
-// Bring-up gate for CHERI memory enforcement: returns a CheriCapFault for a
-// genuine capability violation, but ONLY when the faulting access executed in
-// user mode. In supervisor/machine mode it returns NoFault so the CheriBSD
-// kernel keeps the bring-up relaxations it needs to boot -- global enforcement
-// faults in very early boot (a kernel store trips the check before the trap
-// vectors/xTCC are programmed -> PC jumps to 0 -> instruction-fetch
-// BadAddressError). Userspace still gets real CHERI enforcement, enough to
-// catch application memory-safety bugs. `code` is the result of
-// CapRegContainer::checkForLoad/checkForStore; None means no violation.
+// Whether CHERI capability exceptions are raised for code running at the
+// current privilege level. All checks funnel through here so the remaining
+// bring-up relaxation lives in one place.
+bool cheriEnforcing(ThreadContext *tc);
+bool cheriEnforcingAt(CHERIPrivilegeMode prv);
+
+// Turn the result of a capability check into a fault: NoFault when `code` is
+// None or enforcement is off (cheriEnforcing()), else a CheriCapFault naming
+// capability register `capReg`. `addr` is informational.
 Fault capEnforce(ThreadContext *tc, CheriCapException code,
-                 int capReg = -1, Addr addr = 0);
+                 int capReg = 0, Addr addr = 0);
+
+// Check a data memory access of `size` bytes at `ea` authorised by
+// capability register `capIdx` (c0 reads as the null capability). `acc` is a
+// mask of CheriAccess flags (cheri_checks.hh); `stored` is the capability
+// being written by a capability store.
+Fault cheriCheckMem(ThreadContext *tc, int capIdx, Addr ea, unsigned size,
+                    unsigned acc, const CapRegContainer *stored = nullptr);
+
+// Check an indirect jump through capability register `capIdx` (value
+// `target`) with immediate `imm`.
+Fault cheriCheckJump(ThreadContext *tc, const CapRegContainer &target,
+                     int capIdx, int64_t imm);
+
+// Read capability register `idx`; c0 always reads as the null capability.
+CapRegContainer cheriReadCapReg(ThreadContext *tc, int idx);
 
 /**
  * Returns true if the fault passed as a first argument was triggered

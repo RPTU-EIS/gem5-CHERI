@@ -49,6 +49,11 @@ namespace CHERIMeta
     constexpr uint64_t OTYPE_MASK = 0x3FFFFULL;
     constexpr uint64_t OTYPE_UNSEALED = 0x3FFFFULL;
 
+    // ISAv9 reserved object types (CHERI_OTYPE_SENTRY == -2 in CheriBSD's
+    // cherireg.h); -3 and -4 are reserved and behave as sealed.
+    constexpr uint64_t OTYPE_SENTRY       = 0x3FFFEULL;
+
+    // Pre-ISAv9 sentry flavours; not produced by any instruction here.
     constexpr uint64_t OTYPE_SENTRY_INTER = 0x3FFFDULL;
     constexpr uint64_t OTYPE_SENTRY_BACK  = 0x3FFFCULL;
     constexpr uint64_t OTYPE_SENTRY_FWD   = 0x3FFFBULL;

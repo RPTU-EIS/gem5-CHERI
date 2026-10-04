@@ -1,4 +1,6 @@
 # cheri-riscv-cheribsd-run.py
+import os
+
 import m5
 from m5.objects import Root
 
@@ -56,7 +58,9 @@ board.set_kernel_disk_workload(
         local_path="/import/public/Linux/gem5/CHERI-RISCV/cheribsd-riscv64-purecap.img",
         root_partition="1",
     ),
-    readfile="./tests/overflow",
+    # CHERI_READFILE overrides the binary handed to `m5 readfile` (used by
+    # util/cheri/run_cheribsd_test.py).
+    readfile=os.environ.get("CHERI_READFILE", "./tests/overflow"),
     kernel_args=[
         "-s",
         "console=ttyS0",

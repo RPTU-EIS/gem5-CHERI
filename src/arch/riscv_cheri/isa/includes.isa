@@ -97,6 +97,7 @@ output exec {{
 #include <string>
 #include <vector>
 
+#include "arch/generic/cap_reg.hh"
 #include "arch/generic/memhelpers.hh"
 #include "arch/riscv_cheri/faults.hh"
 #include "arch/riscv_cheri/fp_inst.hh"
@@ -104,19 +105,19 @@ output exec {{
 #include "arch/riscv_cheri/reg_abi.hh"
 #include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/cc128_bounds.hh"
-#include "arch/generic/cap_reg.hh"
 #include "arch/riscv_cheri/regs/float.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
 #include "arch/riscv_cheri/regs/vector.hh"
 #include "arch/riscv_cheri/utility.hh"
 #include "base/condcodes.hh"
 #include "cpu/base.hh"
+
 // #include "cpu/simple/base.hh"
-#include "cpu/simple/exec_context.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/exetrace.hh"
-#include "debug/RiscvMisc.hh"
+#include "cpu/simple/exec_context.hh"
 #include "debug/CheriDecode.hh"
+#include "debug/RiscvMisc.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
@@ -124,16 +125,119 @@ output exec {{
 #include "sim/full_system.hh"
 #include "sim/pseudo_inst.hh"
 #include "sim/sim_events.hh"
+
 // Needed by CapLoadCompleteAcc: read the CHERI tag CPU-side from the tag
 // table (system->cheritagtable) by physical address.
 #include "sim/system.hh"
+
 // Needed by ecall: emulate SBI calls in gem5 (no OpenSBI firmware).
+#include "arch/riscv_cheri/cheri_checks.hh"
 #include "arch/riscv_cheri/sbi.hh"
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
+// CHERI memory-access check for an instruction body (ea_code): raise the
+// capability exception, if any, for an access of `size` bytes at `ea`
+// authorised by capability register `idx`. `acc` is a CheriAccess mask.
+#define CHERI_CHECK_MEM(idx, ea, size, acc)                               \
+    do {                                                                  \
+        if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
+                xc->tcBase(), (idx), (ea), (size), (acc)))                \
+            return _cheri_fault;                                          \
+    } while (0)
+
+// Capability store of `val` (CheriAccStore|CheriAccCap plus STORE_CAP /
+// STORE_LOCAL_CAP checks on the stored value).
+#define CHERI_CHECK_CAP_STORE(idx, ea, val)                               \
+    do {                                                                  \
+        const CapRegContainer _cheri_val = (val);                         \
+        if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
+                xc->tcBase(), (idx), (ea), 16,                            \
+                CHERIRiscvISA::CheriAccStore |                            \
+                CHERIRiscvISA::CheriAccCap, &_cheri_val))                 \
+            return _cheri_fault;                                          \
+    } while (0)
+
 namespace gem5::CHERIRiscvISAInst
 {
 using namespace CHERIRiscvISA;
+
+// Result of a capability manipulation that ISAv9 makes tag-clearing (bounds,
+// permission, address and flag changes): where violations are enforced the
+// architectural result `r` is used as is; elsewhere (the kernel during
+// bring-up, see cheriEnforcing()) the source tag is kept, as before.
+inline CapRegContainer
+cheriResult(ExecContext *xc, CapRegContainer r, bool src_tag)
+{
+    if (!cheriEnforcing(xc->tcBase()))
+        r.setTag(src_tag);
+    return r;
+}
+
+// Default data capability (cs1 == 0 in CBuildCap/CTestSubset/CFromPtr/...).
+inline CapRegContainer
+cheriDdc(ExecContext *xc)
+{
+    auto *isa = static_cast<CHERIRiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
+    return isa->readCapMiscReg(MISCREG_DDC);
+}
+
+// xRET: continue at xEPCC (a sentry is unsealed). The PC state is written
+// directly; assigning the NPC operand instead would write back a PC state
+// snapshot taken before the body ran, i.e. with the OLD (kernel) PCC.
+inline void
+cheriReturnTo(ExecContext *xc, CapRegContainer epcc)
+{
+    Addr target = epcc.getAddress();
+    PCState next = xc->pcState().as<PCState>();
+    next.pcc(capJumpTargetPcc(epcc, target));
+    next.set(target);
+    next.npc(target);
+    xc->pcState(next);
+}
+
+// xRET requires PCC.PERMIT_ACCESS_SYSTEM_REGISTERS (fault against PCC).
+inline Fault
+cheriCheckXret(ExecContext *xc)
+{
+    const PCState &cur = xc->pcState().as<PCState>();
+    if (capHasPerm(cur.pcc(), CHERIPerms::ASR))
+        return NoFault;
+    return capEnforce(xc->tcBase(),
+                      CheriCapException::PermitAccessSystemRegistersViolation,
+                      CHERI_CAPIDX_PCC);
+}
+
+// Indirect jump through capability `target` (register `capIdx`) plus `imm`:
+// CJALR / C.CJR / C.CJALR. Raises the capability exception if enforcing;
+// otherwise installs the new PCC (sentries are unsealed) and PC, and, if
+// `link` is non-null, returns the sentry return capability for `retAddr`.
+inline Fault
+cheriIndirectJump(ExecContext *xc, CapRegContainer target, int capIdx,
+                  int64_t imm, Addr retAddr, CapRegContainer *link)
+{
+    if (Fault f = cheriCheckJump(xc->tcBase(), target, capIdx, imm))
+        return f;
+    const PCState &cur = xc->pcState().as<PCState>();
+    if (!target.getTag()) {
+        // Only reachable where violations are not raised (the kernel during
+        // bring-up): keep going on the current PCC rather than adopting an
+        // untagged, boundless one.
+        warn_once("CHERI: jump through untagged c%d (addr %#x) tolerated "
+                  "outside user mode\n", capIdx, target.getAddress());
+        Addr a = target.getAddress();
+        target = cur.pcc();
+        target.setAddress(a);
+    }
+    Addr target_addr = (target.getAddress() + imm) & ~Addr(1);
+    if (link)
+        *link = capMakeSentryLink(cur.pcc(), retAddr);
+    PCState next = cur;
+    next.pcc(capJumpTargetPcc(target, target_addr));
+    next.set(target_addr);
+    next.npc(target_addr);
+    xc->pcState(next);
+    return NoFault;
+}
 } // namespace gem5::CHERIRiscvISAInst
 }};

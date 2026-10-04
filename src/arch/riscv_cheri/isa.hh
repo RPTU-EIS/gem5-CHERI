@@ -134,7 +134,7 @@ class ISA : public BaseISA
     int getCapMiscRegFileIndex(RegIndex idx) const{
         if (idx == MISCREG_PCC) return -1;  // PCC is special
         if (idx == MISCREG_DDC) return 0;
-        if (idx >= MISCREG_UTCC && idx <= MISCREG_UEPCC) 
+        if (idx >= MISCREG_UTCC && idx <= MISCREG_UEPCC)
             return 1 + (idx - MISCREG_UTCC);
         if (idx >= MISCREG_STCC && idx <= MISCREG_SEPCC)
             return 5 + (idx - MISCREG_STCC);
@@ -180,6 +180,17 @@ class ISA : public BaseISA
     CHERIRiscvType rvType() const { return _rvType; }
 
     bool getEnableRvv() const { return enableRvv; }
+
+    // sccsr (CSR 0x9c0), the CHERI-RISC-V supervisor capability control and
+    // status register. Bit 31 (TAG_CLEARING) is read-only 1: capability
+    // manipulation instructions clear tags instead of raising exceptions, the
+    // ISAv9 behaviour CheriBSD requires. E (bit 0), SGCLG (bit 2) and UGCLG
+    // (bit 3) are read/write.
+    static constexpr RegVal SCCSR_E = 1ULL << 0;
+    static constexpr RegVal SCCSR_WRITABLE = (1ULL << 0) | (1ULL << 2) |
+                                             (1ULL << 3);
+    static constexpr RegVal SCCSR_TAG_CLEARING = 1ULL << 31;
+    RegVal cheriSccsr = SCCSR_TAG_CLEARING | SCCSR_E;
 
     void
     clearLoadReservation(ContextID cid)

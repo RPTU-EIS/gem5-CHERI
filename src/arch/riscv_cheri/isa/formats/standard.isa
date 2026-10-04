@@ -335,17 +335,30 @@ def template CSRExecute {{
 
         auto csr_data_it = csr_data.find(csr);
         if (csr_data_it == csr_data.end()) {
-            // Custom S-mode CSR 0x9c0: CheriBSD's initriscv probes this
-            // (reads it and tests bit 63) as a feature-detect. We don't model
-            // it, so read as 0 (feature absent) and ignore writes, rather than
-            // trapping illegal. Scoped so op_decl doesn't clash with the main
-            // body below.
-            if (csr == 0x9c0) {
+            // uccsr (0x8c0) / sccsr (0x9c0) / mccsr (0xbc0): CHERI capability
+            // control/status register, one register seen at three privilege
+            // levels and kept in the ISA object (see ISA::cheriSccsr). User
+            // code reads uccsr to test TAG_CLEARING. Scoped so op_decl doesn't
+            // clash with the main body below.
+            if (csr == 0x8c0 || csr == 0x9c0 || csr == 0xbc0) {
+                if ((CHERIPrivilegeMode)xc->readMiscReg(MISCREG_PRV) <
+                        (CHERIPrivilegeMode)bits(csr, 9, 8)) {
+                    return std::make_shared<IllegalInstFault>(
+                            "xccsr is not accessible at this privilege\n",
+                            machInst);
+                }
                 {
                     %(op_decl)s;
                     %(op_rd)s;
                     RegVal data = 0;
+                    if (%(read_cond)s)
+                        data = isa->cheriSccsr;
                     %(code)s;
+                    if (%(write_cond)s) {
+                        isa->cheriSccsr =
+                            (data & CHERIRiscvISA::ISA::SCCSR_WRITABLE) |
+                            CHERIRiscvISA::ISA::SCCSR_TAG_CLEARING;
+                    }
                     %(op_wb)s;
                 }
                 return NoFault;

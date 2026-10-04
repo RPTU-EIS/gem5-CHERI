@@ -18,19 +18,19 @@ namespace gem5
 {
     class CapRegContainer {
     public:
-        static constexpr inline size_t size() { 
-            return 17; 
+        static constexpr inline size_t size() {
+            return 17;
         }; // 128 bits + 1 tag bit
 
         using Container = std::array<uint8_t, 17>;
 
     private:
-        uint64_t address; 
-        uint64_t metadata; 
-        bool tag; 
+        uint64_t address;
+        uint64_t metadata;
+        bool tag;
 
         alignas(16) Container container;
-    
+
     public:
         CapRegContainer() : address(0), metadata(0), tag(false) {}
 
@@ -39,35 +39,35 @@ namespace gem5
 
         CapRegContainer(const CapRegContainer &) = default;
 
-        void zero() { 
-            address = 0; 
-            metadata = 0; 
-            tag = false; 
+        void zero() {
+            address = 0;
+            metadata = 0;
+            tag = false;
         }
 
         // accessors
-        uint64_t getAddress() const { 
-            return address; 
+        uint64_t getAddress() const {
+            return address;
         }
 
-        uint64_t getMetadata() const { 
-            return metadata; 
+        uint64_t getMetadata() const {
+            return metadata;
         }
 
-        bool getTag() const { 
-            return tag; 
+        bool getTag() const {
+            return tag;
         }
 
-        void setAddress(uint64_t addr) { 
-            address = addr; 
+        void setAddress(uint64_t addr) {
+            address = addr;
         }
 
-        void setMetadata(uint64_t meta) { 
-            metadata = meta; 
+        void setMetadata(uint64_t meta) {
+            metadata = meta;
         }
 
-        void setTag(bool t) { 
-            tag = t; 
+        void setTag(bool t) {
+            tag = t;
         }
 
         void set(uint64_t addr, uint64_t meta, bool t) {
@@ -100,19 +100,19 @@ namespace gem5
         }
 
         std::array<uint8_t, 17> toBytes() const {
-            
+
             std::array<uint8_t, 17> bytes = {0};
 
             // Pack address (bytes 0-7)
             for (int i = 0; i < 8; i++) {
                 bytes[i] = (address >> (i * 8)) & 0xFF;
             }
-            
+
             // Pack metadata (bytes 8-15)
             for (int i = 0; i < 8; i++) {
                 bytes[8 + i] = (metadata >> (i * 8)) & 0xFF;
             }
-            
+
             // Pack tag (byte 16, bit 0)
             bytes[16] = tag ? 0x01 : 0x00;
 
@@ -125,24 +125,24 @@ namespace gem5
             for (int i = 0; i < 8; i++) {
                 address |= static_cast<uint64_t>(bytes[i]) << (i * 8);
             }
-            
+
             // Unpack metadata (bytes 8-15)
             metadata = 0;
             for (int i = 0; i < 8; i++) {
                 metadata |= static_cast<uint64_t>(bytes[8 + i]) << (i * 8);
             }
-            
+
             // Unpack tag (byte 16, bit 0)
             tag = (bytes[16] & 0x01) != 0;
         }
 
         void toMemory(uint8_t* dst) const {
             // little endian
-            for (int i = 0; i < 8; i++){ 
+            for (int i = 0; i < 8; i++){
                 dst[i] = (address >> (i * 8)) & 0xFF;
                 dst[8 + i] = (metadata >> (i * 8)) & 0xFF;
             }
-            // Tag not needed here? stored seperately in tagged memory? 
+            // Tag not needed here? stored seperately in tagged memory?
         }
 
         void fromMemory(const uint8_t* src, bool memTag) {
@@ -155,7 +155,7 @@ namespace gem5
             tag = memTag;
         }
 
-        friend std::ostream& 
+        friend std::ostream&
         operator<<(std::ostream &out, const CapRegContainer & cap) {
             ccprintf(out, "CapRegContainer(Address: 0x%016x, Metadata: 0x%016x, Tag: %d)",
                      cap.address, cap.metadata, cap.tag ? 1 : 0);
@@ -218,10 +218,7 @@ namespace gem5
         }
 
         bool isSentry() const {
-            uint32_t ot = getOtype();
-            return (ot == CHERIMeta::OTYPE_SENTRY_INTER) ||
-                   (ot == CHERIMeta::OTYPE_SENTRY_BACK) ||
-                   (ot == CHERIMeta::OTYPE_SENTRY_FWD);
+            return getOtype() == CHERIMeta::OTYPE_SENTRY;
         }
 
         bool isUnsealed() const { return !isSealed(); }
@@ -233,7 +230,7 @@ namespace gem5
         // Address/base/top decoding and bounds checking
         // ──────────────────────────────────────────
 
-        // Need to revamp the decoder to get bounds from here. 
+        // Need to revamp the decoder to get bounds from here.
         static void decodeBounds(uint64_t meta, uint64_t addr,
                                  uint64_t &out_base, uint64_t &out_top) {
             CHERIRiscvISA::CAPTYPE m = meta;
@@ -392,9 +389,11 @@ namespace gem5
             meta.IE = 1;
             meta.BE = 0x4;   // E bits [2:0] = 4
             meta.TE = 0x6;   // E bits [5:3] = 6 -> E = 52
+            // B = T = 0: with IE the decoder reconstructs T[13:12] = 01, so
+            // top = 0x1000 << 52 = 2^64 exactly (the CC128 reset bounds).
             meta.B = 0;
-            meta.T = 0x100;  // T << E overflows to cover full space
-            
+            meta.T = 0;
+
             cap.metadata = meta;
 
             return cap;
@@ -416,23 +415,23 @@ namespace gem5
         parse(const std::string &str, CapRegContainer &value){
         // Expected format: "tag,address,metadata" in hex
         // Example: "1,0000000000000000,0000000000000000"
-        
+
             if (str.empty()) {
                 value.zero();
                 return true;
             }
-            
+
             // Simple parsing: expect 33 hex chars (1 for tag + 16 for addr + 16 for meta)
             if (str.size() != 33) {
                 warn("Capability register parse: unexpected string length");
                 return false;
             }
-            
+
             try {
                 bool tag = (str[0] == '1');
                 uint64_t addr = std::stoull(str.substr(1, 16), nullptr, 16);
                 uint64_t meta = std::stoull(str.substr(17, 16), nullptr, 16);
-                
+
                 value.set(addr, meta, tag);
                 return true;
             } catch (...) {

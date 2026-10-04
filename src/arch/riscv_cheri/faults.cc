@@ -35,6 +35,7 @@
 #include "arch/riscv_cheri/isa.hh"
 #include "arch/riscv_cheri/mmu.hh"
 #include "arch/riscv_cheri/pmp.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
 #include "arch/riscv_cheri/utility.hh"
 #include "cpu/base.hh"
@@ -215,8 +216,13 @@ Reset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     // Delegate exceptions to S-mode, EXCEPT ecall-from-S (9) / ecall-from-M
     // (11), which must stay in M-mode so our inline SBI emulation still fires.
     // Bits: 0-8 (misaligned/access/illegal/breakpoint/ecall-U) + 12/13/15
-    // (instr/load/store page fault) = 0xB1FF.
-    tc->setMiscReg(MISCREG_MEDELEG, 0xB1FF);
+    // (instr/load/store page fault) = 0xB1FF, plus the CHERI causes 26/27
+    // (capability load/store page fault) and 28 (CHERI exception), which
+    // OpenSBI delegates on CHERI hardware so CheriBSD's S-mode handler sees
+    // them (SCAUSE_CHERI -> SIGPROT).
+    tc->setMiscReg(MISCREG_MEDELEG,
+                   0xB1FF | (1ULL << LOAD_CAP_PAGE) |
+                   (1ULL << STORE_AMO_CAP_PAGE) | (1ULL << CHERI_CAPABILITY));
     // Delegate S-mode interrupts (SSIP/STIP/SEIP = bits 1/5/9) = 0x222.
     tc->setMiscReg(MISCREG_MIDELEG, 0x222);
     STATUS status = tc->readMiscReg(MISCREG_STATUS);
@@ -296,37 +302,70 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
     tc->getSystemPtr()->workload->syscall(tc);
 }
 
-Fault
-capEnforce(ThreadContext *tc, CheriCapException code,
-           int capReg, Addr addr)
+bool
+cheriEnforcingAt(CHERIPrivilegeMode prv)
 {
-    if (code == CheriCapException::None)
+    // Bring-up gate: enforce only in user mode. The kernel still depends on
+    // relaxations of the firmware-less boot (it runs at a physical PC under a
+    // PCC with virtual bounds until the DRAM identity passthrough in tlb.cc is
+    // retired), so supervisor/machine-mode violations are not raised yet.
+    return prv == PRV_U;
+}
+
+bool
+cheriEnforcing(ThreadContext *tc)
+{
+    return cheriEnforcingAt((CHERIPrivilegeMode)tc->readMiscReg(MISCREG_PRV));
+}
+
+Fault
+capEnforce(ThreadContext *tc, CheriCapException code, int capReg, Addr addr)
+{
+    if (code == CheriCapException::None || !cheriEnforcing(tc))
         return NoFault;
-    // Bring-up gate 1: enforce only in user mode. Global enforcement faults in
-    // very early boot -- a kernel store trips the check before the trap
-    // vectors are programmed, so the trap jumps to PC=0 and the next fetch
-    // dies with BadAddressError. Gating to user mode lets the kernel boot with
-    // its relaxations while userspace gets real CHERI enforcement. In full-
-    // system mode RiscvFault::invoke delivers the fault to the kernel (the
-    // faulting process gets a fatal signal); the SE-mode panic path is unused.
-    if ((CHERIPrivilegeMode)tc->readMiscReg(MISCREG_PRV) != PRV_U)
-        return NoFault;
-    // Bring-up gate 2: enforce only BOUNDS (LengthViolation) for now. Our
-    // capability metadata still carries boot-relaxation artefacts -- untagged
-    // return capabilities (see the c_jr "untagged target" warnings) and
-    // remapped permissions -- which make checkForStore report Tag/Seal/Perm
-    // violations on otherwise-legit userspace stores and would kill /sbin/init
-    // before it even starts. Bounds tracking (csetbounds/malloc) IS reliable,
-    // and a bounds violation is exactly what a buffer overflow trips, so
-    // enforce that and tolerate the rest until the tag/permission relaxations
-    // are cleaned up.
-    if (code != CheriCapException::LengthViolation) {
-        warn_once("CHERI: tolerating capability violation code %llu in user "
-                  "mode (bring-up); only LengthViolation is enforced\n",
-                  (unsigned long long)code);
-        return NoFault;
-    }
+    DPRINTFS(Faults, tc->getCpuPtr(),
+             "CHERI violation cause %#x cap_idx %d addr %#x at %s\n",
+             (unsigned)code, capReg, addr, tc->pcState());
     return std::make_shared<CheriCapFault>(code, capReg, addr);
+}
+
+CapRegContainer
+cheriReadCapReg(ThreadContext *tc, int idx)
+{
+    CapRegContainer cap;
+    if (idx != 0)
+        tc->getReg(capRegClass[idx], &cap);
+    return cap;
+}
+
+Fault
+cheriCheckMem(ThreadContext *tc, int capIdx, Addr ea, unsigned size,
+              unsigned acc, const CapRegContainer *stored)
+{
+    if (!cheriEnforcing(tc))
+        return NoFault;
+    CapRegContainer auth = cheriReadCapReg(tc, capIdx);
+    CheriCapException code = capCheckMemAccess(auth, ea, size, acc, stored);
+    if (code != CheriCapException::None) {
+        DPRINTFS(Faults, tc->getCpuPtr(),
+                 "CHERI mem access ea %#x size %d acc %#x via c%d %s%s%s\n",
+                 ea, size, acc, capIdx, auth.getString(),
+                 stored ? " storing " : "",
+                 stored ? stored->getString() : "");
+    }
+    return capEnforce(tc, code, capIdx, ea);
+}
+
+Fault
+cheriCheckJump(ThreadContext *tc, const CapRegContainer &target, int capIdx,
+               int64_t imm)
+{
+    CheriCapException code = capCheckJump(target, imm);
+    if (code != CheriCapException::None && cheriEnforcing(tc)) {
+        DPRINTFS(Faults, tc->getCpuPtr(), "CHERI jump via c%d imm %d %s\n",
+                 capIdx, imm, target.getString());
+    }
+    return capEnforce(tc, code, capIdx, target.getAddress() + imm);
 }
 
 void
