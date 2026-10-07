@@ -711,12 +711,15 @@ class LSQ : public Named
         bool committed);
 
     /** Single interface for readMem/writeMem/amoMem to issue requests into
-     *  the LSQ */
+     *  the LSQ. cap_tag is the tag stored by a CHERI capability store; it
+     *  is attached to the request before address translation, which checks
+     *  the page's capability-write permission for tagged stores. */
     Fault pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,
                       uint64_t *res, AtomicOpFunctorPtr amo_op,
                       const std::vector<bool>& byte_enable =
-                          std::vector<bool>());
+                          std::vector<bool>(),
+                      bool cap_tag = false);
 
     /** Push a predicate failed-representing request into the queues just
      *  to maintain commit order */

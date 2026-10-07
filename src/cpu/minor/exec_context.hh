@@ -133,6 +133,19 @@ class ExecContext : public gem5::ExecContext
             size, addr, flags, res, nullptr, byte_enable);
     }
 
+    // CHERI capability store: carry the stored tag with the request (the
+    // generic fallback would drop it).
+    Fault
+    writeCapMem(uint8_t *data, unsigned int size, Addr addr,
+                Request::Flags flags, uint64_t *res, bool capTag,
+                const std::vector<bool>& byte_enable) override
+    {
+        assert(byte_enable.size() == size);
+        return execute.getLSQ().pushRequest(inst, false /* store */, data,
+            size, addr, flags | Request::CHERI_CAP_STORE, res, nullptr,
+            byte_enable, capTag);
+    }
+
     Fault
     initiateMemAMO(Addr addr, unsigned int size, Request::Flags flags,
                    AtomicOpFunctorPtr amo_op) override
