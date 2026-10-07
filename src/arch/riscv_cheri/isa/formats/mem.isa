@@ -337,7 +337,7 @@ def template CacheBlockBasedStoreCompleteAcc {{
 // authorises the access; see CHERI_CHECK_MEM (includes.isa).
 def format Load(memacc_code, ea_code = {{
             EA = rvZext(Rs1 + offset);
-            CHERI_CHECK_MEM(RS1, EA, CHERI_MEM_SIZE, CheriAccLoad);
+            CHERI_CHECK_MEM(_capv_Rs1, RS1, EA, CHERI_MEM_SIZE, CheriAccLoad);
         }},
         offset_code={{offset = sext<12>(IMM12);}},
         mem_flags=[], inst_flags=[]) {{
@@ -348,7 +348,7 @@ def format Load(memacc_code, ea_code = {{
 
 def format Store(memacc_code, ea_code={{
             EA = rvZext(Rs1 + offset);
-            CHERI_CHECK_MEM(RS1, EA, CHERI_MEM_SIZE, CheriAccStore);
+            CHERI_CHECK_MEM(_capv_Rs1, RS1, EA, CHERI_MEM_SIZE, CheriAccStore);
         }},
         offset_code={{offset = sext<12>(IMM5 | (IMM7 << 5));}},
         mem_flags=[], inst_flags=[]) {{

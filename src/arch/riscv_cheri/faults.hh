@@ -382,20 +382,19 @@ bool cheriEnforcingAt(CHERIPrivilegeMode prv);
 Fault capEnforce(ThreadContext *tc, CheriCapException code,
                  int capReg = 0, Addr addr = 0);
 
-// Check a data memory access of `size` bytes at `ea` authorised by
-// capability register `capIdx` (c0 reads as the null capability). `acc` is a
-// mask of CheriAccess flags (cheri_checks.hh); `stored` is the capability
-// being written by a capability store.
-Fault cheriCheckMem(ThreadContext *tc, int capIdx, Addr ea, unsigned size,
-                    unsigned acc, const CapRegContainer *stored = nullptr);
+// Check a data memory access of `size` bytes at `ea` authorised by `auth`,
+// the value of capability register `capIdx` (the index is reported in
+// xTVAL). `acc` is a mask of CheriAccess flags (cheri_checks.hh); `stored`
+// is the capability being written by a capability store. Callers pass the
+// operand value they read, so this works on pipelined/out-of-order CPUs.
+Fault cheriCheckMem(ThreadContext *tc, const CapRegContainer &auth,
+                    int capIdx, Addr ea, unsigned size, unsigned acc,
+                    const CapRegContainer *stored = nullptr);
 
 // Check an indirect jump through capability register `capIdx` (value
 // `target`) with immediate `imm`.
 Fault cheriCheckJump(ThreadContext *tc, const CapRegContainer &target,
                      int capIdx, int64_t imm);
-
-// Read capability register `idx`; c0 always reads as the null capability.
-CapRegContainer cheriReadCapReg(ThreadContext *tc, int idx);
 
 /**
  * Returns true if the fault passed as a first argument was triggered

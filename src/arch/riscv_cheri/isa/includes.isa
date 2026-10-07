@@ -138,21 +138,24 @@ output exec {{
 
 // CHERI memory-access check for an instruction body (ea_code): raise the
 // capability exception, if any, for an access of `size` bytes at `ea`
-// authorised by capability register `idx`. `acc` is a CheriAccess mask.
-#define CHERI_CHECK_MEM(idx, ea, size, acc)                               \
+// authorised by `auth`, the value of capability register `idx` (reported in
+// xTVAL). Pass operand values (Cs1, or _capv_Rs1 for an integer base
+// operand), never registers re-read through the thread context. `acc` is a
+// CheriAccess mask.
+#define CHERI_CHECK_MEM(auth, idx, ea, size, acc)                         \
     do {                                                                  \
         if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
-                xc->tcBase(), (idx), (ea), (size), (acc)))                \
+                xc->tcBase(), (auth), (idx), (ea), (size), (acc)))        \
             return _cheri_fault;                                          \
     } while (0)
 
 // Capability store of `val` (CheriAccStore|CheriAccCap plus STORE_CAP /
 // STORE_LOCAL_CAP checks on the stored value).
-#define CHERI_CHECK_CAP_STORE(idx, ea, val)                               \
+#define CHERI_CHECK_CAP_STORE(auth, idx, ea, val)                         \
     do {                                                                  \
         const CapRegContainer _cheri_val = (val);                         \
         if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
-                xc->tcBase(), (idx), (ea), 16,                            \
+                xc->tcBase(), (auth), (idx), (ea), 16,                    \
                 CHERIRiscvISA::CheriAccStore |                            \
                 CHERIRiscvISA::CheriAccCap, &_cheri_val))                 \
             return _cheri_fault;                                          \

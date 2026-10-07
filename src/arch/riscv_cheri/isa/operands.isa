@@ -112,11 +112,18 @@ let {{
             cb = '}'
             tmp = f'tmp_s{self.src_reg_idx}'
             ns = self.parser.namespace
+            # Also expose the full capability as _capv_<name>: in capability
+            # mode an integer base register authorises memory accesses, and
+            # the CHERI checks need its tag/bounds/permissions. Reading it
+            # through the operand (not xc->tcBase()) keeps it correct on
+            # pipelined and out-of-order CPUs.
             return (
                 f'{ns}::CapRegContainer {tmp};\n'
                 f'if (({self.reg_spec}) != 0) {ob}\n'
                 f'    xc->getRegOperand(this, {self.src_reg_idx}, &{tmp});\n'
                 f'{cb}\n'
+                f'[[maybe_unused]] const {ns}::CapRegContainer '
+                f'_capv_{self.base_name} = {tmp};\n'
                 f'{self.base_name} = {tmp}.getAddress();\n'
             )
 
@@ -250,8 +257,8 @@ def operands {{
     'Cc2': CapReg('capc', 'CC2', 'IsCapability', 3),
     'Cp1': CapReg('capc', 'CP1 + 8', 'IsCapability', 2),
     'Cp2': CapReg('capc', 'CP2 + 8', 'IsCapability', 3),
-    'Cra': CapReg('capc', 'ReturnAddrCap', 'IsCapability', 1),
-    'Csp': CapReg('capc', 'StackPointerCap', 'IsCapability', 2),
+    'Cra': CapReg('capc', '1', 'IsCapability', 1),
+    'Csp': CapReg('capc', '2', 'IsCapability', 2),
 
     'Ca0': CapReg('capc', '10', 'IsCapability', 1),
     'Ca1': CapReg('capc', '11', 'IsCapability', 2),

@@ -190,7 +190,10 @@ def template CJumpExecute {{
     %(class_name)s::branchTarget(ThreadContext *tc) const
     {
         PCStateBase *pc_ptr = tc->pcState().clone();
-        pc_ptr->as<PCState>().set(rvZext(tc->getReg(srcRegIdx(0)) & ~0x1));
+        // The source is a capability register (merged register file).
+        CHERIRiscvISA::CapRegContainer target;
+        tc->getReg(srcRegIdx(0), &target);
+        pc_ptr->as<PCState>().set(rvZext(target.getAddress() & ~0x1));
         return std::unique_ptr<PCStateBase>{pc_ptr};
     }
 

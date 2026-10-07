@@ -60,17 +60,12 @@ decode QUADRANT default Unknown::unknown() {
             // the int `sp` source view, then write the integer dest and the cap
             // dest (LAST, restoring tag+bounds) -- robust to shared-container or
             // one-way int->cap sync.
-            using namespace gem5::CHERIRiscvISA;
-            auto *_tc = xc->tcBase();
-            CapRegContainer _csp;
-            _tc->getReg(cap_reg::CSp, &_csp);
-            uint64_t _na = rvSext(sp + imm);
-            _tc->setReg(intRegClass[RP2 + 8], _na);
             // CIncOffset semantics: tag cleared if csp is sealed or the new
-            // address is not representable.
-            CapRegContainer _r = cheriResult(xc, capSetAddr(_csp, _na),
-                                             _csp.getTag());
-            _tc->setReg(capRegClass[RP2 + 8], &_r);
+            // address is not representable. Only a capability destination
+            // is written (an integer dest to the same register would
+            // clear the tag on write-back).
+            Cp2 = cheriResult(xc, capSetAddr(_capv_sp, rvSext(sp + imm)),
+                              _capv_sp.getTag());
         }}, uint64_t);
         format CompressedLoad {
             // PURECAP: this encoding (C0, funct3=001) is c.lq (load 128-bit
@@ -83,7 +78,7 @@ decode QUADRANT default Unknown::unknown() {
                     EA = rvZext(Cp1.getAddress() + offset);
                 }},
                 cap_check_code = {{
-                    CHERI_CHECK_MEM(CP1 + 8, EA, 16,
+                    CHERI_CHECK_MEM(Cp1, CP1 + 8, EA, 16,
                                     CheriAccLoad | CheriAccCap);
                 }},
                 offset_code = {{
@@ -99,7 +94,7 @@ decode QUADRANT default Unknown::unknown() {
                 Rp2_sd = Mem_sw;
             }}, {{
                 EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
             }});
             0x3: decode RVTYPE {
                 0x0: c_flw({{
@@ -126,7 +121,7 @@ decode QUADRANT default Unknown::unknown() {
                     Rp2_sd = Mem_sd;
                 }}, {{
                     EA = Rp1 + offset;
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
                 }});
             }
         }
@@ -138,7 +133,7 @@ decode QUADRANT default Unknown::unknown() {
                     Rp2 = Mem_ub;
                 }}, {{
                     EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
                 }});
                 0x1: decode CFUNCT1BIT6 {
                     0x0: c_lhu({{
@@ -147,7 +142,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rp2 = Mem_uh;
                     }}, {{
                         EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
                     }});
                     0x1: c_lh({{
                         offset = CIMM2<0:0> << 1;
@@ -155,7 +150,7 @@ decode QUADRANT default Unknown::unknown() {
                         Rp2_sd = Mem_sh;
                     }}, {{
                         EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccLoad);
                     }});
                 }
             }
@@ -166,7 +161,7 @@ decode QUADRANT default Unknown::unknown() {
                     Mem_ub = Rp2_ub;
                 }}, ea_code={{
                     EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
                 }});
                 0x3: c_sh({{
                     offset = (CIMM2<0:0> << 1);
@@ -174,7 +169,7 @@ decode QUADRANT default Unknown::unknown() {
                     Mem_uh = Rp2_uh;
                 }}, ea_code={{
                     EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
                 }});
             }
         }
@@ -189,7 +184,7 @@ decode QUADRANT default Unknown::unknown() {
                     EA = rvZext(Cp1.getAddress() + offset);
                 }},
                 cap_check_code = {{
-                    CHERI_CHECK_CAP_STORE(CP1 + 8, EA, Cp2);
+                    CHERI_CHECK_CAP_STORE(Cp1, CP1 + 8, EA, Cp2);
                 }},
                 offset_code = {{
                     // c.sq uimm: [5:4]=inst[12:11], [8]=inst[10], [7:6]=inst[6:5]
@@ -204,7 +199,7 @@ decode QUADRANT default Unknown::unknown() {
                 Mem_uw = Rp2_uw;
             }}, ea_code={{
                 EA = rvZext(Rp1 + offset);
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
             }});
             0x7: decode RVTYPE {
                 0x0: c_fsw({{
@@ -227,7 +222,7 @@ decode QUADRANT default Unknown::unknown() {
                     Mem_ud = Rp2_ud;
                 }}, {{
                     EA = Rp1 + offset;
-                CHERI_CHECK_MEM(RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
+                CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE, CheriAccStore);
                 }});
             }
         }
@@ -288,16 +283,9 @@ decode QUADRANT default Unknown::unknown() {
                 // one-way: (1) read csp's cap FIRST to save tag+bounds, (2)
                 // write the integer sp (c.sqsp/c.lqsp address off int sp), (3)
                 // write the cap LAST so tag+bounds are restored onto the result.
-                using namespace gem5::CHERIRiscvISA;
-                auto *_tc = xc->tcBase();
-                CapRegContainer _csp;
-                _tc->getReg(cap_reg::CSp, &_csp);
-                uint64_t _na = rvSext(sp + imm);
-                _tc->setReg(int_reg::Sp, _na);
                 // CIncOffset semantics (see c_addi4spn).
-                CapRegContainer _r = cheriResult(xc, capSetAddr(_csp, _na),
-                                                 _csp.getTag());
-                _tc->setReg(cap_reg::CSp, &_r);
+                Csp = cheriResult(xc, capSetAddr(_capv_sp, rvSext(sp + imm)),
+                                  _capv_sp.getTag());
             }});
             default: CIOp::c_lui({{
                 imm = sext<6>(CIMM5 | (CIMM1 << 5)) << 12;
@@ -441,14 +429,16 @@ decode QUADRANT default Unknown::unknown() {
             // capability spills (every function prologue restores cra/cs*) were
             // decoded as 8-byte float loads and corrupted returns.
             0x1: CapLoad::c_lqsp({{
-                Cc1 = capLoadResult(_loadedCap,
-                    CHERIRiscvISA::cheriReadCapReg(xc->tcBase(), 2));
+                // Naming `sp` makes the parser read it (and so define
+                // _capv_sp) in completeAcc as well.
+                (void)sp;
+                Cc1 = capLoadResult(_loadedCap, _capv_sp);
             }},
                 ea_code = {{
                     EA = rvZext(sp + offset);
                 }},
                 cap_check_code = {{
-                    CHERI_CHECK_MEM(2 /* csp */, EA, 16,
+                    CHERI_CHECK_MEM(_capv_sp, 2, EA, 16,
                                     CheriAccLoad | CheriAccCap);
                 }},
                 offset_code = {{
@@ -468,7 +458,7 @@ decode QUADRANT default Unknown::unknown() {
                 Rc1_sw = Mem_sw;
             }}, {{
                 EA = rvZext(sp + offset);
-                CHERI_CHECK_MEM(2 /* csp */, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_sp, 2, EA, CHERI_MEM_SIZE, CheriAccLoad);
             }});
             0x3: decode RVTYPE {
                 0x0: c_flwsp({{
@@ -502,7 +492,7 @@ decode QUADRANT default Unknown::unknown() {
                     Rc1_sd = Mem_sd;
                 }}, {{
                     EA = sp + offset;
-                CHERI_CHECK_MEM(2 /* csp */, EA, CHERI_MEM_SIZE, CheriAccLoad);
+                CHERI_CHECK_MEM(_capv_sp, 2, EA, CHERI_MEM_SIZE, CheriAccLoad);
                 }});
             }
         }
@@ -515,9 +505,7 @@ decode QUADRANT default Unknown::unknown() {
                         return std::make_shared<IllegalInstFault>(
                             "c.jr with x0 source (reserved)", machInst);
                     }
-                    return cheriIndirectJump(xc,
-                        CHERIRiscvISA::cheriReadCapReg(xc->tcBase(), cs1_idx),
-                        cs1_idx, 0, 0, nullptr);
+                    return cheriIndirectJump(xc, Cc1, cs1_idx, 0, 0, nullptr);
                 }}, IsIndirectControl, IsUncondControl);
                 default: CROp::c_mv({{
                     // RC1 == 0 is HINT
@@ -537,12 +525,10 @@ decode QUADRANT default Unknown::unknown() {
                         const uint32_t cs1_idx = bits(machInst, 11, 7);
                         CapRegContainer _link;
                         Addr _ret = xc->pcState().instAddr() + 2;
-                        if (Fault _f = cheriIndirectJump(xc,
-                                CHERIRiscvISA::cheriReadCapReg(
-                                    xc->tcBase(), cs1_idx),
-                                cs1_idx, 0, _ret, &_link))
+                        if (Fault _f = cheriIndirectJump(xc, Cc1, cs1_idx, 0,
+                                _ret, &_link))
                             return _f;
-                        xc->tcBase()->setReg(capRegClass[1], &_link);
+                        Cra = _link;
                     }}, IsIndirectControl, IsUncondControl, IsCall);
                 }
                 default: CompressedROp::c_add({{
@@ -562,7 +548,7 @@ decode QUADRANT default Unknown::unknown() {
                     EA = rvZext(sp + offset);
                 }},
                 cap_check_code = {{
-                    CHERI_CHECK_CAP_STORE(2 /* csp */, EA, Cc2);
+                    CHERI_CHECK_CAP_STORE(_capv_sp, 2, EA, Cc2);
                 }},
                 offset_code = {{
                     // c.sqsp uimm: [5:4]=inst[12:11], [9:6]=inst[10:7]
@@ -575,7 +561,7 @@ decode QUADRANT default Unknown::unknown() {
                 Mem_uw = Rc2_uw;
             }}, {{
                 EA = rvZext(sp + offset);
-                CHERI_CHECK_MEM(2 /* csp */, EA, CHERI_MEM_SIZE,
+                CHERI_CHECK_MEM(_capv_sp, 2, EA, CHERI_MEM_SIZE,
                     CheriAccStore);
             }});
             0x7: decode RVTYPE {
@@ -599,7 +585,7 @@ decode QUADRANT default Unknown::unknown() {
                     Mem = Rc2;
                 }}, {{
                     EA = sp + offset;
-                CHERI_CHECK_MEM(2 /* csp */, EA, CHERI_MEM_SIZE,
+                CHERI_CHECK_MEM(_capv_sp, 2, EA, CHERI_MEM_SIZE,
                     CheriAccStore);
                 }});
             }
@@ -643,7 +629,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 1, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 1, CheriAccLoad);
                     }});
                 0x1: lh_cap({{
                         Rd_sd = Mem_sh;
@@ -652,7 +638,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 2, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 2, CheriAccLoad);
                     }});
                 0x2: lw_cap({{
                         Rd_sd = Mem_sw;
@@ -661,7 +647,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 4, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccLoad);
                     }});
 
                 0x3: ld_cap({{
@@ -671,7 +657,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 8, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 8, CheriAccLoad);
                     }});
 
                 // Unsigned data loads via a capability base (zero-extended).
@@ -682,7 +668,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 1, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 1, CheriAccLoad);
                     }});
                 0x5: lhu_cap({{
                         Rd = Mem_uh;
@@ -691,7 +677,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 2, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 2, CheriAccLoad);
                     }});
                 0x6: lwu_cap({{
                         Rd = Mem_uw;
@@ -700,7 +686,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 4, CheriAccLoad);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccLoad);
                     }});
 
             }
@@ -1252,7 +1238,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                 }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 16,
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 16,
                                         CheriAccLoad | CheriAccCap);
                     }},
                     offset_code = {{offset = sext<12>(IMM12);}});
@@ -1558,7 +1544,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 1, CheriAccStore);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 1, CheriAccStore);
                     }});
 
                 0x1: sh_cap({{
@@ -1568,7 +1554,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 2, CheriAccStore);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 2, CheriAccStore);
                     }});
 
                 // SW.CAP rs2, cs1 — store word
@@ -1579,7 +1565,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 4, CheriAccStore);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccStore);
                     }});
 
                 0x3: sd_cap({{
@@ -1589,7 +1575,7 @@ decode QUADRANT default Unknown::unknown() {
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 8, CheriAccStore);
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 8, CheriAccStore);
                     }});
 
             }
@@ -1604,7 +1590,7 @@ decode QUADRANT default Unknown::unknown() {
                     EA = rvZext(Cs1.getAddress() + offset);
                 }},
                 cap_check_code = {{
-                    CHERI_CHECK_CAP_STORE(CS1, EA, Cs2);
+                    CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                 }},
                 offset_code = {{
                     offset = sext<12>(IMM5 | (IMM7 << 5));
@@ -2216,13 +2202,15 @@ decode QUADRANT default Unknown::unknown() {
                     _sys->cheritagtable.setTag(_pa, _new.getTag());
                     // result: old value (tag kept only with PERMIT_LOAD_CAP)
                     Cd = capLoadResult(_old, Cs1);
-                }});
+                    // Writes memory functionally at execute: never run it
+                    // speculatively or ahead of older instructions.
+                }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter);
                 0x2: CapLoad::lr_c({{
                     Cd = capLoadResult(_loadedCap, Cs1);
                 }},
                     ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                     cap_check_code = {{
-                        CHERI_CHECK_MEM(CS1, EA, 16,
+                        CHERI_CHECK_MEM(Cs1, CS1, EA, 16,
                                         CheriAccLoad | CheriAccCap);
                     }},
                     offset_code = {{ offset = 0; }});
@@ -2231,7 +2219,7 @@ decode QUADRANT default Unknown::unknown() {
                 }},
                     ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                     cap_check_code = {{
-                        CHERI_CHECK_CAP_STORE(CS1, EA, Cs2);
+                        CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                     }},
                     offset_code = {{ offset = 0; }},
                     postacc_code = {{ Rd = 0; }});
@@ -5392,13 +5380,11 @@ decode QUADRANT default Unknown::unknown() {
                                 _oldVal.setAddress(_pcs.instAddr());
 
                             // Only write SCR if cs1 != c0 (read-only when c0)
-                            if (cs1_idx != 0) {
-                                isa->setCapMiscReg(misc_idx,
-                                    cheriReadCapReg(tc, cs1_idx));
-                            }
+                            if (cs1_idx != 0)
+                                isa->setCapMiscReg(misc_idx, Cs1);
 
                             Cd = _oldVal;
-                        }}, IsNonSpeculative);
+                        }}, IsNonSpeculative, IsSerializeAfter);
                     }
 
                     format COp {
@@ -5937,7 +5923,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 1, CheriAccStore);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 1, CheriAccStore);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x09: sh_cap_x({{
@@ -5945,7 +5931,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 2, CheriAccStore);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 2, CheriAccStore);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0a: sw_cap_x({{
@@ -5953,7 +5939,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 4, CheriAccStore);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccStore);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0b: sd_cap_x({{
@@ -5961,7 +5947,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 8, CheriAccStore);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 8, CheriAccStore);
                             }},
                             offset_code = {{ offset = 0; }});
                         }
@@ -5971,7 +5957,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_CAP_STORE(CS1, EA, Cs2);
+                                CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                             }},
                             offset_code = {{ offset = 0; }});
                             // sc.c.cap: single in-order hart, the
@@ -5982,7 +5968,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_CAP_STORE(CS1, EA, Cs2);
+                                CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                             }},
                             offset_code = {{ offset = 0; }},
                             postacc_code = {{ Rs2 = 0; }});
@@ -6021,7 +6007,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 1, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 1, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x09: lh_cap_x({{
@@ -6029,7 +6015,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 2, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 2, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0a: lw_cap_x({{
@@ -6037,7 +6023,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 4, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0b: ld_cap_x({{
@@ -6045,7 +6031,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 8, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 8, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0c: lbu_cap_x({{
@@ -6053,7 +6039,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 1, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 1, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0d: lhu_cap_x({{
@@ -6061,7 +6047,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 2, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 2, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0e: lwu_cap_x({{
@@ -6069,7 +6055,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 4, CheriAccLoad);
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccLoad);
                             }},
                             offset_code = {{ offset = 0; }});
                         }
@@ -6093,7 +6079,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 16,
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 16,
                                     CheriAccLoad | CheriAccCap);
                             }},
                             offset_code = {{ offset = 0; }});
@@ -6102,7 +6088,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(CS1, EA, 16,
+                                CHERI_CHECK_MEM(Cs1, CS1, EA, 16,
                                     CheriAccLoad | CheriAccCap);
                             }},
                             offset_code = {{ offset = 0; }});

@@ -431,7 +431,7 @@ def template AtomicMemOpRMWCompleteAcc {{
 def format LoadReserved(memacc_code, postacc_code={{ }},
         ea_code={{
             EA = rvZext(Rs1);
-            CHERI_CHECK_MEM(RS1, EA, CHERI_MEM_SIZE, CheriAccLoad);
+            CHERI_CHECK_MEM(_capv_Rs1, RS1, EA, CHERI_MEM_SIZE, CheriAccLoad);
         }}, mem_flags=[], inst_flags=[]) {{
     macro_ea_code = ''
     macro_inst_flags = []
@@ -466,7 +466,7 @@ def format LoadReserved(memacc_code, postacc_code={{ }},
 def format StoreCond(memacc_code, postacc_code={{ }},
         ea_code={{
             EA = rvZext(Rs1);
-            CHERI_CHECK_MEM(RS1, EA, CHERI_MEM_SIZE, CheriAccStore);
+            CHERI_CHECK_MEM(_capv_Rs1, RS1, EA, CHERI_MEM_SIZE, CheriAccStore);
         }}, mem_flags=[], inst_flags=[]) {{
     macro_ea_code = ''
     macro_inst_flags = []
@@ -501,7 +501,7 @@ def format StoreCond(memacc_code, postacc_code={{ }},
 def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
         ea_code={{
             EA = rvZext(Rs1);
-            CHERI_CHECK_MEM(RS1, EA, CHERI_MEM_SIZE,
+            CHERI_CHECK_MEM(_capv_Rs1, RS1, EA, CHERI_MEM_SIZE,
                 CheriAccLoad | CheriAccStore);
         }}, mem_flags=[], inst_flags=[]) {{
     macro_ea_code = ''

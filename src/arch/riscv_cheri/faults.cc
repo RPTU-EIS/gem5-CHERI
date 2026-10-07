@@ -35,7 +35,6 @@
 #include "arch/riscv_cheri/isa.hh"
 #include "arch/riscv_cheri/mmu.hh"
 #include "arch/riscv_cheri/pmp.hh"
-#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/misc.hh"
 #include "arch/riscv_cheri/utility.hh"
 #include "cpu/base.hh"
@@ -329,22 +328,13 @@ capEnforce(ThreadContext *tc, CheriCapException code, int capReg, Addr addr)
     return std::make_shared<CheriCapFault>(code, capReg, addr);
 }
 
-CapRegContainer
-cheriReadCapReg(ThreadContext *tc, int idx)
-{
-    CapRegContainer cap;
-    if (idx != 0)
-        tc->getReg(capRegClass[idx], &cap);
-    return cap;
-}
-
 Fault
-cheriCheckMem(ThreadContext *tc, int capIdx, Addr ea, unsigned size,
-              unsigned acc, const CapRegContainer *stored)
+cheriCheckMem(ThreadContext *tc, const CapRegContainer &auth, int capIdx,
+              Addr ea, unsigned size, unsigned acc,
+              const CapRegContainer *stored)
 {
     if (!cheriEnforcing(tc))
         return NoFault;
-    CapRegContainer auth = cheriReadCapReg(tc, capIdx);
     CheriCapException code = capCheckMemAccess(auth, ea, size, acc, stored);
     if (code != CheriCapException::None) {
         DPRINTFS(Faults, tc->getCpuPtr(),
