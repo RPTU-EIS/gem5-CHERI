@@ -10,6 +10,14 @@
 #                     /etc/m5_init.sh runs it)
 #   CHERI_KERNEL      kernel (default ./tests/kernel)
 #   CHERI_DISK        disk image (default ./tests/cheribsd-riscv64-purecap.img)
+#   CHERI_TAG_MODEL   tag-storage timing model (CheriTagController):
+#                       none (default)  no tag controller
+#                       passthrough     controller present, no tag traffic
+#                                       (baseline with the same topology)
+#                       flat            single-level tag table + tag cache
+#                       hierarchical    root level with zero elision
+#   CHERI_TAG_CACHE   leaf tag-cache size (default 32KiB)
+#   CHERI_TAG_ASSOC   leaf tag-cache associativity (default 8)
 
 import os
 
@@ -20,6 +28,7 @@ from gem5.components.cachehierarchies.classic.private_l1_private_l2_walk_cache_h
     PrivateL1PrivateL2WalkCacheHierarchy,
 )
 from gem5.components.memory import DualChannelDDR4_2400
+from gem5.components.memory.cheri_tagged_memory import CheriTaggedMemory
 from gem5.components.processors.cpu_types import CPUTypes
 from gem5.components.processors.simple_switchable_processor import (
     SimpleSwitchableProcessor,
@@ -51,6 +60,18 @@ cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
     l1d_size="16kB", l1i_size="16kB", l2_size="256kB"
 )
 memory = DualChannelDDR4_2400(size="3GB")
+
+tag_model = os.environ.get("CHERI_TAG_MODEL", "none").lower()
+if tag_model not in ("none", "passthrough", "flat", "hierarchical"):
+    raise ValueError(f"Unknown CHERI_TAG_MODEL '{tag_model}'")
+if tag_model != "none":
+    memory = CheriTaggedMemory(
+        memory,
+        enabled=tag_model != "passthrough",
+        hierarchical=tag_model == "hierarchical",
+        leaf_cache_size=os.environ.get("CHERI_TAG_CACHE", "32KiB"),
+        leaf_cache_assoc=int(os.environ.get("CHERI_TAG_ASSOC", "8")),
+    )
 processor = SimpleSwitchableProcessor(
     starting_core_type=CPUTypes.ATOMIC,
     switch_core_type=switch_cpus[switch_cpu],
@@ -65,6 +86,14 @@ board = RiscvCheriBoard(
     cache_hierarchy=cache_hierarchy,
 )
 
+# Checked here: otherwise gem5 only panics when the guest runs m5 readfile.
+readfile = os.environ.get("CHERI_READFILE", "./tests/overflow")
+if not os.path.isfile(readfile):
+    raise FileNotFoundError(
+        f"readfile '{readfile}' not found; set CHERI_READFILE to the "
+        "program or runner script the guest should execute"
+    )
+
 board.set_kernel_disk_workload(
     kernel=FileResource(
         local_path=os.environ.get("CHERI_KERNEL", "./tests/kernel"),
@@ -75,7 +104,7 @@ board.set_kernel_disk_workload(
         ),
         root_partition="1",
     ),
-    readfile=os.environ.get("CHERI_READFILE", "./tests/overflow"),
+    readfile=readfile,
     kernel_args=[
         "-s",
         "console=ttyS0",

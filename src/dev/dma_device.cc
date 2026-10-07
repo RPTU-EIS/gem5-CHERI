@@ -124,6 +124,13 @@ DmaPort::handleResp(DmaReqState *state, Addr addr, Addr size, Tick delay)
         signalDrainDone();
 }
 
+void
+DmaPort::clearCapTags(PacketPtr pkt) const
+{
+    if (pkt->isWrite())
+        sys->cheritagtable.clearTagsInRange(pkt->getAddr(), pkt->getSize());
+}
+
 PacketPtr
 DmaPort::DmaReqState::createPacket()
 {
@@ -258,6 +265,7 @@ DmaPort::trySendTimingReq()
     DmaReqState *state = transmitList.front();
 
     PacketPtr pkt = inRetry ? inRetry : state->createPacket();
+    clearCapTags(pkt);
     inRetry = nullptr;
 
     DPRINTF(DMA, "Trying to send %s addr %#x\n", pkt->cmdString(),
@@ -297,6 +305,7 @@ bool
 DmaPort::sendAtomicReq(DmaReqState *state)
 {
     PacketPtr pkt = state->createPacket();
+    clearCapTags(pkt);
     DPRINTF(DMA, "Sending  DMA for addr: %#x size: %d\n",
             state->gen.addr(), state->gen.size());
     pendingCount++;
@@ -319,6 +328,7 @@ DmaPort::sendAtomicBdReq(DmaReqState *state)
         // We don't have a backdoor for this address, so use a packet.
 
         PacketPtr pkt = state->createPacket();
+        clearCapTags(pkt);
         DPRINTF(DMA, "Sending DMA for addr: %#x size: %d\n",
                 state->gen.addr(), state->gen.size());
 

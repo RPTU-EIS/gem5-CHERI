@@ -79,6 +79,19 @@ namespace gem5
                 }
             }
 
+            // True if any 16-byte granule in [paddr, paddr + size) holds a
+            // valid tag (used by timing models, e.g. tag-table zero
+            // elision in CheriTagController).
+            bool anyTagInRange(Addr paddr, size_t size) const {
+                if (size == 0 || tagTable.empty()) return false;
+                Addr end = alignAddress(paddr + size - 1);
+                for (Addr a = alignAddress(paddr); a <= end; a += CAP_SIZE) {
+                    if (tagTable.count(granuleIndex(a)))
+                        return true;
+                }
+                return false;
+            }
+
             void clear() {
                 DPRINTF(CHERI, "TagTable: clear all tags\n");
                 tagTable.clear();

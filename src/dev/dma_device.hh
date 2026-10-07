@@ -160,6 +160,10 @@ class DmaPort : public RequestPort, public Drainable
      * we are currently operating in. */
     System *const sys;
 
+    /** CHERI: a DMA write overwrites memory with plain data, so it clears
+     *  the capability tags of the granules it writes. */
+    void clearCapTags(PacketPtr pkt) const;
+
     /** Id for all requests */
     const RequestorID requestorId;
 

@@ -270,6 +270,29 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             )
             root.append(node)
 
+        # Memory the guest must not use, e.g. the tag table behind a
+        # CheriTaggedMemory. FreeBSD excludes /reserved-memory children
+        # from the physical memory map.
+        reserved = getattr(self.get_memory(), "get_reserved_ranges",
+                           lambda: [])()
+        if reserved:
+            rsv_node = FdtNode("reserved-memory")
+            rsv_node.append(state.addrCellsProperty())
+            rsv_node.append(state.sizeCellsProperty())
+            rsv_node.append(FdtProperty("ranges"))
+            for rng in reserved:
+                child = FdtNode(f"cheri-tags@{int(rng.start):x}")
+                child.append(
+                    FdtPropertyWords(
+                        "reg",
+                        state.addrCells(rng.start)
+                        + state.sizeCells(rng.size()),
+                    )
+                )
+                child.append(FdtProperty("no-map"))
+                rsv_node.append(child)
+            root.append(rsv_node)
+
         node = FdtNode(f"chosen")
         bootargs = self.workload.command_line
         node.append(FdtPropertyStrings("bootargs", [bootargs]))
