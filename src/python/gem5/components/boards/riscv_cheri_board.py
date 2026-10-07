@@ -196,8 +196,16 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         uncacheable_range.append(AddrRange(0x30000000, size="256MB"))
         uncacheable_range.append(AddrRange(0x40000000, size="512MB"))
 
-        # TODO: Not sure if this should be done per-core like in the example
-        for cpu in self.get_processor().get_cores():
+        # Every core needs the CHERI PMA checker, including the switched-out
+        # cores of a switchable processor (get_cores() only returns the
+        # active ones).
+        processor = self.get_processor()
+        cores = (
+            processor._all_cores()
+            if hasattr(processor, "_all_cores")
+            else processor.get_cores()
+        )
+        for cpu in cores:
             cpu.get_mmu().pma_checker = CHERIPMAChecker(
                 uncacheable=uncacheable_range
             )
@@ -305,7 +313,8 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
                     # Must be the standard "riscv,isa" -- the kernel parses this
                     # to build the CPU's extension set; a "riscv_cheri,isa" name
                     # is invisible to it ("Empty extension set for CPU 0").
-                    "riscv,isa", core.core.isa[0].get_isa_string()
+                    "riscv,isa",
+                    core.core.isa[0].get_isa_string(),
                 )
             )
             # TODO: Should probably get this from the core.
@@ -376,9 +385,7 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         plic_node.append(FdtPropertyWords("phandle", [phandle]))
         # FreeBSD's PLIC driver reads the "riscv,ndev" property (number of
         # interrupt sources); the "riscv_cheri," name is not read.
-        plic_node.append(
-            FdtPropertyWords("riscv,ndev", [plic.n_src - 1])
-        )
+        plic_node.append(FdtPropertyWords("riscv,ndev", [plic.n_src - 1]))
 
         int_extended = list()
         cpu_id = 0
@@ -532,11 +539,11 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
             self.workload.bootloader_filename = self._bootloader[0]
             self.workload.kernel_addr = 0x80200000
             self.workload.entry_point = 0x80200000  # Bootloader starting point
-        
+
         else:
             self.workload.kernel_addr = 0x0
             # self.workload.entry_point = 0x80200044
-            self.workload.entry_point = 0xffffffc000000044   
+            self.workload.entry_point = 0xFFFFFFC000000044
             # self.workload.entry_point = 0x80200000
 
         self._connect_things()
