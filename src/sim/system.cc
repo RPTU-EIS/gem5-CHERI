@@ -337,6 +337,8 @@ System::serialize(CheckpointOut &cp) const
 
     // also serialize the memories in the system
     physmem.serializeSection(cp, "physmem");
+    // and the CHERI capability tags that go with them
+    cheritagtable.serializeSection(cp, "cheritagtable");
 }
 
 
@@ -355,6 +357,7 @@ System::unserialize(CheckpointIn &cp)
 
     // also unserialize the memories in the system
     physmem.unserializeSection(cp, "physmem");
+    cheritagtable.unserializeSection(cp, "cheritagtable");
 }
 
 void

@@ -102,12 +102,10 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         }
 
         // Set fault registers and status
-        MiscRegIndex cause, epc, tvec, tval;
+        MiscRegIndex cause, tval;
         switch (prv) {
           case PRV_U:
             cause = MISCREG_UCAUSE;
-            epc = MISCREG_UEPC;
-            tvec = MISCREG_UTVEC;
             tval = MISCREG_UTVAL;
 
             status.upie = status.uie;
@@ -115,8 +113,6 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             break;
           case PRV_S:
             cause = MISCREG_SCAUSE;
-            epc = MISCREG_SEPC;
-            tvec = MISCREG_STVEC;
             tval = MISCREG_STVAL;
 
             status.spp = pp;
@@ -125,8 +121,6 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
             break;
           case PRV_M:
             cause = MISCREG_MCAUSE;
-            epc = MISCREG_MEPC;
-            tvec = isNonMaskableInterrupt() ? MISCREG_NMIVEC : MISCREG_MTVEC;
             tval = MISCREG_MTVAL;
 
             status.mpp = pp;
@@ -155,7 +149,6 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
            _cause |= CAUSE_INTERRUPT_MASKS[pc_state.rvType()];
         }
         tc->setMiscReg(cause, _cause);
-        tc->setMiscReg(epc, tc->pcState().instAddr());
         tc->setMiscReg(tval, trap_value());
         tc->setMiscReg(MISCREG_PRV, prv);
         tc->setMiscReg(MISCREG_STATUS, status);
@@ -187,7 +180,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         // legacy xTVEC CSR (which stays 0), so derive the handler address from
         // xTCC's address rather than getFaultHandlerAddr(tvec)/xTVEC (which
         // returned 0 and vectored every trap to PC=0 -> fetch-fault loop).
-        (void)tvec;  // legacy xTVEC index unused on the purecap trap path
+        // The integer xtvec/xepc CSRs are views of xTCC/xEPCC (isa.cc).
         uint64_t vec = new_pcc.getAddress();
         Addr addr = mbits(vec, 63, 2);
         if (isInterrupt() && bits(vec, 1, 0) == 1)

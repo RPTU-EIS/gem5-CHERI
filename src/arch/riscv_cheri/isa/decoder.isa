@@ -242,6 +242,8 @@ decode QUADRANT default Unknown::unknown() {
         }});
         0x1: decode RVTYPE {
             0x0: CJOp::c_jal({{
+                if (Fault _f = cheriCheckBranch(xc, PC_uw + imm))
+                    return _f;
                 ra_sw = NPC_uw;
                 NPC_uw = PC_uw + imm;
             }}, IsDirectControl, IsUncondControl, IsCall);
@@ -390,20 +392,28 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
         0x5: CJOp::c_j({{
+            if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                return _f;
             NPC = rvZext(PC + imm);
         }}, IsDirectControl, IsUncondControl);
         format CBOp {
             0x6: c_beqz({{
-                if (rvSext(Rp1) == 0)
+                if (rvSext(Rp1) == 0) {
+                    if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                        return _f;
                     NPC = rvZext(PC + imm);
-                else
+                } else {
                     NPC = NPC;
+                }
             }}, IsDirectControl, IsCondControl);
             0x7: c_bnez({{
-                if (rvSext(Rp1) != 0)
+                if (rvSext(Rp1) != 0) {
+                    if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                        return _f;
                     NPC = rvZext(PC + imm);
-                else
+                } else {
                     NPC = NPC;
+                }
             }}, IsDirectControl, IsCondControl);
         }
     }
@@ -506,7 +516,7 @@ decode QUADRANT default Unknown::unknown() {
                             "c.jr with x0 source (reserved)", machInst);
                     }
                     return cheriIndirectJump(xc, Cc1, cs1_idx, 0, 0, nullptr);
-                }}, IsIndirectControl, IsUncondControl);
+                }}, IsControl, IsIndirectControl, IsUncondControl);
                 default: CROp::c_mv({{
                     // RC1 == 0 is HINT
                     Rc1 = rvSext(Rc2);
@@ -529,7 +539,8 @@ decode QUADRANT default Unknown::unknown() {
                                 _ret, &_link))
                             return _f;
                         Cra = _link;
-                    }}, IsIndirectControl, IsUncondControl, IsCall);
+                    }}, IsControl, IsIndirectControl, IsUncondControl,
+                        IsCall);
                 }
                 default: CompressedROp::c_add({{
                     // RC1 == 0 is HINT
@@ -5378,10 +5389,25 @@ decode QUADRANT default Unknown::unknown() {
                                 isa->readCapMiscReg(misc_idx);
                             if (scr_index == 0)
                                 _oldVal.setAddress(_pcs.instAddr());
+                            // Sail: xEPCC reads are legalized, xTCC writes
+                            // legalized against the old mode.
+                            const bool _epcc = misc_idx == MISCREG_UEPCC ||
+                                misc_idx == MISCREG_SEPCC ||
+                                misc_idx == MISCREG_MEPCC;
+                            const bool _tcc = misc_idx == MISCREG_UTCC ||
+                                misc_idx == MISCREG_STCC ||
+                                misc_idx == MISCREG_MTCC;
+                            if (_epcc) {
+                                MISA misa = xc->readMiscReg(MISCREG_ISA);
+                                _oldVal = capLegalizeEpcc(_oldVal, misa.rvc);
+                            }
 
                             // Only write SCR if cs1 != c0 (read-only when c0)
-                            if (cs1_idx != 0)
-                                isa->setCapMiscReg(misc_idx, Cs1);
+                            if (cs1_idx != 0) {
+                                isa->setCapMiscReg(misc_idx, _tcc ?
+                                    capLegalizeTcc(isa->readCapMiscReg(
+                                        misc_idx), Cs1) : Cs1);
+                            }
 
                             Cd = _oldVal;
                         }}, IsNonSpeculative, IsSerializeAfter);
@@ -5644,7 +5670,7 @@ decode QUADRANT default Unknown::unknown() {
                                     xc->pcState().instAddr() + 4, &_link))
                                 return _f;
                             Cd = _link;
-                        }});
+                        }}, IsControl, IsIndirectControl, IsUncondControl);
 
                         // 0x0c: jalr_cap({{
                         //     using namespace gem5::CHERIRiscvISA;
@@ -5826,86 +5852,16 @@ decode QUADRANT default Unknown::unknown() {
                         }});
 
                         0x14: jalr_pcc({{
-                            using namespace gem5::CHERIRiscvISA;
-
-                            DPRINTF(CheriDecode, "JALR.PCC: rd=x%d rs1=x%d\n", RD, RS1);
-
-                            // Get current PCC from PC state
-                            CapRegContainer pcc = xc->pcState().as<PCState>().pcc();
-
-                            // Calculate target address (clear bit 0 for alignment)
-                            uint64_t target_addr = (Rs1 & ~1ULL);
-
-                            // Save return address (next PC) to integer register
+                            // JALR.PCC rd, rs1 (Sail JALR_PCC = RISCV_JALR):
+                            // integer jump to rs1 & ~1 within the current
+                            // PCC, checked against PCC at the jump; the
+                            // integer return address goes to rd.
+                            Addr _target = Rs1 & ~Addr(1);
+                            if (Fault _f = cheriCheckBranch(xc, _target))
+                                return _f;
                             Rd = NPC;
-
-                            // Decode PCC bounds
-                            CAPTYPE meta = pcc.getMetadata();
-                            uint64_t B_hi = meta.B;
-                            uint64_t T_hi = meta.T;
-                            uint64_t B_E = meta.BE;
-                            uint64_t T_E = meta.TE;
-                            uint64_t I_E = meta.IE;
-
-                            uint64_t E, B, T, L_carry_out, L_msb;
-
-                            if (I_E == 0) {
-                                E = 0;
-                                T = (T_hi << 3) | T_E;
-                                B = (B_hi << 3) | B_E;
-                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
-                                L_msb = 0;
-                            } else {
-                                E = (T_E << 3) | B_E;
-                                T = T_hi << 3;
-                                B = B_hi << 3;
-                                L_carry_out = (T < (B & 0xFFF)) ? 1 : 0;
-                                L_msb = 1;
-                            }
-
-                            uint64_t B_top2 = (B >> 12) & 0x3;
-                            T |= ((B_top2 + L_carry_out + L_msb) & 0x3) << 12;
-
-                            uint64_t A_3 = (PC >> (E + 11)) & 0x7;
-                            uint64_t B_3 = (B >> 11) & 0x7;
-                            uint64_t T_3 = (T >> 11) & 0x7;
-                            uint64_t R = (B_3 - 1) & 0x7;
-
-                            int64_t c_b, c_t;
-                            bool cond1_b = (A_3 < R);
-                            bool cond2_b = (B_3 < R);
-                            if (!cond1_b && !cond2_b) c_b = 0;
-                            else if (!cond1_b && cond2_b) c_b = 1;
-                            else if (cond1_b && !cond2_b) c_b = -1;
-                            else c_b = 0;
-
-                            bool cond1_t = (A_3 < R);
-                            bool cond2_t = (T_3 < R);
-                            if (!cond1_t && !cond2_t) c_t = 0;
-                            else if (!cond1_t && cond2_t) c_t = 1;
-                            else if (cond1_t && !cond2_t) c_t = -1;
-                            else c_t = 0;
-
-                            uint64_t a_top = (PC >> (E + 14));
-                            uint64_t base = ((a_top + c_b) << (E + 14)) | (B << E);
-                            uint64_t top = ((a_top + c_t) << (E + 14)) | (T << E);
-
-                            // Check bounds: target must be within (base, top)
-                            if (target_addr < base) {
-                                // fault = std::make_shared<AddressFault>(target_addr, INST_ADDR_MISALIGNED);
-                            } else if (target_addr + 4 > top) {  // min_instruction_bytes = 4
-                                // fault = std::make_shared<AddressFault>(target_addr, INST_ADDR_MISALIGNED);
-                            } else if ((target_addr & 0x1) != 0) {
-                                // Check alignment (bit 0 must be 0)
-                                // fault = std::make_shared<AddressFault>(target_addr, INST_ADDR_MISALIGNED);
-                            } else {
-                                // Update PC
-                                NPC = target_addr;
-
-                                DPRINTF(CheriDecode, "JALR.PCC: jumping to 0x%x, return in x%d=0x%x\n",
-                                        target_addr, RD, Rd);
-                            }
-                        }});
+                            NPC = _target;
+                        }}, IsIndirectControl, IsUncondControl);
 
                     }
                     }
@@ -6121,6 +6077,8 @@ decode QUADRANT default Unknown::unknown() {
             format BOp {
                 0x0: beq({{
                     if (rvSext(Rs1) == rvSext(Rs2)) {
+                        if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                            return _f;
                         NPC = rvZext(PC + imm);
                     } else {
                         NPC = rvZext(NPC);
@@ -6128,6 +6086,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsDirectControl, IsCondControl);
                 0x1: bne({{
                     if (rvSext(Rs1) != rvSext(Rs2)) {
+                        if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                            return _f;
                         NPC = rvZext(PC + imm);
                     } else {
                         NPC = rvZext(NPC);
@@ -6135,6 +6095,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsDirectControl, IsCondControl);
                 0x4: blt({{
                     if (rvSext(Rs1_sd) < rvSext(Rs2_sd)) {
+                        if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                            return _f;
                         NPC = rvZext(PC + imm);
                     } else {
                         NPC = rvZext(NPC);
@@ -6142,6 +6104,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsDirectControl, IsCondControl);
                 0x5: bge({{
                     if (rvSext(Rs1_sd) >= rvSext(Rs2_sd)) {
+                        if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                            return _f;
                         NPC = rvZext(PC + imm);
                     } else {
                         NPC = rvZext(NPC);
@@ -6149,6 +6113,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsDirectControl, IsCondControl);
                 0x6: bltu({{
                     if (rvZext(Rs1) < rvZext(Rs2)) {
+                        if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                            return _f;
                         NPC = rvZext(PC + imm);
                     } else {
                         NPC = rvZext(NPC);
@@ -6156,6 +6122,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsDirectControl, IsCondControl);
                 0x7: bgeu({{
                     if (rvZext(Rs1) >= rvZext(Rs2)) {
+                        if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                            return _f;
                         NPC = rvZext(PC + imm);
                     } else {
                         NPC = rvZext(NPC);
@@ -6174,7 +6142,7 @@ decode QUADRANT default Unknown::unknown() {
                         xc->pcState().as<PCState>().npc(), &_link))
                     return _f;
                 Cd = _link;
-            }}, IsIndirectControl, IsUncondControl);
+            }}, IsControl, IsIndirectControl, IsUncondControl);
         }
 
         // CJAL (purecap jal): the link register receives the PCC with its
@@ -6182,6 +6150,8 @@ decode QUADRANT default Unknown::unknown() {
         // integer return address instead produced untagged return
         // capabilities that the following cret could not legally use.)
         0x1b: JOp::jal({{
+            if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                return _f;
             Cd = CHERIRiscvISA::capMakeSentryLink(
                 xc->pcState().as<PCState>().pcc(), NPC);
             NPC = rvZext(PC + imm);
@@ -6218,11 +6188,18 @@ decode QUADRANT default Unknown::unknown() {
                                     "sret can't execute without N systems",
                                     machInst);
                             }
+                            if (Fault _f = cheriCheckPccAsr(xc))
+                                return _f;
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
                             status.uie = status.upie;
                             status.upie = 1;
                             xc->setMiscReg(MISCREG_STATUS, status);
-                            NPC = xc->readMiscReg(MISCREG_UEPC);
+                            // CHERI: continue at UEPCC (unsealed if a
+                            // sentry).
+                            auto *isa = dynamic_cast<ISA*>(
+                                xc->tcBase()->getIsaPtr());
+                            cheriReturnTo(xc,
+                                isa->readCapMiscReg(MISCREG_UEPCC));
                         }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                     }
                     0x8: decode RS2 {

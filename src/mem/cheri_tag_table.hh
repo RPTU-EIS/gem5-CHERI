@@ -1,8 +1,10 @@
 #ifndef __MEM_CHERI_TAG_TABLE_HH__
 #define __MEM_CHERI_TAG_TABLE_HH__
 
+#include <algorithm>
+#include <cstdint>
 #include <unordered_map>
-#include <cstdint> 
+#include <vector>
 
 #include "base/types.hh"
 #include "base/logging.hh"
@@ -105,36 +107,26 @@ namespace gem5
                 return (addr & (CAP_SIZE - 1)) == 0;
             }
 
+            // Checkpoint: the indices of the tagged granules, as one sorted
+            // array (a full CheriBSD boot holds ~10^5..10^6 tags).
             void serialize (CheckpointOut &cp) const override {
-                // Serialize the number of entries and then each entry
-                uint64_t numTags = tagTable.size();
-                SERIALIZE_SCALAR(numTags);
-
-                int i = 0;
+                std::vector<uint64_t> granules;
+                granules.reserve(tagTable.size());
                 for (const auto &[idx, tag] : tagTable) {
-                    // Store the physical address (granule index << 4)
-                    Addr paddr = idx << 4;
-                    paramOut(cp, csprintf("tagAddr_%d", i), paddr);
-                    paramOut(cp, csprintf("tagVal_%d", i), tag);
-                    i++;
+                    if (tag)
+                        granules.push_back(idx);
                 }
+                std::sort(granules.begin(), granules.end());
+                SERIALIZE_CONTAINER(granules);
             }
 
             void unserialize (CheckpointIn &cp) override {
+                std::vector<uint64_t> granules;
+                UNSERIALIZE_CONTAINER(granules);
                 tagTable.clear();
-                uint64_t numTags;
-                UNSERIALIZE_SCALAR(numTags);
-
-                for (uint64_t i = 0; i < numTags; i++) {
-                    Addr paddr;
-                    bool tag;
-                    paramIn(cp, csprintf("tagAddr_%d", i), paddr);
-                    paramIn(cp, csprintf("tagVal_%d", i), tag);
-                    uint64_t idx = granuleIndex(paddr);
-                    if (tag) {
-                        tagTable[idx] = true;
-                    }
-                }
+                tagTable.reserve(granules.size());
+                for (uint64_t idx : granules)
+                    tagTable[idx] = true;
             }
 
     };

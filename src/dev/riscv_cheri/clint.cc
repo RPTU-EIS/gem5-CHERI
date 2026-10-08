@@ -78,6 +78,14 @@ Clint::raiseInterruptPin(int id)
             isa->setMiscRegNoEffect(MISCREG_TIME, mtime);
         }
 
+        // SBI timer emulation: STIP once mtime reaches the compare value
+        // from sbi_set_timer; it stays pending until the next set_timer.
+        if (mtime >= isa->sbiTimecmp) {
+            isa->sbiTimecmp = ISA::SBI_TIMER_DISARMED;
+            tc->getCpuPtr()->postInterrupt(tc->threadId(),
+                    ExceptionCode::INT_TIMER_SUPER, 0);
+        }
+
         // Post timer interrupt
         uint64_t mtimecmp = registers.mtimecmp[context_id].get();
         if (mtime >= mtimecmp) {

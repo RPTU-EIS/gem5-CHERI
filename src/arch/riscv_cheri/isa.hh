@@ -192,6 +192,12 @@ class ISA : public BaseISA
     static constexpr RegVal SCCSR_TAG_CLEARING = 1ULL << 31;
     RegVal cheriSccsr = SCCSR_TAG_CLEARING | SCCSR_E;
 
+    // SBI timer emulation (there is no M-mode firmware): the S-mode timer
+    // compare value from sbi_set_timer. The CLINT raises STIP once mtime
+    // reaches it, then disarms it, as OpenSBI's MTIP handler does.
+    static constexpr uint64_t SBI_TIMER_DISARMED = ~uint64_t(0);
+    uint64_t sbiTimecmp = SBI_TIMER_DISARMED;
+
     void
     clearLoadReservation(ContextID cid)
     {

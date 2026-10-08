@@ -4,7 +4,9 @@
  * Each test runs in a forked child that performs exactly one capability
  * violation (or none, for the "nofault" tests). A SA_SIGINFO handler reports
  * signal, si_code and si_capreg, and the result is compared with what the
- * CHERI ISAv9 / CheriBSD would deliver (SIGPROT + PROT_CHERI_*).
+ * CHERI ISAv9 / CheriBSD would deliver (SIGPROT + PROT_CHERI_*). Control-flow
+ * tests also check si_addr (the trapping PC): as in Sail, a jump or branch to
+ * a target outside its bounds faults at the jump, not at the target.
  *
  * Build (purecap, static):
  *   ~/cheri/output/sdk/bin/clang --config cheribsd-riscv64-purecap.cfg \
@@ -14,6 +16,7 @@
 #include <cheriintrin.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +39,7 @@
 #define NOFAULT (-1)
 
 static volatile int exp_sig, exp_code, exp_capreg;
+static volatile __ptraddr_t exp_pc;       /* 0: don't care */
 static const char *volatile cur_name;
 
 static void
@@ -55,12 +59,15 @@ report(const char *fmt, ...)
 static void
 handler(int sig, siginfo_t *si, void *uc)
 {
+        __ptraddr_t pc = cheri_address_get(si->si_addr);
         int ok = sig == exp_sig && si->si_code == exp_code &&
-            (exp_capreg < 0 || si->si_capreg == exp_capreg);
+            (exp_capreg < 0 || si->si_capreg == exp_capreg) &&
+            (exp_pc == 0 || pc == exp_pc);
         (void)uc;
-        report("%-28s %s  got sig=%d code=%d capreg=%d  (want sig=%d code=%d"
-            " capreg=%d)\n", cur_name, ok ? "PASS" : "FAIL", sig, si->si_code,
-            si->si_capreg, exp_sig, exp_code, exp_capreg);
+        report("%-28s %s  got sig=%d code=%d capreg=%d pc=%#lx  (want sig=%d"
+            " code=%d capreg=%d pc=%#lx)\n", cur_name, ok ? "PASS" : "FAIL",
+            sig, si->si_code, si->si_capreg, (unsigned long)pc, exp_sig,
+            exp_code, exp_capreg, (unsigned long)exp_pc);
         _exit(ok ? 0 : 1);
 }
 
@@ -264,6 +271,82 @@ static void t_fetch_bounds(void)
         c = cheri_bounds_set(c, 2);
         ((fn_t)c)();
 }
+/*
+ * Out-of-bounds jumps and branches. Each cf_nb_* region is entered through a
+ * PCC bounded to just that region; its jump/branch then targets the ret at
+ * cf_nb_jal + 0x80, outside the bounds. The *_site labels mark the jumping
+ * instruction, which is where the fault must be reported.
+ */
+void cf_nb_jal(void), cf_nb_jal_site(void);
+void cf_nb_beq(void), cf_nb_beq_site(void);
+void cf_nb_cj(void), cf_nb_cj_site(void);
+void cf_nb_ok(void);
+void cf_jalr_site(void);
+__asm__(
+"        .text\n"
+"        .p2align 2\n"
+"        .option push\n"
+"        .option norvc\n"
+"        .globl cf_nb_jal, cf_nb_jal_site, cf_nb_beq, cf_nb_beq_site\n"
+"        .globl cf_nb_ok, cf_nb_cj, cf_nb_cj_site\n"
+"        .type cf_nb_jal, @function\n"
+"        .type cf_nb_jal_site, @function\n"
+"        .type cf_nb_beq, @function\n"
+"        .type cf_nb_beq_site, @function\n"
+"        .type cf_nb_ok, @function\n"
+"        .type cf_nb_cj, @function\n"
+"        .type cf_nb_cj_site, @function\n"
+/* Raw encodings in a fixed layout: the assembler would otherwise expand the
+ * branches (beq -> bnez + j, c.j -> j). The out-of-bounds target is +0x80. */
+"cf_nb_jal:\n"                  /* 0x00, 8 bytes */
+"        nop\n"
+"cf_nb_jal_site:\n"             /* 0x04 */
+"        .4byte 0x07c0006f\n"       /* jal zero, +0x7c */
+"cf_nb_beq:\n"                  /* 0x08, 8 bytes */
+"        nop\n"
+"cf_nb_beq_site:\n"             /* 0x0c */
+"        .4byte 0x06000a63\n"       /* beq zero, zero, +0x74 */
+"cf_nb_ok:\n"                   /* 0x10, 12 bytes: in-bounds branch */
+"        .4byte 0x00000463\n"       /* beq zero, zero, +8 */
+"        nop\n"
+"        ret\n"                  /* 0x18 */
+"        .option rvc\n"
+"cf_nb_cj:\n"                   /* 0x1c, 4 bytes */
+"        c.nop\n"
+"cf_nb_cj_site:\n"              /* 0x1e */
+"        .2byte 0xa08d\n"           /* c.j +0x62 */
+"        .option norvc\n"
+"        .fill 24, 4, 0x00000013\n"     /* 0x20 .. 0x7f: nops */
+"        ret\n"                  /* 0x80: the target */
+"        .option pop\n");
+
+static void
+call_narrow(void (*start)(void), size_t len)
+{
+        void *c = cheri_address_set(cheri_pcc_get(),
+            cheri_address_get((void *)start));
+
+        ((fn_t)cheri_bounds_set_exact(c, len))();
+}
+static void t_branch_bounds_jal(void) { call_narrow(cf_nb_jal, 8); }
+static void t_branch_bounds_beq(void) { call_narrow(cf_nb_beq, 8); }
+static void t_branch_bounds_cj(void) { call_narrow(cf_nb_cj, 4); }
+static void t_nofault_branch_inbounds(void) { call_narrow(cf_nb_ok, 12); }
+static void
+t_jump_bounds(void)
+{
+        /* CJALR to callee + 64 through a capability bounded to callee's
+         * first 16 bytes: a length violation on cs1 (ct1 = c6), at the
+         * jalr, before cra is written. */
+        void *c = cheri_address_set(cheri_pcc_get(),
+            cheri_address_get((void *)&callee));
+        register void *t __asm__("ct1") = cheri_address_set(
+            cheri_bounds_set_exact(c, 16), cheri_address_get(c) + 64);
+        __asm__ volatile(".globl cf_jalr_site\n"
+            ".type cf_jalr_site, @function\n"
+            "cf_jalr_site:\n"
+            "        jalr cra, 0(%0)" :: "C"(t) : "ra", "memory");
+}
 static void t_nofault_call_return(void)
 {
         /* jal/jalr link capabilities must be valid sentries. */
@@ -277,10 +360,12 @@ struct test
         const char *name;
         void (*fn)(void);
         int sig, code, capreg;  /* capreg -1: don't care */
+        void (*site)(void);     /* expected trapping PC; NULL: don't care */
 };
 
-#define F(n, c, r) { #n, t_##n, SIGPROT, PROT_CHERI_##c, r }
-#define NF(n) { #n, t_##n, NOFAULT, 0, -1 }
+#define F(n, c, r) { #n, t_##n, SIGPROT, PROT_CHERI_##c, r, NULL }
+#define FPC(n, c, r, s) { #n, t_##n, SIGPROT, PROT_CHERI_##c, r, s }
+#define NF(n) { #n, t_##n, NOFAULT, 0, -1, NULL }
 
 static const struct test tests[] = {
         F(bounds_store, BOUNDS, -1),
@@ -311,6 +396,11 @@ static const struct test tests[] = {
         F(jump_untagged, TAG, -1),
         F(jump_noexec, PERM, -1),
         F(fetch_bounds, BOUNDS, 32),
+        FPC(jump_bounds, BOUNDS, 6, cf_jalr_site),
+        FPC(branch_bounds_jal, BOUNDS, 32, cf_nb_jal_site),
+        FPC(branch_bounds_beq, BOUNDS, 32, cf_nb_beq_site),
+        FPC(branch_bounds_cj, BOUNDS, 32, cf_nb_cj_site),
+        NF(nofault_branch_inbounds),
         NF(nofault_call_return),
 };
 
@@ -335,6 +425,7 @@ run(const struct test *t)
                 exp_sig = t->sig;
                 exp_code = t->code;
                 exp_capreg = t->capreg;
+                exp_pc = t->site ? cheri_address_get((void *)t->site) : 0;
                 cur_name = t->name;
                 t->fn();
                 if (t->sig == NOFAULT) {

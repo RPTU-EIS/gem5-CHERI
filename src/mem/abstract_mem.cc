@@ -571,8 +571,11 @@ AbstractMemory::functionalAccess(PacketPtr pkt)
         if (pmemAddr) {
             pkt->writeData(host_addr);
         }
-        // ── CHERI: functional writes also clear tags unless it's a capability store ──
-        if (pkt->req->isCapStore()) {
+        // ── CHERI: functional writes also clear tags unless it's a capability
+        // store, or a cache writeback (tag-neutral) ──
+        if (pkt->req->isTagNeutral()) {
+            // data already covered by the tag table
+        } else if (pkt->req->isCapStore()) {
             system()->cheritagtable.setTag(
                 pkt->getAddr(), pkt->req->getCapTag());
         } else {

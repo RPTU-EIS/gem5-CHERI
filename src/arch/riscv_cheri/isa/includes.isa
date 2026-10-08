@@ -191,12 +191,27 @@ cheriDdc(ExecContext *xc)
 inline void
 cheriReturnTo(ExecContext *xc, CapRegContainer epcc)
 {
+    MISA misa = xc->readMiscReg(MISCREG_ISA);
+    epcc = capLegalizeEpcc(epcc, misa.rvc);
     Addr target = epcc.getAddress();
     PCState next = xc->pcState().as<PCState>();
     next.pcc(capJumpTargetPcc(epcc, target));
     next.set(target);
     next.npc(target);
     xc->pcState(next);
+}
+
+// Direct jump or taken branch to `target` (JAL, Bxx, C.J, C.BEQZ, ...): the
+// target must lie within PCC. Checked at the branch, before the link
+// register is written (Sail ext_control_check_pc).
+inline Fault
+cheriCheckBranch(ExecContext *xc, Addr target)
+{
+    const PCState &cur = xc->pcState().as<PCState>();
+    CapRegContainer pcc = cur.pcc();
+    pcc.setAddress(cur.instAddr());
+    return capEnforce(xc->tcBase(), capCheckBranch(pcc, target),
+                      CHERI_CAPIDX_PCC, target);
 }
 
 // xRET and privileged CSR/SCR access require
@@ -229,6 +244,9 @@ cheriCheckCsrAccess(ExecContext *xc, uint64_t csr)
 // CJALR / C.CJR / C.CJALR. Raises the capability exception if enforcing;
 // otherwise installs the new PCC (sentries are unsealed) and PC, and, if
 // `link` is non-null, returns the sentry return capability for `retAddr`.
+// The PC state is written directly (to carry the new PCC), so the parser
+// does not see an NPC write: callers must list IsControl themselves, or the
+// pipelined CPUs never predict the jump.
 inline Fault
 cheriIndirectJump(ExecContext *xc, CapRegContainer target, int capIdx,
                   int64_t imm, Addr retAddr, CapRegContainer *link)

@@ -481,6 +481,10 @@ class Request : public Extensible<Request>
     /** CHERI: should the tag be cleared on load (page permission) */
     bool _cheriClearTagOnLoad = false;
 
+    /** CHERI: a write that only moves data already in memory's view (a
+     *  cache writeback), so it must leave the tags alone */
+    bool _cheriTagNeutral = false;
+
   public:
 
     /**
@@ -527,7 +531,9 @@ class Request : public Extensible<Request>
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
           accessDelta(other.accessDelta), depth(other.depth), 
-          _cheriCapTag(other._cheriCapTag), _cheriClearTagOnLoad(other._cheriClearTagOnLoad)
+          _cheriCapTag(other._cheriCapTag),
+          _cheriClearTagOnLoad(other._cheriClearTagOnLoad),
+          _cheriTagNeutral(other._cheriTagNeutral)
     {
         atomicOpFunctor.reset(other.atomicOpFunctor ?
                                 other.atomicOpFunctor->clone() : nullptr);
@@ -1146,6 +1152,9 @@ class Request : public Extensible<Request>
 
     bool getClearTagOnLoad() const { return _cheriClearTagOnLoad; }
     void setClearTagOnLoad(bool c) { _cheriClearTagOnLoad = c; }
+
+    bool isTagNeutral() const { return _cheriTagNeutral; }
+    void setTagNeutral() { _cheriTagNeutral = true; }
 };
 
 } // namespace gem5

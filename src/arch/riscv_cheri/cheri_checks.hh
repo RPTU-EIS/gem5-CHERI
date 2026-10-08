@@ -221,9 +221,13 @@ capLoadResult(const CapRegContainer &loaded, const CapRegContainer &auth)
     return r;
 }
 
+// Smallest instruction (RVC is always enabled): the bounds a jump target must
+// satisfy (Sail min_instruction_bytes()).
+constexpr uint64_t CHERI_MIN_INST_BYTES = 2;
+
 // Indirect jump through `target` with immediate offset `imm` (Sail CJALR /
-// C.CJR / C.CJALR). Bounds are not checked here: ISAv9 checks PCC bounds on
-// instruction fetch (capCheckFetch()).
+// C.CJR / C.CJALR). As in Sail, the target's bounds are checked at the jump,
+// against `target` (not later, on fetch, against the new PCC).
 inline CheriCapException
 capCheckJump(const CapRegContainer &target, int64_t imm)
 {
@@ -233,6 +237,19 @@ capCheckJump(const CapRegContainer &target, int64_t imm)
         return CheriCapException::SealViolation;
     if (!capHasPerm(target, CHERIPerms::EXECUTE))
         return CheriCapException::PermitExecuteViolation;
+    uint64_t new_pc = (target.getAddress() + imm) & ~uint64_t(1);
+    if (!capInBounds(target, new_pc, CHERI_MIN_INST_BYTES))
+        return CheriCapException::LengthViolation;
+    return CheriCapException::None;
+}
+
+// Direct jump or taken branch to `target_pc` under the current PCC (Sail
+// ext_control_check_pc / ext_control_check_addr): checked at the branch.
+inline CheriCapException
+capCheckBranch(const CapRegContainer &pcc, uint64_t target_pc)
+{
+    if (!capInBounds(pcc, target_pc & ~uint64_t(1), CHERI_MIN_INST_BYTES))
+        return CheriCapException::LengthViolation;
     return CheriCapException::None;
 }
 
@@ -302,6 +319,45 @@ capSetAddr(const CapRegContainer &c, uint64_t addr)
     if (r.getTag() && (capIsSealed(c) || !capBoundsEqual(c, r)))
         r.setTag(false);
     return r;
+}
+
+// ---- Trap-vector / exception-PC capabilities ----
+//
+// The integer CSRs xtvec and xepc are views of the address of xTCC and
+// xEPCC. Writes go through capSetAddr (Sail update_cap_with_integer_pc).
+
+// Sail legalize_xepc: epc[0] is 0, and so is epc[1] without RVC.
+inline uint64_t
+capLegalizeXepc(uint64_t v, bool rvc)
+{
+    return v & ~uint64_t(rvc ? 1 : 3);
+}
+
+// Sail legalize_epcc: applied when xEPCC is read or used by xRET, not on
+// writes. Untouched if already legal (so a sentry keeps its tag).
+inline CapRegContainer
+capLegalizeEpcc(const CapRegContainer &epcc, bool rvc)
+{
+    uint64_t a = epcc.getAddress();
+    uint64_t l = capLegalizeXepc(a, rvc);
+    return l == a ? epcc : capSetAddr(epcc, l);
+}
+
+// Sail legalize_tvec: a reserved mode (2, 3) keeps the old mode.
+inline uint64_t
+capLegalizeTvec(uint64_t old_tvec, uint64_t v)
+{
+    if ((v & 3) >= 2)
+        v = (v & ~uint64_t(3)) | (old_tvec & 3);
+    return v;
+}
+
+// Sail legalize_tcc: xTCC written with `v` (CSpecialRW).
+inline CapRegContainer
+capLegalizeTcc(const CapRegContainer &old_tcc, const CapRegContainer &v)
+{
+    return capSetAddr(v, capLegalizeTvec(old_tcc.getAddress(),
+                                         v.getAddress()));
 }
 
 // CSetBounds / CSetBoundsImm / CSetBoundsExact: bounds [address,

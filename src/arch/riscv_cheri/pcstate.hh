@@ -189,7 +189,10 @@ class PCState : public GenericISA::UPCState<4>
             _vlenb == opc._vlenb &&
             _vtype == opc._vtype &&
             _vl == opc._vl &&
-            _pcc == opc._pcc &&
+            // PCC's address is the PC (compared by Base::equals); _pcc's
+            // own address field is not kept in step by advance()/npc().
+            _pcc.getMetadata() == opc._pcc.getMetadata() &&
+            _pcc.getTag() == opc._pcc.getTag() &&
             _capMode == opc._capMode;
     }
 
@@ -223,15 +226,15 @@ class PCState : public GenericISA::UPCState<4>
         UNSERIALIZE_SCALAR(_compressed);
         UNSERIALIZE_SCALAR(_capMode);
         
-        uint64_t pcc_addr, pcc_meta;
-        bool pcc_tag;
-        UNSERIALIZE_SCALAR(pcc_addr);
-        UNSERIALIZE_SCALAR(pcc_meta);
-        UNSERIALIZE_SCALAR(pcc_tag);
-        
-        _pcc.setAddress(pcc_addr);
-        _pcc.setMetadata(pcc_meta);
-        _pcc.setTag(pcc_tag);
+        uint64_t pccAddress, pccMetadata;
+        bool pccTag;
+        UNSERIALIZE_SCALAR(pccAddress);
+        UNSERIALIZE_SCALAR(pccMetadata);
+        UNSERIALIZE_SCALAR(pccTag);
+
+        _pcc.setAddress(pccAddress);
+        _pcc.setMetadata(pccMetadata);
+        _pcc.setTag(pccTag);
     }
 };
 

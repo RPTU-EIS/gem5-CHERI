@@ -1838,6 +1838,9 @@ BaseCache::writebackVisitor(CacheBlk &blk)
         if (blk.isSecure()) {
             request->setFlags(Request::SECURE);
         }
+        // CHERI: a writeback carries the line's data, not new stores; the
+        // tags of capabilities in it must survive (e.g. a checkpoint).
+        request->setTagNeutral();
 
         Packet packet(request, MemCmd::WriteReq);
         packet.dataStatic(blk.data);

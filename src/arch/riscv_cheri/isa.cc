@@ -35,6 +35,7 @@
 #include <set>
 #include <sstream>
 
+#include "arch/riscv_cheri/cheri_checks.hh"
 #include "arch/riscv_cheri/faults.hh"
 #include "arch/riscv_cheri/insts/static_inst.hh"
 #include "arch/riscv_cheri/interrupts.hh"
@@ -255,6 +256,27 @@ RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 0,
 RegClass matRegClass(MatRegClass, MatRegClassName, 0, debug::MatRegs);
 RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
 
+// CHERI: the capability registers behind the integer xepc / xtvec CSRs.
+RegIndex
+cheriEpccOf(RegIndex epc)
+{
+    switch (epc) {
+      case MISCREG_UEPC: return MISCREG_UEPCC;
+      case MISCREG_SEPC: return MISCREG_SEPCC;
+      default: return MISCREG_MEPCC;
+    }
+}
+
+RegIndex
+cheriTccOf(RegIndex tvec)
+{
+    switch (tvec) {
+      case MISCREG_UTVEC: return MISCREG_UTCC;
+      case MISCREG_STVEC: return MISCREG_STCC;
+      default: return MISCREG_MTCC;
+    }
+}
+
 } // anonymous namespace
 
 ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
@@ -345,6 +367,7 @@ ISA::copyRegsFrom(ThreadContext *src)
         }
         // sccsr is ISA state rather than a misc register.
         cheriSccsr = src_isa->cheriSccsr;
+        sbiTimecmp = src_isa->sbiTimecmp;
 
         DPRINTF(RiscvMisc, "Copied %d capability misc registers\n",
                 capMiscRegFile.size());
@@ -561,18 +584,22 @@ ISA::readMiscReg(RegIndex idx)
         {
             return readMiscReg(MISCREG_IE) & SI_MASK[getPrivilegeModeSet()];
         }
+      case MISCREG_UEPC:
       case MISCREG_SEPC:
       case MISCREG_MEPC:
         {
+            // CHERI: xepc is the address of xEPCC (Sail get_xret_target);
+            // epc[0] is always 0, and so is epc[1] without RVC.
             MISA misa = readMiscRegNoEffect(MISCREG_ISA);
-            auto val = readMiscRegNoEffect(idx);
-            // if compressed instructions are disabled, epc[1] is set to 0
-            if (misa.rvc == 0)
-                return mbits(val, 63, 2);
-            // epc[0] is always 0
-            else
-                return mbits(val, 63, 1);
+            return capLegalizeXepc(
+                readCapMiscRegNoEffect(cheriEpccOf(idx)).getAddress(),
+                misa.rvc);
         }
+      case MISCREG_UTVEC:
+      case MISCREG_STVEC:
+      case MISCREG_MTVEC:
+        // CHERI: xtvec is the address of xTCC (Sail get_mtvec).
+        return readCapMiscRegNoEffect(cheriTccOf(idx)).getAddress();
       case MISCREG_STATUS:
         {
             // Updating the SD bit.
@@ -1012,6 +1039,29 @@ ISA::setMiscReg(RegIndex idx, RegVal val)
                 setMiscRegNoEffect(MISCREG_FRM, bits(val, 7, 5));
             }
             break;
+          case MISCREG_UEPC:
+          case MISCREG_SEPC:
+          case MISCREG_MEPC:
+            {
+                // CHERI: sets the address of xEPCC; the tag is cleared if
+                // xEPCC is sealed (Sail set_xret_target).
+                RegIndex epcc = cheriEpccOf(idx);
+                setCapMiscRegNoEffect(epcc,
+                    capSetAddr(readCapMiscRegNoEffect(epcc), val));
+            }
+            break;
+          case MISCREG_UTVEC:
+          case MISCREG_STVEC:
+          case MISCREG_MTVEC:
+            {
+                // CHERI: sets the address of xTCC, keeping the old mode if
+                // the new one is reserved (Sail set_mtvec).
+                RegIndex tcc = cheriTccOf(idx);
+                CapRegContainer old = readCapMiscRegNoEffect(tcc);
+                setCapMiscRegNoEffect(tcc, capSetAddr(old,
+                    capLegalizeTvec(old.getAddress(), val)));
+            }
+            break;
           default:
             setMiscRegNoEffect(idx, val);
         }
@@ -1039,6 +1089,9 @@ ISA::serialize(CheckpointOut &cp) const
 
     DPRINTF(RiscvMisc, "Serialized %d capability misc registers\n",
             capMiscRegFile.size());
+
+    SERIALIZE_SCALAR(cheriSccsr);
+    SERIALIZE_SCALAR(sbiTimecmp);
 }
 
 void
@@ -1062,6 +1115,9 @@ ISA::unserialize(CheckpointIn &cp)
 
     DPRINTF(RiscvMisc, "Unserialized %d capability misc registers\n",
             capMiscRegFile.size());
+
+    UNSERIALIZE_OPT_SCALAR(cheriSccsr);
+    UNSERIALIZE_OPT_SCALAR(sbiTimecmp);
 }
 
 void

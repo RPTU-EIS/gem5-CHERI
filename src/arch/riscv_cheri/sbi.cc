@@ -10,7 +10,10 @@
 #include <iostream>
 
 #include "arch/generic/cap_reg.hh"
+#include "arch/riscv_cheri/faults.hh"
+#include "arch/riscv_cheri/isa.hh"
 #include "arch/riscv_cheri/regs/cap.hh"
+#include "cpu/base.hh"
 #include "cpu/thread_context.hh"
 #include "mem/port_proxy.hh"
 #include "sim/sim_exit.hh"
@@ -87,6 +90,17 @@ getConsole()
     return -1;
 }
 
+// sbi_set_timer(stime_value): arm the S-mode timer (see ISA::sbiTimecmp; the
+// CLINT raises STIP when mtime reaches it) and clear any pending STIP.
+void
+setTimer(ThreadContext *tc, uint64_t stime_value)
+{
+    auto *isa = static_cast<ISA *>(tc->getIsaPtr());
+    isa->sbiTimecmp = stime_value;
+    tc->getCpuPtr()->clearInterrupt(tc->threadId(),
+                                    ExceptionCode::INT_TIMER_SUPER, 0);
+}
+
 // SBI error codes
 constexpr int64_t SBI_SUCCESS = 0;
 constexpr int64_t SBI_ERR_NOT_SUPPORTED = -2;
@@ -151,6 +165,8 @@ handleSbiEcall(ThreadContext *tc)
             exitSimLoop("SBI shutdown (legacy)");
             break;
           case EXT_SET_TIMER:
+            setTimer(tc, a0);
+            break;
           case EXT_CLEAR_IPI:
           case EXT_SEND_IPI:
           case EXT_REMOTE_FENCE_I:
@@ -224,7 +240,13 @@ handleSbiEcall(ThreadContext *tc)
         }
         break;
 
-      case EXT_TIME:   // set_timer(a0) -- stubbed for bring-up
+      case EXT_TIME:
+        if (fid == 0)
+            setTimer(tc, a0);
+        else
+            err = SBI_ERR_NOT_SUPPORTED;
+        break;
+
       case EXT_IPI:    // send_ipi -- single hart
       case EXT_RFENCE: // remote fences -- single hart
         err = SBI_SUCCESS;
