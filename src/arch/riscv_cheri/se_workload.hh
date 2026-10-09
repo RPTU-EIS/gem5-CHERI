@@ -28,7 +28,9 @@
 #ifndef __ARCH_RISCV_CHERI_SE_WORKLOAD_HH__
 #define __ARCH_RISCV_CHERI_SE_WORKLOAD_HH__
 
+#include "arch/generic/cap_reg.hh"
 #include "arch/riscv_cheri/reg_abi.hh"
+#include "arch/riscv_cheri/regs/cap.hh"
 #include "arch/riscv_cheri/regs/int.hh"
 #include "arch/riscv_cheri/remote_gdb.hh"
 #include "params/CHERIRiscvSEWorkload.hh"
@@ -69,19 +71,24 @@ class SEWorkload : public gem5::SEWorkload
 namespace guest_abi
 {
 
+// As in reg_abi.hh: on this ISA the plain-integer value of a register is
+// the address field of its (merged-file) capability (see
+// arch/riscv_cheri/sbi.cc). Writing the syscall return value through
+// intRegClass (ReturnValueReg = int_reg::A0) leaves it somewhere
+// userspace's "a0" reads never actually observe; it has to go through
+// the capability register's address field instead, same as sbi.cc's
+// wrReg() helper.
 template <>
 struct Result<CHERIRiscvISA::SEWorkload::SyscallABI64, SyscallReturn>
 {
     static void
     store(ThreadContext *tc, const SyscallReturn &ret)
     {
-        if (ret.successful()) {
-            // no error
-            tc->setReg(CHERIRiscvISA::ReturnValueReg, ret.returnValue());
-        } else {
-            // got an error, return details
-            tc->setReg(CHERIRiscvISA::ReturnValueReg, ret.encodedValue());
-        }
+        CapRegContainer c;
+        c.setAddress(ret.successful() ? ret.returnValue() :
+                ret.encodedValue());
+        c.setTag(false);
+        tc->setReg(CHERIRiscvISA::ReturnValueCap, &c);
     }
 };
 
@@ -91,15 +98,11 @@ struct Result<CHERIRiscvISA::SEWorkload::SyscallABI32, SyscallReturn>
     static void
     store(ThreadContext *tc, const SyscallReturn &ret)
     {
-        if (ret.successful()) {
-            // no error
-            tc->setReg(CHERIRiscvISA::ReturnValueReg,
-                sext<32>(ret.returnValue()));
-        } else {
-            // got an error, return details
-            tc->setReg(CHERIRiscvISA::ReturnValueReg,
-                sext<32>(ret.encodedValue()));
-        }
+        CapRegContainer c;
+        c.setAddress(sext<32>(ret.successful() ? ret.returnValue() :
+                ret.encodedValue()));
+        c.setTag(false);
+        tc->setReg(CHERIRiscvISA::ReturnValueCap, &c);
     }
 };
 

@@ -87,6 +87,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       commit(this, params),
 
       regFile(params.numPhysIntRegs,
+              params.numPhysCapRegs,
               params.numPhysFloatRegs,
               params.numPhysVecRegs,
               params.numPhysVecPredRegs,
@@ -198,6 +199,11 @@ CPU::CPU(const BaseO3CPUParams &params)
             regClasses.at(IntRegClass)->numRegs() != 0,
             "Not enough physical registers, consider increasing "
             "numPhysIntRegs\n");
+    panic_if(params.numPhysCapRegs <=
+            numThreads * regClasses.at(CapRegClass)->numRegs() &&
+            regClasses.at(CapRegClass)->numRegs() != 0,
+            "Not enough physical registers, consider increasing "
+            "numPhysCapRegs\n");
     panic_if(params.numPhysFloatRegs <=
             numThreads * regClasses.at(FloatRegClass)->numRegs() &&
             regClasses.at(FloatRegClass)->numRegs() != 0,

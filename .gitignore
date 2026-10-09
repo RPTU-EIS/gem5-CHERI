@@ -9,6 +9,13 @@ cscope.out
 .*.swp
 .*.swo
 m5out
+m5out*
+kernel/
+scratch/
+remove_ticks.sh
+binaries/*
+.idea
+*.log
 /src/doxygen/html
 /ext/dramsim2/DRAMSim2
 /ext/mcpat/regression/*/*.out

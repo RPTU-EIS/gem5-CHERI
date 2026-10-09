@@ -154,8 +154,16 @@ def template CapLoadCompleteAcc {{
         // without caches.
         // (ORIGINAL request-piggyback, kept for revert:)
         //   bool tag = pkt->req->getCapTag();
-        bool tag = xc->tcBase()->getSystemPtr()->
-            cheritagtable.getTag(pkt->getAddr());
+        // If this load was served via O3 store-to-load forwarding, the
+        // tag table may not reflect the source store yet (its own
+        // completeAcc, which writes the table, can happen well after
+        // a dependent load is forwarded data) -- trust the forwarded
+        // tag instead of the table in that case. See
+        // Request::_cheriCapTagForwarded and lsq_unit.cc's forwarding
+        // path.
+        bool tag = pkt->req->getCapTagForwarded() ?
+            pkt->req->getCapTag() :
+            xc->tcBase()->getSystemPtr()->cheritagtable.getTag(pkt->getAddr());
         if (pkt->req->getClearTagOnLoad()) {
             tag = false;
         }
@@ -441,7 +449,7 @@ def template CapDataStoreExecute {{
         %(op_rd)s;
         %(ea_code)s;
 
-        
+
 
         %(cap_check_code)s;
 

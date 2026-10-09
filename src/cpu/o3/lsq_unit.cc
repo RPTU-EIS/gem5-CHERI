@@ -41,6 +41,8 @@
 
 #include "cpu/o3/lsq_unit.hh"
 
+#include <cstdio>
+
 #include "arch/generic/debugfaults.hh"
 #include "base/str.hh"
 #include "cpu/checker/cpu.hh"
@@ -183,7 +185,19 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
             }
         } else if (inst->isStore()) {
             // This is a regular store (i.e., not store conditionals and
-            // atomics), so it can complete without writing back
+            // atomics), so it can complete without writing back to a
+            // register -- but it must still run completeAcc(). CHERI
+            // capability stores record their tag into the CheriTagTable
+            // there (CapStoreCompleteAcc), and plain stores clear any
+            // stale tag in the range they overwrite there too
+            // (StoreCompleteAcc). Skipping this call (as stock gem5
+            // does, since upstream completeAcc for a plain store is a
+            // no-op) meant a capability store's tag was only ever
+            // recorded when a dependent load happened to catch it via
+            // store-to-load forwarding while still in the LSQ; any load
+            // reading the value back after the store had already left
+            // the queue saw a stale/missing tag from the table instead.
+            inst->completeAcc(request->mainPacket());
             completeStore(request->instruction()->sqIt);
         }
     }
@@ -1473,6 +1487,25 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 PacketPtr data_pkt = new Packet(request->mainReq(),
                         MemCmd::ReadReq);
                 data_pkt->dataStatic(load_inst->memData);
+
+                // ── CHERI: forward the capability tag too ──
+                // The 16 data bytes above are correctly forwarded from
+                // the store's own buffer, but the tag bit lives in a
+                // separate side table (CheriTagTable) that the source
+                // store only updates at its own completeAcc -- which,
+                // for a store still sitting in the store queue, can
+                // happen well after this load is served here via
+                // forwarding. Without this, CapLoadCompleteAcc would
+                // read the tag table before the store ever wrote to
+                // it. Carry the tag on the request instead (see
+                // Request::setCapTagForwarded); DynInst::writeCapMem
+                // is what makes the store's own request hold the
+                // correct tag this early.
+                if (request->mainReq()->isCapLoad() &&
+                        store_it->request()->req(0)->isCapStore()) {
+                    data_pkt->req->setCapTagForwarded(
+                        store_it->request()->req(0)->getCapTag());
+                }
 
                 // hardware transactional memory
                 // Store to load forwarding within a transaction

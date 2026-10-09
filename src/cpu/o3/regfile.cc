@@ -50,6 +50,7 @@ namespace o3
 {
 
 PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
+                         unsigned _numPhysicalCapRegs,
                          unsigned _numPhysicalFloatRegs,
                          unsigned _numPhysicalVecRegs,
                          unsigned _numPhysicalVecPredRegs,
@@ -57,6 +58,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                          unsigned _numPhysicalCCRegs,
                          const BaseISA::RegClasses &reg_classes)
     : intRegFile(*reg_classes.at(IntRegClass), _numPhysicalIntRegs),
+      capRegFile(*reg_classes.at(CapRegClass), _numPhysicalCapRegs),
       floatRegFile(*reg_classes.at(FloatRegClass), _numPhysicalFloatRegs),
       vectorRegFile(*reg_classes.at(VecRegClass), _numPhysicalVecRegs),
       vectorElemRegFile(*reg_classes.at(VecElemClass), _numPhysicalVecRegs * (
@@ -67,6 +69,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
       matRegFile(*reg_classes.at(MatRegClass), _numPhysicalMatRegs),
       ccRegFile(*reg_classes.at(CCRegClass), _numPhysicalCCRegs),
       numPhysicalIntRegs(_numPhysicalIntRegs),
+      numPhysicalCapRegs(_numPhysicalCapRegs),
       numPhysicalFloatRegs(_numPhysicalFloatRegs),
       numPhysicalVecRegs(_numPhysicalVecRegs),
       numPhysicalVecElemRegs(_numPhysicalVecRegs * (
@@ -76,6 +79,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
       numPhysicalMatRegs(_numPhysicalMatRegs),
       numPhysicalCCRegs(_numPhysicalCCRegs),
       totalNumRegs(_numPhysicalIntRegs
+                   + _numPhysicalCapRegs
                    + _numPhysicalFloatRegs
                    + _numPhysicalVecRegs
                    + numPhysicalVecElemRegs
@@ -89,6 +93,14 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
     // The initial batch of registers are the integer ones
     for (phys_reg = 0; phys_reg < numPhysicalIntRegs; phys_reg++) {
         intRegIds.emplace_back(*reg_classes.at(IntRegClass),
+                phys_reg, flat_reg_idx++);
+    }
+
+    // The next batch of the registers are the capability physical
+    // registers (e.g. CHERI); put them onto the capability free list.
+    // On ISAs without a capability register class this is 0 and a no-op.
+    for (phys_reg = 0; phys_reg < numPhysicalCapRegs; phys_reg++) {
+        capRegIds.emplace_back(*reg_classes.at(CapRegClass),
                 phys_reg, flat_reg_idx++);
     }
 
@@ -152,6 +164,13 @@ PhysRegFile::initFreeList(UnifiedFreeList *freeList)
         assert(intRegIds[reg_idx].index() == reg_idx);
     }
     freeList->addRegs(intRegIds.begin(), intRegIds.end());
+
+    // The next batch of the registers are the capability physical
+    // registers; put them onto the capability free list.
+    for (reg_idx = 0; reg_idx < numPhysicalCapRegs; reg_idx++) {
+        assert(capRegIds[reg_idx].index() == reg_idx);
+    }
+    freeList->addRegs(capRegIds.begin(), capRegIds.end());
 
     // The next batch of the registers are the floating-point physical
     // registers; put them onto the floating-point free list.

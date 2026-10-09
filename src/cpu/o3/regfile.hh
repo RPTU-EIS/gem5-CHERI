@@ -75,6 +75,11 @@ class PhysRegFile
     RegFile intRegFile;
     std::vector<PhysRegId> intRegIds;
 
+    /** Capability register file (e.g. CHERI). Empty/unused on ISAs
+     *  without a capability register class. */
+    RegFile capRegFile;
+    std::vector<PhysRegId> capRegIds;
+
     /** Floating point register file. */
     RegFile floatRegFile;
     std::vector<PhysRegId> floatRegIds;
@@ -106,6 +111,11 @@ class PhysRegFile
      * Number of physical general purpose registers
      */
     unsigned numPhysicalIntRegs;
+
+    /**
+     * Number of physical capability registers
+     */
+    unsigned numPhysicalCapRegs;
 
     /**
      * Number of physical floating point registers
@@ -146,6 +156,7 @@ class PhysRegFile
      * integer and floating point registers.
      */
     PhysRegFile(unsigned _numPhysicalIntRegs,
+                unsigned _numPhysicalCapRegs,
                 unsigned _numPhysicalFloatRegs,
                 unsigned _numPhysicalVecRegs,
                 unsigned _numPhysicalVecPredRegs,
@@ -223,6 +234,11 @@ class PhysRegFile
           case VecElemClass:
             *(RegVal *)val = getReg(phys_reg);
             break;
+          case CapRegClass:
+            capRegFile.get(idx, val);
+            DPRINTF(IEW, "RegFile: Access to capability register %i, has "
+                    "data %s\n", idx, capRegFile.regClass.valString(val));
+            break;
           case VecPredRegClass:
             vecPredRegFile.get(idx, val);
             DPRINTF(IEW, "RegFile: Access to predicate register %i, has "
@@ -254,6 +270,8 @@ class PhysRegFile
             return vecPredRegFile.ptr(idx);
           case MatRegClass:
             return matRegFile.ptr(idx);
+          case CapRegClass:
+            return capRegFile.ptr(idx);
           default:
             panic("Unrecognized register class type %d.", type);
         }
@@ -323,6 +341,11 @@ class PhysRegFile
             DPRINTF(IEW, "RegFile: Setting matrix register %i to %s\n",
                     idx, matRegFile.regClass.valString(val));
             matRegFile.set(idx, val);
+            break;
+          case CapRegClass:
+            DPRINTF(IEW, "RegFile: Setting capability register %i to %s\n",
+                    idx, capRegFile.regClass.valString(val));
+            capRegFile.set(idx, val);
             break;
           case CCRegClass:
             setReg(phys_reg, *(RegVal *)val);

@@ -47,7 +47,7 @@ def operand_types {{
     'vwu'   : 'vwu',
     'vext'  : 'vext',
     'vextu' : 'vextu',
-    'vc'    : 'CHERIRiscvISA::VecRegContainer', 
+    'vc'    : 'CHERIRiscvISA::VecRegContainer',
     'capc'  : 'CHERIRiscvISA::CapRegContainer'
 }};
 

@@ -2348,7 +2348,8 @@ decode QUADRANT default Unknown::unknown() {
                         CHERI_CHECK_MEM(Cs1, CS1, EA, 16,
                                         CheriAccLoad | CheriAccCap);
                     }},
-                    offset_code = {{ offset = 0; }});
+                    offset_code = {{ offset = 0; }},
+                    mem_flags = LLSC);
                 0x3: CapStore::sc_c({{
                     _storeCap = Cs2;
                 }},
@@ -2357,7 +2358,9 @@ decode QUADRANT default Unknown::unknown() {
                         CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                     }},
                     offset_code = {{ offset = 0; }},
-                    postacc_code = {{ Rd = 0; }});
+                    postacc_code = {{ Rd = 0; }},
+                    mem_flags = LLSC,
+                    inst_flags = [IsStore, IsStoreConditional]);
             }
         }
         0x0c: decode FUNCT3 {
@@ -5973,7 +5976,7 @@ decode QUADRANT default Unknown::unknown() {
                             DPRINTF(CheriDecode, "Loaded tag bits = %#llx from vaddr %#llx (pa-based)\n", (unsigned long long)tag_bits, (unsigned long long)vaddr);
                             Rd = tag_bits;
 
-                        }});
+                        }}, IsNonSpeculative);
 
                         0x14: jalr_pcc({{
                             // JALR.PCC rd, rs1 (Sail JALR_PCC = RISCV_JALR):
@@ -6050,7 +6053,8 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(Cs1, CS1, EA, 4, CheriAccStore);
+                                CHERI_CHECK_MEM(Cs1, CS1,
+                                    EA, 4, CheriAccStore);
                             }},
                             offset_code = {{ offset = 0; }});
                             0x0b: sd_cap_x({{
@@ -6058,7 +6062,8 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
-                                CHERI_CHECK_MEM(Cs1, CS1, EA, 8, CheriAccStore);
+                                CHERI_CHECK_MEM(Cs1, CS1,
+                                    EA, 8, CheriAccStore);
                             }},
                             offset_code = {{ offset = 0; }});
                         }

@@ -154,7 +154,7 @@ output exec {{
 // STORE_LOCAL_CAP checks on the stored value).
 #define CHERI_CHECK_CAP_STORE(auth, idx, ea, val)                         \
     do {                                                                  \
-        const CapRegContainer _cheri_val = (val);                         \
+        const CapRegContainer _cheri_val = (val);                        \
         if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
                 xc->tcBase(), CHERI_MEM_AUTH(auth),                       \
                 CHERI_MEM_AUTH_IDX(idx), (ea), 16,                        \

@@ -41,6 +41,7 @@
 #include "cpu/o3/dyn_inst.hh"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "base/intmath.hh"
 #include "debug/DynInst.hh"
@@ -438,6 +439,23 @@ DynInst::writeMem(uint8_t *data, unsigned size, Addr addr,
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* st */ false, data, size, addr, flags, res, nullptr,
         byte_enable);
+}
+
+Fault
+DynInst::writeCapMem(uint8_t *data, unsigned int size, Addr addr,
+                            Request::Flags flags, uint64_t *res, bool capTag,
+                            const std::vector<bool> &byte_enable)
+{
+    const std::vector<bool> &be =
+        byte_enable.empty() ? std::vector<bool>(size, true) : byte_enable;
+    Fault fault = writeMem(data, size, addr,
+                           flags | Request::CHERI_CAP_STORE, res, be);
+
+    if (savedRequest) {
+        savedRequest->mainReq()->setCapTag(capTag);
+        savedRequest->req(0)->setCapTag(capTag);
+    }
+    return fault;
 }
 
 Fault

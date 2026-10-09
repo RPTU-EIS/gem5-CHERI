@@ -136,6 +136,8 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
                "Number of vector predicate rename lookups"),
       ADD_STAT(matLookups, statistics::units::Count::get(),
                "Number of matrix rename lookups"),
+      ADD_STAT(capLookups, statistics::units::Count::get(),
+               "Number of capability rename lookups"),
       ADD_STAT(committedMaps, statistics::units::Count::get(),
                "Number of HB maps that are committed"),
       ADD_STAT(undoneMaps, statistics::units::Count::get(),
@@ -170,7 +172,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     vecLookups.prereq(vecLookups);
     vecPredLookups.prereq(vecPredLookups);
     matLookups.prereq(matLookups);
-
+    capLookups.prereq(capLookups);
     committedMaps.prereq(committedMaps);
     undoneMaps.prereq(undoneMaps);
     serializing.flags(statistics::total);
@@ -1043,6 +1045,8 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
           case MatRegClass:
             stats.matLookups++;
             break;
+          case CapRegClass:
+            stats.capLookups++;
           case CCRegClass:
           case MiscRegClass:
             break;

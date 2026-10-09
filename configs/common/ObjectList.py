@@ -174,6 +174,13 @@ class CPUList(ObjectList):
             cls, m5.objects.ArmCPU
         ):
             return ISA.ARM
+        elif hasattr(m5.objects, "RiscvCHERICPU") and issubclass(
+            cls, m5.objects.RiscvCHERICPU
+        ):
+            # RiscvCHERICPU is a separate mixin, not a subclass of
+            # RiscvCPU, so it needs its own check ahead of the plain
+            # RISCV one below.
+            return ISA.RISCV_CHERI
         elif hasattr(m5.objects, "RiscvCPU") and issubclass(
             cls, m5.objects.RiscvCPU
         ):

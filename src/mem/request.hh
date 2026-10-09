@@ -481,6 +481,19 @@ class Request : public Extensible<Request>
     /** CHERI: should the tag be cleared on load (page permission) */
     bool _cheriClearTagOnLoad = false;
 
+    /**
+     * CHERI: true if _cheriCapTag was explicitly forwarded from an
+     * in-flight store (O3 store-to-load forwarding) rather than
+     * looked up from the CHERI tag table. The tag table is a side
+     * structure the LSQ's forwarding logic knows nothing about, so a
+     * store's own tag-table write (at its completeAcc, which may not
+     * happen until well after a dependent load is served via
+     * forwarding) can't be relied on yet -- this flag tells
+     * CapLoadCompleteAcc to trust the piggybacked tag instead of the
+     * (possibly not-yet-updated) table.
+     */
+    bool _cheriCapTagForwarded = false;
+
     /** CHERI: a write that only moves data already in memory's view (a
      *  cache writeback), so it must leave the tags alone */
     bool _cheriTagNeutral = false;
@@ -533,7 +546,8 @@ class Request : public Extensible<Request>
           accessDelta(other.accessDelta), depth(other.depth), 
           _cheriCapTag(other._cheriCapTag),
           _cheriClearTagOnLoad(other._cheriClearTagOnLoad),
-          _cheriTagNeutral(other._cheriTagNeutral)
+          _cheriTagNeutral(other._cheriTagNeutral),
+          _cheriCapTagForwarded(other._cheriCapTagForwarded)
     {
         atomicOpFunctor.reset(other.atomicOpFunctor ?
                                 other.atomicOpFunctor->clone() : nullptr);
@@ -1149,6 +1163,15 @@ class Request : public Extensible<Request>
 
     bool getCapTag() const { return _cheriCapTag; }
     void setCapTag(bool t) { _cheriCapTag = t; }
+
+    /** See _cheriCapTagForwarded above. */
+    bool getCapTagForwarded() const { return _cheriCapTagForwarded; }
+    void
+    setCapTagForwarded(bool t)
+    {
+        _cheriCapTag = t;
+        _cheriCapTagForwarded = true;
+    }
 
     bool getClearTagOnLoad() const { return _cheriClearTagOnLoad; }
     void setClearTagOnLoad(bool c) { _cheriClearTagOnLoad = c; }

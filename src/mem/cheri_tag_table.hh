@@ -10,20 +10,21 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
-#include "debug/CHERI.hh"    
+#include "debug/CHERI.hh"
 #include "sim/serialize.hh"
 
 namespace gem5
 {
-    class CheriTagTable : public Serializable { 
-        private: 
+    class CheriTagTable : public Serializable
+    {
+        private:
             std::unordered_map<uint64_t, bool> tagTable;
 
         public:
             static constexpr uint64_t CAP_SIZE = 16;
             static constexpr uint64_t CAP_ALIGN_MASK = ~(CAP_SIZE - 1);
 
-        private: 
+        private:
             // Helper function to align addresses to capability boundaries
             uint64_t alignAddress(Addr addr) const {
                 return addr & CAP_ALIGN_MASK;
@@ -32,7 +33,7 @@ namespace gem5
             uint64_t granuleIndex(Addr addr) const {
                 return addr >> 4; // Divide by 16 to get the index
             }
-        
+
         public:
             CheriTagTable() = default;
 

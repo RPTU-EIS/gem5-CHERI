@@ -61,7 +61,13 @@ namespace linux
 void
 PanicOrOopsEvent::process(ThreadContext *tc)
 {
-    warn(descr(), " current tick: %d\n", curTick());
+    // descr() is arbitrary runtime text (the kernel panic/oops message)
+    // and must never be used as the format string itself -- any '%' it
+    // happens to contain gets misinterpreted by ccprintf, and the real
+    // curTick() substitution then lands on the wrong placeholder (seen
+    // in practice as "<bad format><bad format>" instead of the tick).
+    // Use a real, static format string with descr() as plain %s data.
+    warn("%s current tick: %d\n", descr(), curTick());
 
     if (behaviour != KernelPanicOopsBehaviour::Continue) {
         inform("Dumping kernel dmesg buffer to %s...\n", fname);
