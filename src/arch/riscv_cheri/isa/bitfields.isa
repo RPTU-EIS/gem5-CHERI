@@ -34,6 +34,7 @@
 // Bitfield definitions.
 //
 def bitfield RVTYPE rv_type;
+def bitfield CAPMODE cap_mode;
 
 def bitfield QUADRANT <1:0>;
 def bitfield OPCODE5 <6:2>;

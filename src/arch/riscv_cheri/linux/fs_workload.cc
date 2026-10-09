@@ -28,7 +28,12 @@
 
 #include "arch/riscv_cheri/linux/fs_workload.hh"
 
+#include <fstream>
+#include <memory>
+
+#include "arch/riscv_cheri/cheri_checks.hh"
 #include "arch/riscv_cheri/faults.hh"
+#include "arch/riscv_cheri/pcstate.hh"
 #include "arch/riscv_cheri/regs/cap.hh"
 #include "base/loader/dtb_file.hh"
 #include "base/loader/object_file.hh"
@@ -442,10 +447,41 @@ BootloaderKernelWorkload::initState()
         entryPoint = phys_entry;
     }
 
+    // A capability-mode ELF (EF_RISCV_CAP_MODE, e.g. the purecap kernel) is
+    // entered with PCC in capability mode, as OpenSBI/QEMU do: its _start
+    // does not switch modes itself (only _alt_start does).
+    const bool cap_mode_entry = kernelIsCapMode();
+    inform("Entering kernel in %s mode\n",
+           cap_mode_entry ? "capability" : "integer");
+
     for (auto *tc: system->threads) {
         CHERIRiscvISA::Reset().invoke(tc);
+        if (cap_mode_entry) {
+            std::unique_ptr<PCStateBase> pc(tc->pcState().clone());
+            auto &cpc = pc->as<CHERIRiscvISA::PCState>();
+            cpc.pcc(CHERIRiscvISA::capSetFlags(cpc.pcc(), 1));
+            tc->pcState(*pc);
+        }
         tc->activate();
     }
+}
+
+bool
+BootloaderKernelWorkload::kernelIsCapMode() const
+{
+    // ELF64 header: EI_CLASS (byte 4) == ELFCLASS64, e_flags at offset 48.
+    constexpr uint32_t EF_RISCV_CAP_MODE = 0x00020000;
+    if (params().object_file == "")
+        return false;
+    std::ifstream f(params().object_file, std::ios::binary);
+    uint8_t hdr[52] = {};
+    if (!f.read(reinterpret_cast<char *>(hdr), sizeof(hdr)) ||
+            hdr[0] != 0x7f || hdr[1] != 'E' || hdr[4] != 2) {
+        return false;
+    }
+    uint32_t e_flags = hdr[48] | hdr[49] << 8 | hdr[50] << 16 |
+                       (uint32_t)hdr[51] << 24;
+    return e_flags & EF_RISCV_CAP_MODE;
 }
 
 void

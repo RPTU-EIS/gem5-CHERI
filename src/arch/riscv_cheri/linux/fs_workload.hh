@@ -114,7 +114,9 @@ class BootloaderKernelWorkload: public Workload
     void loadBootloader();
     void loadKernel();
     void loadDtb();
-    void processCapRelocs(); 
+    void processCapRelocs();
+    /** The kernel ELF requests capability-mode entry (EF_RISCV_CAP_MODE). */
+    bool kernelIsCapMode() const;
     void addExitOnKernelPanicEvent();
     void addExitOnKernelOopsEvent();
 

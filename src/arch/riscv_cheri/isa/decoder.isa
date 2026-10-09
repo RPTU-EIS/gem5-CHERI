@@ -45,7 +45,19 @@
 
 decode QUADRANT default Unknown::unknown() {
     0x0: decode COPCODE {
-        0x0: CIncSpOp::c_addi4spn({{
+        0x0: decode CAPMODE {
+            0x0: CIAddi4spnOp::c_addi4spn({{
+                imm = CIMM8<1:1> << 2 |
+                      CIMM8<0:0> << 3 |
+                      CIMM8<7:6> << 4 |
+                      CIMM8<5:2> << 6;
+            }}, {{
+                if (imm == 0)
+                    return std::make_shared<IllegalInstFault>(
+                        "immediate = 0", machInst);
+                Rp2 = rvSext(sp + imm);
+            }}, uint64_t);
+            0x1: CIncSpOp::c_cincoffset4cspn({{
             imm = CIMM8<1:1> << 2 |
                   CIMM8<0:0> << 3 |
                   CIMM8<7:6> << 4 |
@@ -67,12 +79,29 @@ decode QUADRANT default Unknown::unknown() {
             Cp2 = cheriResult(xc, capSetAddr(_capv_sp, rvSext(sp + imm)),
                               _capv_sp.getTag());
         }}, uint64_t);
+        }
         format CompressedLoad {
             // PURECAP: this encoding (C0, funct3=001) is c.lq (load 128-bit
             // capability), NOT c.fld. Base is capability reg Cp1 (rs1',
             // bits[9:7]), destination is cap reg Cp2 (rd', bits[4:2]).
-            0x1: CapLoad::c_lq({{
-                Cp2 = capLoadResult(_loadedCap, Cp1);
+            0x1: decode CAPMODE {
+                0x0: c_fld({{
+                    offset = CIMM3 << 3 | CIMM2 << 6;
+                }}, {{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        return std::make_shared<IllegalInstFault>(
+                            "FPU is off", machInst);
+                    status.fs = FPUStatus::DIRTY;
+                    xc->setMiscReg(MISCREG_STATUS, status);
+                    Fp2_bits = Mem_ud;
+                }}, {{
+                    EA = rvZext(Rp1 + offset);
+                    CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE,
+                                    CheriAccLoad);
+                }});
+                0x1: CapLoad::c_lq({{
+                Cp2 = capLoadResult(_loadedCap, CHERI_MEM_AUTH(Cp1));
             }},
                 ea_code = {{
                     EA = rvZext(Cp1.getAddress() + offset);
@@ -86,6 +115,7 @@ decode QUADRANT default Unknown::unknown() {
                     offset = (CIMM3<2:1> << 4) | (CIMM3<0:0> << 8) |
                              (CIMM2 << 6);
                 }});
+            }
             0x2: c_lw({{
                 offset = CIMM2<1:1> << 2 |
                          CIMM3 << 3 |
@@ -177,7 +207,21 @@ decode QUADRANT default Unknown::unknown() {
             // PURECAP: this encoding (C0, funct3=101) is c.sq (store 128-bit
             // capability), NOT c.fsd. Base cap reg Cp1 (rs1', bits[9:7]),
             // source cap reg Cp2 (rs2', bits[4:2]).
-            0x5: CapStore::c_sq({{
+            0x5: decode CAPMODE {
+                0x0: c_fsd({{
+                    offset = CIMM3 << 3 | CIMM2 << 6;
+                }}, {{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        return std::make_shared<IllegalInstFault>(
+                            "FPU is off", machInst);
+                    Mem_ud = Fp2_bits;
+                }}, ea_code={{
+                    EA = rvZext(Rp1 + offset);
+                    CHERI_CHECK_MEM(_capv_Rp1, RP1 + 8, EA, CHERI_MEM_SIZE,
+                                    CheriAccStore);
+                }});
+                0x1: CapStore::c_sq({{
                 _storeCap = Cp2;
             }},
                 ea_code = {{
@@ -191,6 +235,7 @@ decode QUADRANT default Unknown::unknown() {
                     offset = (CIMM3<2:1> << 4) | (CIMM3<0:0> << 8) |
                              (CIMM2 << 6);
                 }});
+            }
             0x6: c_sw({{
                 offset = CIMM2<1:1> << 2 |
                          CIMM3 << 3 |
@@ -264,7 +309,21 @@ decode QUADRANT default Unknown::unknown() {
             Rc1_sd = imm;
         }});
         0x3: decode RC1 {
-            0x2: CIncSpOp::c_addi16sp({{
+            0x2: decode CAPMODE {
+                0x0: CIOp::c_addi16sp({{
+                    imm = sext<10>((CIMM5<4:4> << 4) |
+                                   (CIMM5<0:0> << 5) |
+                                   (CIMM5<3:3> << 6) |
+                                   (CIMM5<2:1> << 7) |
+                                   (CIMM1 << 9));
+                }}, {{
+                    if (imm == 0) {
+                        return std::make_shared<IllegalInstFault>(
+                                "immediate = 0", machInst);
+                    }
+                    sp_sd = rvSext(sp_sd + imm);
+                }});
+                0x1: CIncSpOp::c_cincoffset16csp({{
                 imm = sext<10>((CIMM5<4:4> << 4) |
                                (CIMM5<0:0> << 5) |
                                (CIMM5<3:3> << 6) |
@@ -289,6 +348,7 @@ decode QUADRANT default Unknown::unknown() {
                 Csp = cheriResult(xc, capSetAddr(_capv_sp, rvSext(sp + imm)),
                                   _capv_sp.getTag());
             }});
+            }
             default: CIOp::c_lui({{
                 imm = sext<6>(CIMM5 | (CIMM1 << 5)) << 12;
             }}, {{
@@ -438,11 +498,29 @@ decode QUADRANT default Unknown::unknown() {
             // capability destination register Cc1 (bits[11:7]). Without this,
             // capability spills (every function prologue restores cra/cs*) were
             // decoded as 8-byte float loads and corrupted returns.
-            0x1: CapLoad::c_lqsp({{
+            0x1: decode CAPMODE {
+                0x0: c_fldsp({{
+                    offset = CIMM5<4:3> << 3 |
+                             CIMM1 << 5 |
+                             CIMM5<2:0> << 6;
+                }}, {{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        return std::make_shared<IllegalInstFault>(
+                            "FPU is off", machInst);
+                    status.fs = FPUStatus::DIRTY;
+                    xc->setMiscReg(MISCREG_STATUS, status);
+                    Fc1_bits = Mem_ud;
+                }}, {{
+                    EA = rvZext(sp + offset);
+                    CHERI_CHECK_MEM(_capv_sp, 2, EA, CHERI_MEM_SIZE,
+                                    CheriAccLoad);
+                }});
+                0x1: CapLoad::c_lqsp({{
                 // Naming `sp` makes the parser read it (and so define
                 // _capv_sp) in completeAcc as well.
                 (void)sp;
-                Cc1 = capLoadResult(_loadedCap, _capv_sp);
+                Cc1 = capLoadResult(_loadedCap, CHERI_MEM_AUTH(_capv_sp));
             }},
                 ea_code = {{
                     EA = rvZext(sp + offset);
@@ -456,6 +534,7 @@ decode QUADRANT default Unknown::unknown() {
                     offset = (CIMM1 << 5) | (CIMM5<4:4> << 4) |
                              (CIMM5<3:0> << 6);
                 }});
+            }
             0x2: c_lwsp({{
                 offset = CIMM5<4:2> << 2 |
                          CIMM1 << 5 |
@@ -508,7 +587,19 @@ decode QUADRANT default Unknown::unknown() {
         }
         0x4: decode CFUNCT1 {
             0x0: decode RC2 {
-                0x0: CJump::c_jr({{
+                0x0: decode CAPMODE {
+                    0x0: CJump::c_jr({{
+                        if (RC1 == 0) {
+                            return std::make_shared<IllegalInstFault>(
+                                "source reg x0", machInst);
+                        }
+                        // Integer jump within the current PCC.
+                        Addr _target = rvZext(Rc1 & (~0x1));
+                        if (Fault _f = cheriCheckBranch(xc, _target))
+                            return _f;
+                        NPC = _target;
+                    }}, IsIndirectControl, IsUncondControl);
+                    0x1: CJump::c_cjr({{
                     // C.CJR (purecap c.jr): pure jump, no link.
                     const uint32_t cs1_idx = bits(machInst, 11, 7);
                     if (cs1_idx == 0) {
@@ -517,6 +608,7 @@ decode QUADRANT default Unknown::unknown() {
                     }
                     return cheriIndirectJump(xc, Cc1, cs1_idx, 0, 0, nullptr);
                 }}, IsControl, IsIndirectControl, IsUncondControl);
+                }
                 default: CROp::c_mv({{
                     // RC1 == 0 is HINT
                     Rc1 = rvSext(Rc2);
@@ -530,7 +622,16 @@ decode QUADRANT default Unknown::unknown() {
                         return std::make_shared<BreakpointFault>(
                             xc->pcState());
                     }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                    default: CJump::c_jalr({{
+                    default: decode CAPMODE {
+                        0x0: CJump::c_jalr({{
+                            // Integer call within the current PCC.
+                            Addr _target = rvZext(Rc1 & (~0x1));
+                            if (Fault _f = cheriCheckBranch(xc, _target))
+                                return _f;
+                            ra = rvSext(NPC);
+                            NPC = _target;
+                        }}, IsIndirectControl, IsUncondControl, IsCall);
+                        0x1: CJump::c_cjalr({{
                         // C.CJALR (purecap c.jalr): link a sentry to cra.
                         const uint32_t cs1_idx = bits(machInst, 11, 7);
                         CapRegContainer _link;
@@ -541,6 +642,7 @@ decode QUADRANT default Unknown::unknown() {
                         Cra = _link;
                     }}, IsControl, IsIndirectControl, IsUncondControl,
                         IsCall);
+                    }
                 }
                 default: CompressedROp::c_add({{
                     // RC1 == 0 is HINT
@@ -552,7 +654,22 @@ decode QUADRANT default Unknown::unknown() {
             // PURECAP: this encoding (C2, funct3=101) is c.sqsp (store 128-bit
             // capability to sp), NOT c.fsdsp. Route through CapStore for a
             // 16-byte cap store + tag, from source cap register Cc2 (bits[6:2]).
-            0x5: CapStore::c_sqsp({{
+            0x5: decode CAPMODE {
+                0x0: c_fsdsp({{
+                    offset = CIMM6<5:3> << 3 |
+                             CIMM6<2:0> << 6;
+                }}, {{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        return std::make_shared<IllegalInstFault>(
+                            "FPU is off", machInst);
+                    Mem_ud = Fc2_bits;
+                }}, ea_code={{
+                    EA = rvZext(sp + offset);
+                    CHERI_CHECK_MEM(_capv_sp, 2, EA, CHERI_MEM_SIZE,
+                                    CheriAccStore);
+                }});
+                0x1: CapStore::c_sqsp({{
                 _storeCap = Cc2;
             }},
                 ea_code = {{
@@ -565,6 +682,7 @@ decode QUADRANT default Unknown::unknown() {
                     // c.sqsp uimm: [5:4]=inst[12:11], [9:6]=inst[10:7]
                     offset = (CIMM6<5:4> << 4) | (CIMM6<3:0> << 6);
                 }});
+            }
             0x6: c_swsp({{
                 offset = CIMM6<5:2> << 2 |
                          CIMM6<1:0> << 6;
@@ -1243,7 +1361,7 @@ decode QUADRANT default Unknown::unknown() {
             format CapLoad {
 
                 0x2: clc({{
-                    Cd = capLoadResult(_loadedCap, Cs1);
+                    Cd = capLoadResult(_loadedCap, CHERI_MEM_AUTH(Cs1));
                 }},
                     ea_code = {{
                         EA = rvZext(Cs1.getAddress() + offset);
@@ -1470,7 +1588,11 @@ decode QUADRANT default Unknown::unknown() {
         //     Rd = rvSext(PC + (sext<20>(imm) << 12));
         // }});
 
-        0x05: UOp::auipcc({{
+        0x05: decode CAPMODE {
+            0x0: UOp::auipc({{
+                Rd = rvSext(PC + (sext<20>(imm) << 12));
+            }});
+            0x1: UOp::auipcc({{
             // AUIPCC cd, imm: PCC with address pc + (imm << 12); tag cleared
             // if not
             // representable.
@@ -1481,6 +1603,7 @@ decode QUADRANT default Unknown::unknown() {
                 capSetAddr(_pcc, _pcs.instAddr()
                     + (sext<20>(imm) << 12)), _pcc.getTag());
         }});
+        }
 
         0x06: decode RVTYPE {
             0x1: decode FUNCT3 {
@@ -2164,9 +2287,10 @@ decode QUADRANT default Unknown::unknown() {
                     {
                         const CapRegContainer _sv = Cs2;
                         if (Fault _f = CHERIRiscvISA::capEnforce(_ctc,
-                                capCheckMemAccess(Cs1, _va, 16,
-                                    CheriAccLoad | CheriAccStore | CheriAccCap,
-                                    &_sv), CS1, _va))
+                                capCheckMemAccess(CHERI_MEM_AUTH(Cs1), _va,
+                                    16, CheriAccLoad | CheriAccStore |
+                                    CheriAccCap, &_sv),
+                                CHERI_MEM_AUTH_IDX(CS1), _va))
                             return _f;
                         if (CHERIRiscvISA::cheriEnforcing(_ctc)
                             && (_va & 15)) {
@@ -2212,12 +2336,12 @@ decode QUADRANT default Unknown::unknown() {
                     _sys->physProxy.writeBlob(_pa, _nb, 16);
                     _sys->cheritagtable.setTag(_pa, _new.getTag());
                     // result: old value (tag kept only with PERMIT_LOAD_CAP)
-                    Cd = capLoadResult(_old, Cs1);
+                    Cd = capLoadResult(_old, CHERI_MEM_AUTH(Cs1));
                     // Writes memory functionally at execute: never run it
                     // speculatively or ahead of older instructions.
                 }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter);
                 0x2: CapLoad::lr_c({{
-                    Cd = capLoadResult(_loadedCap, Cs1);
+                    Cd = capLoadResult(_loadedCap, CHERI_MEM_AUTH(Cs1));
                 }},
                     ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                     cap_check_code = {{
@@ -5867,13 +5991,44 @@ decode QUADRANT default Unknown::unknown() {
                     }
 
 
-                    // Explicit capability-addressed stores (CheriStore_r,
-                    // funct7 0x7c): the operation is in the rd field, data
-                    // in rs2, the
-                    // authorising capability in cs1, no offset. The .ddc
-                    // (hybrid) variants are not implemented.
+                    // Explicit stores (CheriStore_r, funct7 0x7c): the
+                    // operation is in the rd field, data in rs2, no offset.
+                    // .ddc: integer address rs1 authorised by DDC; .cap:
+                    // authorising capability cs1.
                     0x7c: decode RD {
                         format CapDataStore {
+                            0x00: sb_ddc({{
+                                Mem_ub = Rs2_ub;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 1, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x01: sh_ddc({{
+                                Mem_uh = Rs2_uh;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 2, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x02: sw_ddc({{
+                                Mem_uw = Rs2_uw;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 4, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x03: sd_ddc({{
+                                Mem_ud = Rs2_ud;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 8, CheriAccStore);
+                            }},
+                            offset_code = {{ offset = 0; }});
                             0x08: sb_cap_x({{
                                 Mem_ub = Rs2_ub;
                             }},
@@ -5908,6 +6063,15 @@ decode QUADRANT default Unknown::unknown() {
                             offset_code = {{ offset = 0; }});
                         }
                         format CapStore {
+                            0x04: sc_ddc({{
+                                _storeCap = Cs2;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_CAP_STORE(cheriDdc(xc),
+                                    CHERIRiscvISA::CHERI_CAPIDX_DDC, EA, Cs2);
+                            }},
+                            offset_code = {{ offset = 0; }});
                             0x0c: sc_cap({{
                                 _storeCap = Cs2;
                             }},
@@ -5958,6 +6122,62 @@ decode QUADRANT default Unknown::unknown() {
                     // funct7 0x7d): the operation is in the rs2 field.
                     0x7d: decode RS2 {
                         format CapDataLoad {
+                            0x00: lb_ddc({{
+                                Rd_sd = Mem_sb;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 1, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x01: lh_ddc({{
+                                Rd_sd = Mem_sh;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 2, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x02: lw_ddc({{
+                                Rd_sd = Mem_sw;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 4, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x03: ld_ddc({{
+                                Rd_sd = Mem_sd;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 8, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x04: lbu_ddc({{
+                                Rd = Mem_ub;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 1, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x05: lhu_ddc({{
+                                Rd = Mem_uh;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 2, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
+                            0x06: lwu_ddc({{
+                                Rd = Mem_uw;
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 4, CheriAccLoad);
+                            }},
+                            offset_code = {{ offset = 0; }});
                             0x08: lb_cap_x({{
                                 Rd_sd = Mem_sb;
                             }},
@@ -6030,8 +6250,17 @@ decode QUADRANT default Unknown::unknown() {
                             }}, mem_flags=LLSC);
                         }
                         format CapLoad {
+                            0x17: lc_ddc({{
+                                Cd = capLoadResult(_loadedCap, cheriDdc(xc));
+                            }},
+                            ea_code = {{ EA = rvZext(Rs1); }},
+                            cap_check_code = {{
+                                CHERI_CHECK_MEM_DDC(EA, 16,
+                                    CheriAccLoad | CheriAccCap);
+                            }},
+                            offset_code = {{ offset = 0; }});
                             0x1c: lr_c_cap({{
-                                Cd = capLoadResult(_loadedCap, Cs1);
+                                Cd = capLoadResult(_loadedCap, CHERI_MEM_AUTH(Cs1));
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
@@ -6040,7 +6269,7 @@ decode QUADRANT default Unknown::unknown() {
                             }},
                             offset_code = {{ offset = 0; }});
                             0x1f: lc_cap({{
-                                Cd = capLoadResult(_loadedCap, Cs1);
+                                Cd = capLoadResult(_loadedCap, CHERI_MEM_AUTH(Cs1));
                             }},
                             ea_code = {{ EA = rvZext(Cs1.getAddress()); }},
                             cap_check_code = {{
@@ -6133,7 +6362,17 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x19: decode FUNCT3 {
-            0x0: Jump::jalr({{
+            0x0: decode CAPMODE {
+                0x0: Jump::jalr({{
+                    // Integer jump within the current PCC (Sail
+                    // ext_control_check_addr), integer link.
+                    Addr _target = rvZext((imm + Rs1) & (~0x1));
+                    if (Fault _f = cheriCheckBranch(xc, _target))
+                        return _f;
+                    Rd = rvSext(NPC);
+                    NPC = _target;
+                }}, IsIndirectControl, IsUncondControl);
+                0x1: Jump::cjalr({{
                 // CJALR (purecap jalr): jump to cs1 + imm, link a sentry
                 // for the next instruction into cd. Cs1 is read before Cd is
                 // written (common case: jalr cra, 0(cra)).
@@ -6143,19 +6382,28 @@ decode QUADRANT default Unknown::unknown() {
                     return _f;
                 Cd = _link;
             }}, IsControl, IsIndirectControl, IsUncondControl);
+            }
         }
 
         // CJAL (purecap jal): the link register receives the PCC with its
         // address set to the return address, sealed as a sentry. (Writing the
         // integer return address instead produced untagged return
         // capabilities that the following cret could not legally use.)
-        0x1b: JOp::jal({{
+        0x1b: decode CAPMODE {
+            0x0: JOp::jal({{
+                if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
+                    return _f;
+                Rd = rvSext(NPC);
+                NPC = rvZext(PC + imm);
+            }}, IsDirectControl, IsUncondControl);
+            0x1: JOp::cjal({{
             if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
                 return _f;
             Cd = CHERIRiscvISA::capMakeSentryLink(
                 xc->pcState().as<PCState>().pcc(), NPC);
             NPC = rvZext(PC + imm);
         }}, IsDirectControl, IsUncondControl);
+        }
 
         0x1c: decode FUNCT3 {
             format SystemOp {

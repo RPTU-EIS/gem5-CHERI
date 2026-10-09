@@ -145,7 +145,8 @@ output exec {{
 #define CHERI_CHECK_MEM(auth, idx, ea, size, acc)                         \
     do {                                                                  \
         if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
-                xc->tcBase(), (auth), (idx), (ea), (size), (acc)))        \
+                xc->tcBase(), CHERI_MEM_AUTH(auth),                       \
+                CHERI_MEM_AUTH_IDX(idx), (ea), (size), (acc)))            \
             return _cheri_fault;                                          \
     } while (0)
 
@@ -155,9 +156,32 @@ output exec {{
     do {                                                                  \
         const CapRegContainer _cheri_val = (val);                         \
         if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
-                xc->tcBase(), (auth), (idx), (ea), 16,                    \
+                xc->tcBase(), CHERI_MEM_AUTH(auth),                       \
+                CHERI_MEM_AUTH_IDX(idx), (ea), 16,                        \
                 CHERIRiscvISA::CheriAccStore |                            \
                 CHERIRiscvISA::CheriAccCap, &_cheri_val))                 \
+            return _cheri_fault;                                          \
+    } while (0)
+
+// Which capability authorises a memory access (Sail
+// get_cheri_mode_cap_addr). The standard RISC-V encodings are mode
+// dependent: the base register's capability in capability mode, DDC in
+// integer (hybrid) mode, at the same address. The explicit forms in the
+// CHERI major opcode (0x5b: lb.cap, lc.cap, lr.w.cap, ...) always name
+// their capability, so the mode does not matter for them. `auth`/`idx`
+// are what capability mode would use.
+#define CHERI_MEM_USES_DDC (!CAPMODE && bits(machInst, 6, 0) != 0x5b)
+#define CHERI_MEM_AUTH(auth)                                              \
+    (CHERI_MEM_USES_DDC ? cheriDdc(xc) : CapRegContainer(auth))
+#define CHERI_MEM_AUTH_IDX(idx)                                           \
+    (CHERI_MEM_USES_DDC ? CHERIRiscvISA::CHERI_CAPIDX_DDC : (int)(idx))
+
+// Explicit DDC-relative accesses (lb.ddc, lc.ddc, sb.ddc, ...).
+#define CHERI_CHECK_MEM_DDC(ea, size, acc)                                \
+    do {                                                                  \
+        if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
+                xc->tcBase(), cheriDdc(xc),                               \
+                CHERIRiscvISA::CHERI_CAPIDX_DDC, (ea), (size), (acc)))    \
             return _cheri_fault;                                          \
     } while (0)
 

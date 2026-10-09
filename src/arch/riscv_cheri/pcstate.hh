@@ -70,21 +70,20 @@ class PCState : public GenericISA::UPCState<4>
     VTYPE _vtype = (1ULL << 63); // vtype.vill = 1 at initial;
     uint32_t _vl = 0;
 
-    CapRegContainer _pcc; 
-    bool _capMode = true; 
+    CapRegContainer _pcc;
 
   public:
     PCState(const PCState &other) : Base(other),
         _rvType(other._rvType), _vlenb(other._vlenb),
-        _vtype(other._vtype), _vl(other._vl), _pcc(other._pcc), _capMode(other._capMode)
+        _vtype(other._vtype), _vl(other._vl), _pcc(other._pcc)
     {}
     PCState &operator=(const PCState &other) = default;
     PCState() {
         _pcc = CapRegContainer::almighty(0);
     }
 
-    explicit PCState(Addr addr) { 
-        set(addr); 
+    explicit PCState(Addr addr) {
+        set(addr);
         _pcc = CapRegContainer::almighty(addr);
     }
 
@@ -109,7 +108,6 @@ class PCState : public GenericISA::UPCState<4>
         _vtype = pcstate._vtype;
         _vl = pcstate._vl;
         _pcc = pcstate._pcc;
-        _capMode = pcstate._capMode;    
     }
 
     void compressed(bool c) { _compressed = c; }
@@ -128,27 +126,25 @@ class PCState : public GenericISA::UPCState<4>
     uint32_t vl() const { return _vl; }
 
     // PCC accessors
-    const CapRegContainer& pcc() const { 
-        return _pcc; 
+    const CapRegContainer& pcc() const {
+        return _pcc;
     }
 
-    void pcc(const CapRegContainer& newPcc) { 
-        _pcc = newPcc; 
+    void pcc(const CapRegContainer& newPcc) {
+        _pcc = newPcc;
         // Sync the PC address with PCC address
         Base::set(_pcc.getAddress());
     }
 
     // Get PCC as non-const reference (for direct modification)
-    CapRegContainer& pccRef() { 
-        return _pcc; 
+    CapRegContainer& pccRef() {
+        return _pcc;
     }
 
-    bool capMode() const { 
-        return _capMode; 
-    }
-
-    void capMode(bool mode) { 
-        _capMode = mode; 
+    // CHERI: capability (1) or integer (0) encoding mode, PCC's flag bit
+    // (CC128 metadata bit 47; metadata 0 is the null capability, flag 0).
+    bool capMode() const {
+        return bits(_pcc.getMetadata(), 47);
     }
 
     // Override set to also update PCC address
@@ -165,7 +161,7 @@ class PCState : public GenericISA::UPCState<4>
         }
 
         // Check if the new PC value is within the bounds of the PCC
-        // TO DO: Add full bound checking logic here 
+        // TO DO: Add full bound checking logic here
 
         // If the check passes, update the PC and PCC address
         set(val);
@@ -192,8 +188,7 @@ class PCState : public GenericISA::UPCState<4>
             // PCC's address is the PC (compared by Base::equals); _pcc's
             // own address field is not kept in step by advance()/npc().
             _pcc.getMetadata() == opc._pcc.getMetadata() &&
-            _pcc.getTag() == opc._pcc.getTag() &&
-            _capMode == opc._capMode;
+            _pcc.getTag() == opc._pcc.getTag();
     }
 
     void
@@ -205,7 +200,6 @@ class PCState : public GenericISA::UPCState<4>
         SERIALIZE_SCALAR(_vtype);
         SERIALIZE_SCALAR(_vl);
         SERIALIZE_SCALAR(_compressed);
-        SERIALIZE_SCALAR(_capMode);
 
         uint64_t pccAddress = _pcc.getAddress();
         uint64_t pccMetadata = _pcc.getMetadata();
@@ -224,8 +218,7 @@ class PCState : public GenericISA::UPCState<4>
         UNSERIALIZE_SCALAR(_vtype);
         UNSERIALIZE_SCALAR(_vl);
         UNSERIALIZE_SCALAR(_compressed);
-        UNSERIALIZE_SCALAR(_capMode);
-        
+
         uint64_t pccAddress, pccMetadata;
         bool pccTag;
         UNSERIALIZE_SCALAR(pccAddress);
