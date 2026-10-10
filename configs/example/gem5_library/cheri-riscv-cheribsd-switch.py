@@ -5,7 +5,10 @@
 # at the switch, so stats.txt describes the detailed run only.
 #
 # Environment variables:
-#   CHERI_SWITCH_CPU  detailed CPU to switch to: timing (default), minor, o3
+#   CHERI_SWITCH_CPU  CPU to switch to at the first workbegin: timing
+#                     (default), minor, o3, or atomic (fast instruction
+#                     counts; same processor layout, so checkpoints restore
+#                     into any of them)
 #   CHERI_READFILE    file returned by `m5 readfile` (the image's
 #                     /etc/m5_init.sh runs it)
 #   CHERI_KERNEL      kernel (default ./tests/kernel)
@@ -18,6 +21,14 @@
 #                       hierarchical    root level with zero elision
 #   CHERI_TAG_CACHE   leaf tag-cache size (default 32KiB)
 #   CHERI_TAG_ASSOC   leaf tag-cache associativity (default 8)
+#   CHERI_L1D, CHERI_L1I, CHERI_L2
+#                     cache sizes (default 16kB, 16kB, 256kB)
+#   CHERI_CKPT_OUT    save a checkpoint there when the guest runs
+#                     `m5 checkpoint`, then exit
+#   CHERI_CKPT_IN     restore from that checkpoint instead of booting
+#
+# Statistics are reset at every `m5 workbegin` and dumped at every
+# `m5 workend`, so a guest can bracket several regions in one run.
 
 import os
 
@@ -45,6 +56,7 @@ from gem5.utils.requires import requires
 requires(isa_required=ISA.RISCV_CHERI)
 
 switch_cpus = {
+    "atomic": CPUTypes.ATOMIC,
     "timing": CPUTypes.TIMING,
     "minor": CPUTypes.MINOR,
     "o3": CPUTypes.O3,
@@ -57,7 +69,9 @@ if switch_cpu not in switch_cpus:
     )
 
 cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
-    l1d_size="16kB", l1i_size="16kB", l2_size="256kB"
+    l1d_size=os.environ.get("CHERI_L1D", "16kB"),
+    l1i_size=os.environ.get("CHERI_L1I", "16kB"),
+    l2_size=os.environ.get("CHERI_L2", "256kB"),
 )
 memory = DualChannelDDR4_2400(size="3GB")
 
@@ -137,11 +151,29 @@ def on_workend():
         yield False
 
 
+ckpt_out = os.environ.get("CHERI_CKPT_OUT")
+ckpt_in = os.environ.get("CHERI_CKPT_IN")
+
+
+def on_checkpoint():
+    if not ckpt_out:
+        print(
+            "[ckpt] m5 checkpoint ignored (CHERI_CKPT_OUT unset)", flush=True
+        )
+        while True:
+            yield False
+    print(f"[ckpt] saving checkpoint to {ckpt_out}", flush=True)
+    simulator.save_checkpoint(ckpt_out)
+    yield True
+
+
 simulator = Simulator(
     board=board,
+    checkpoint_path=ckpt_in or None,
     on_exit_event={
         ExitEvent.WORKBEGIN: on_workbegin(),
         ExitEvent.WORKEND: on_workend(),
+        ExitEvent.CHECKPOINT: on_checkpoint(),
     },
 )
 simulator.run()

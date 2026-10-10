@@ -1,0 +1,40 @@
+--- a/benchmarks/darkmark/zip/zip_darkmark.c
++++ b/benchmarks/darkmark/zip/zip_darkmark.c
+@@ -90,6 +90,7 @@
+ 	char lbuf[100];
+ 	e_u32 size=*psize;
+ 	char *buf=th_malloc(size);
++	char *end;	/* end of the string built so far */
+ 	e_u32 start_size=th_strlen(default_start);
+ 	e_u32 end_size=th_strlen(default_end);
+
+@@ -98,6 +99,7 @@
+ 	*buf=0;
+ 	/* setup xml/html header */
+ 	th_strcat(buf,default_start);
++	end=buf+start_size;
+ 	size-=start_size;
+ 	while (size > (end_size+max_entry))
+ 	{
+@@ -116,11 +118,18 @@
+ 				th_sprintf(lbuf,"<p company='%s'><b>%s</b><data>%d</data></p>\n",company,name,id);
+ 				break;
+ 		}
+-		th_strcat(buf,lbuf);
+-		size-=th_strlen(lbuf);
++		/* Append at the end instead of th_strcat(buf,lbuf), which rescans
++		   the whole buffer every time (quadratic: ~1e10 byte reads for the
++		   1 MB dataset, hours under simulation). Same buffer contents. */
++		{
++			e_u32 len=th_strlen(lbuf);
++			th_memcpy(end,lbuf,len+1);
++			end+=len;
++			size-=len;
++		}
+ 	}
+ 	/* setup xml/html footer */
+-	th_strcat(buf,default_end);
++	th_strcpy(end,default_end);
+ 	size-=end_size;
+ 	/* setup the actual size of the buffer being used */
+ 	*psize-=size;
