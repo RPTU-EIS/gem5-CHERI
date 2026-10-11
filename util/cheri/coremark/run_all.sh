@@ -5,7 +5,7 @@
 #                             (reused while kernel and binaries are unchanged)
 #   RESULTS/coremark/<TAG>/<workload>/<abi>-<config>/   one gem5 run each
 #   RESULTS/coremark/<TAG>/{manifest.json,results.csv,comparison.csv,
-#                           all_stats.csv,tag_costs.csv}
+#                           all_stats.csv,tag_costs.csv,plots/}
 #
 # Usage: util/cheri/coremark/run_all.sh RESULTS [TAG]
 #   TAG defaults to <date>-<kernel hash>.
@@ -43,3 +43,8 @@ echo "results:    $OUT"
 echo "checkpoint: $CKPT"
 python3 "$GEM5/util/cheri/coremark/run.py" "$@"
 python3 "$GEM5/util/cheri/coremark/parse.py" "$OUT"
+if python3 -c "import matplotlib, numpy" 2>/dev/null; then
+    python3 "$GEM5/util/cheri/coremark/plot.py" "$OUT"
+else
+    echo "matplotlib/numpy missing: skipping plot.py"
+fi

@@ -62,6 +62,7 @@ WORKLOADS = [
     "sha-test",
     "zip-test",
 ]
+PAYLOAD_VERSION = 2
 ENV_KNOBS = [
     "CHERI_KERNEL",
     "CHERI_DISK",
@@ -83,15 +84,32 @@ def sha256(path):
 
 
 def strip(sdk, src, dst):
-    """Strip debug info (smaller guest payload). Uses the CHERI SDK's
-    llvm-strip, else any llvm-strip on PATH, else copies unstripped."""
+    """Copy a binary for the guest without debug info (~10x smaller
+    payload, much faster to unpack in the guest). Uses a pre-stripped copy
+    from build.sh (bin-stripped/ next to bin/) if present, else the CHERI
+    SDK's llvm-strip, else any llvm-strip on PATH, else copies it unstripped
+    (works, but unpacking in the guest takes hours)."""
+    pre = os.path.join(
+        os.path.dirname(os.path.dirname(src)),
+        "bin-stripped",
+        os.path.basename(src),
+    )
     tool = os.path.join(sdk, "bin", "llvm-strip")
     if not os.path.exists(tool):
         tool = shutil.which("llvm-strip")
-    if tool:
+    if os.path.exists(pre):
+        shutil.copyfile(pre, dst)
+    elif tool:
         subprocess.run([tool, "-o", dst, src], check=True)
     else:
+        print(
+            f"warning: no stripped copy or llvm-strip for {src}; shipping "
+            "it unstripped (slow guest unpack). Run build.sh where the SDK "
+            "exists and copy builds/ including bin-stripped/.",
+            file=sys.stderr,
+        )
         shutil.copyfile(src, dst)
+    os.chmod(dst, 0o755)
 
 
 def write_payload_script(path, lines, tgz):
@@ -117,10 +135,19 @@ def write_payload_script(path, lines, tgz):
 
 
 def bundle(tgz, members):
-    """members: [(path on host, name in archive)]"""
+    """members: [(path on host, name in archive)]. Files are stored as
+    executable whatever their mode on the host (a plain copy of a binary may
+    lack the execute bit, and the guest then refuses to run it)."""
+
+    def executable(ti):
+        ti.mode = 0o755
+        ti.uid = ti.gid = 0
+        ti.uname = ti.gname = "root"
+        return ti
+
     with tarfile.open(tgz, "w:gz") as tar:
         for src, name in members:
-            tar.add(src, arcname=name)
+            tar.add(src, arcname=name, filter=executable)
 
 
 def make_runner(path, bins, iterations, extra_args, wl_args):
@@ -132,6 +159,7 @@ def make_runner(path, bins, iterations, extra_args, wl_args):
         "cd /tmp",
         'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C /tmp || '
         '{ echo "=== CM-UNPACK-FAILED"; exit 1; }',
+        "chmod +x /tmp/cm_*.exe",
     ]
     lines += regions(
         [wl for wl, _ in bins], iterations, extra_args, "/tmp", wl_args
@@ -175,6 +203,7 @@ def make_ckpt_runner(path, bins_by_abi):
         "mkdir -p /root/cm",
         'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C /root/cm || '
         '{ echo "=== CM-UNPACK-FAILED"; exit 1; }',
+        "chmod +x /root/cm/*/cm_*.exe",
         "ls -l /root/cm/*",
         "sync",
         "/sbin/m5 checkpoint",
@@ -183,6 +212,19 @@ def make_ckpt_runner(path, bins_by_abi):
         "/sbin/m5 exit",
     ]
     write_payload_script(path, lines, tgz)
+
+
+def workload_status(outdir):
+    """Exit status the guest reported for the workload ("?" if none)."""
+    status = "?"
+    try:
+        with open(os.path.join(outdir, "console.log"), errors="replace") as f:
+            for line in f:
+                if line.startswith("=== CM-END"):
+                    status = line.rsplit("status=", 1)[-1].strip()
+    except OSError:
+        pass
+    return status
 
 
 def write_run_info(outdir, info):
@@ -304,6 +346,9 @@ def ensure_checkpoint(
         "system_files": system_files,
         "binaries": {k: v["sha256"] for k, v in binaries.items()},
         "tag_reservation": tagged,
+        # bump PAYLOAD_VERSION when the guest payload changes, so older
+        # checkpoints are refused (v1 could ship binaries without +x)
+        "payload_version": PAYLOAD_VERSION,
     }
     fp_path = os.path.join(ckpt, "cm_fingerprint.json")
     if os.path.exists(os.path.join(ckpt, "m5.cpt")):
@@ -312,6 +357,7 @@ def ensure_checkpoint(
         if (
             saved["system_files"] != fingerprint["system_files"]
             or saved.get("tag_reservation", False) != tagged
+            or saved.get("payload_version", 1) != PAYLOAD_VERSION
             or any(
                 saved["binaries"].get(k) != v
                 for k, v in fingerprint["binaries"].items()
@@ -610,13 +656,23 @@ def main():
                         env,
                     )
                 )
+        failed = []
         for fut in cf.as_completed(futs):
             outdir, rc, secs = fut.result()
+            status = workload_status(outdir)
+            if status != "0":
+                failed.append(os.path.relpath(outdir, out))
             print(
-                f"{os.path.relpath(outdir, out)}: exit {rc} after "
-                f"{secs / 60:.1f} min",
+                f"{os.path.relpath(outdir, out)}: gem5 exit {rc}, "
+                f"workload exit {status}, {secs / 60:.1f} min",
                 flush=True,
             )
+    if failed:
+        print(
+            f"\nWARNING: {len(failed)} workload run(s) did not exit 0 "
+            "(see their console.log):\n  " + "\n  ".join(sorted(failed)),
+            flush=True,
+        )
     print(f"next: util/cheri/coremark/parse.py {out}")
 
 

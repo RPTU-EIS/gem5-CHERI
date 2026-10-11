@@ -331,6 +331,16 @@ def main():
         for st in stats:
             merged_stats[(st["abi"], st["config"], st["workload"])] = st
     rows = list(merged.values())
+    bad = [r for r in rows if str(r.get("status")) != "0"
+           or str(r.get("errors", "0")) not in ("0", "")]
+    if bad:
+        print(f"WARNING: {len(bad)} of {len(rows)} runs failed (non-zero "
+              "workload exit status or CoreMark-PRO CRC errors); their "
+              "metrics are not results:", file=sys.stderr)
+        for r in bad[:20]:
+            print(f"  {r['workload']} {r['abi']}-{r.get('config', r['cpu'])}"
+                  f": status={r['status']} errors={r.get('errors')}",
+                  file=sys.stderr)
     stat_rows = list(merged_stats.values())
     if not rows:
         sys.exit(f"no results under {args.dirs}")

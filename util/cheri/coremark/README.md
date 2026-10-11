@@ -111,6 +111,32 @@ reports; `cycles_ratio` on Minor/O3 is the timing overhead.
 Host time (16-core machine, 4 runs in parallel): a 1-iteration workload is
 ~70-140 M instructions; Atomic runs ~0.7 M instructions/s, Minor ~0.25 M/s.
 
+## 4. Plot
+
+```sh
+pip install matplotlib numpy          # once
+util/cheri/coremark/plot.py RESULTS/coremark/<TAG> [more dirs...] \
+    [--out DIR] [--png] [--hatch]
+```
+
+Writes paper figures (default `<first dir>/plots/`), sized for two-column
+IEEE/ACM templates (3.5 in / 7.16 in, 8 pt, TrueType fonts embedded):
+
+| File | Shows | Needs configs |
+|---|---|---|
+| `overhead.pdf` | purecap overhead over hybrid: instructions (Atomic) and cycles (Minor), geomean | `atomic`, `minor` |
+| `memory.pdf` | L1D MPKI, L2 MPKI, DRAM bytes/kinst, hybrid vs purecap (log) | `minor` |
+| `instmix.pdf` | dynamic instruction mix normalised to hybrid's count | `atomic` |
+| `tags.pdf` | flat/hierarchical tag storage vs passthrough: cycles, DRAM traffic, tag-cache hit rate | `minor-passthrough`, `minor-flat`/`-hierarchical` |
+| `endtoend.pdf` | purecap with each tag model vs hybrid without tags | `minor`, tag configs |
+| `tables.tex` | per-workload table, simulation cost (booktabs) | |
+| `plot_data.csv` | every plotted value | |
+
+Several directories are merged (later ones replace runs with the same ABI,
+config and workload); failed runs (non-zero status or CRC errors) are listed
+and left out. Geometric means cover only workloads present in every series
+of a figure. `--hatch` adds hatching for grayscale printing.
+
 ## Re-running with another kernel
 
 Nothing in these scripts depends on the kernel. Point `CHERI_KERNEL` (and
