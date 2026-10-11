@@ -13,6 +13,8 @@
 #   CONFIGS       atomic              CWES   all built (comma list)
 #   JOBS          4                   TEST_TIMEOUT  1 (guest seconds)
 #   MISALIGNED    emulate (or trap)
+#   ABIS          all built (purecap,hybrid,plain); e.g. ABIS=plain
+#   TIMEOUT       host seconds per gem5 run (default 48 h; Juliet 12 h)
 set -eu
 GEM5=$(cd "$(dirname "$0")/../../.." && pwd)
 RESULTS=$(mkdir -p "${1:?usage: $0 RESULTS [TAG]}" && cd "$1" && pwd)
@@ -32,7 +34,9 @@ set -- --out "$OUT" --builds "$BUILDS" --configs "$CONFIGS" --jobs "$JOBS" \
     --test-timeout "$TEST_TIMEOUT" --misaligned "$MISALIGNED" \
     --checkpoint "$RESULTS/checkpoints/juliet-k$khash"
 [ -n "${CWES:-}" ] && set -- "$@" --cwes "$CWES"
+[ -n "${ABIS:-}" ] && set -- "$@" --abis "$ABIS"
 
 echo "results: $OUT"
+[ -n "${TIMEOUT:-}" ] && set -- "$@" --timeout "$TIMEOUT"
 python3 "$GEM5/util/cheri/juliet/run.py" "$@"
 python3 "$GEM5/util/cheri/juliet/parse.py" "$OUT"

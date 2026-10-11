@@ -248,7 +248,8 @@ def main():
         default=os.path.expanduser("~/hiwi/juliet-gem5/out"),
         help="out/ dir from build.py",
     )
-    ap.add_argument("--abis", default="purecap,hybrid")
+    ap.add_argument("--abis", default=None,
+                    help="default: every ABI built (purecap,hybrid,plain)")
     ap.add_argument(
         "--configs",
         default="atomic",
@@ -284,7 +285,9 @@ def main():
     builds = os.path.abspath(args.builds)
     if not os.path.exists(os.path.join(builds, "jrun")):
         sys.exit(f"{builds}/jrun missing: run util/cheri/juliet/build.py")
-    abis = args.abis.split(",")
+    abis = (args.abis.split(",") if args.abis else
+            [a for a in ("purecap", "hybrid", "plain")
+             if os.path.isdir(os.path.join(builds, a))])
     if args.cwes:
         cwes = [int(c.removeprefix("CWE")) for c in args.cwes.split(",")]
     else:

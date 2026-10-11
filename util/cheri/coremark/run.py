@@ -25,7 +25,7 @@ is refused.
 Usage:
   util/cheri/coremark/run.py --out m5out/coremark/minor-base \\
       --configs atomic,minor,minor-passthrough,minor-flat,minor-hierarchical \\
-      [--abis purecap,hybrid] [--iterations 1] \\
+      [--abis purecap,hybrid,plain] [--iterations 1] \\
       [--workloads core,zip-test] [--jobs 4] [--checkpoint DIR]
 """
 
@@ -428,7 +428,7 @@ def main():
         default=os.path.expanduser("~/hiwi/coremark-pro-gem5/builds"),
         help="CoreMark-PRO builds/ dir from build.sh",
     )
-    ap.add_argument("--abis", default="purecap,hybrid")
+    ap.add_argument("--abis", default="purecap,hybrid,plain")
     ap.add_argument(
         "--configs",
         default=None,
@@ -459,7 +459,13 @@ def main():
         "core=-D=-I1 (core's 1000-iteration preset)",
     )
     ap.add_argument("--jobs", type=int, default=4)
-    ap.add_argument("--timeout", type=int, default=6 * 3600)
+    ap.add_argument(
+        "--timeout",
+        type=int,
+        default=48 * 3600,
+        help="host seconds per gem5 run before it is killed (default 48 h; "
+        "long workloads on Minor take many hours on a loaded machine)",
+    )
     ap.add_argument("--sdk", default=os.path.expanduser("~/cheri/output/sdk"))
     ap.add_argument(
         "--checkpoint",

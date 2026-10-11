@@ -1,12 +1,14 @@
-# Juliet C/C++ test suite on gem5 CHERI-RISC-V (purecap vs hybrid)
+# Juliet C/C++ test suite on gem5 CHERI-RISC-V (purecap vs hybrid vs plain RV64)
 
 Security evaluation with NIST's Juliet 1.3 test suite
 ([arichardson/juliet-test-suite-c](https://github.com/arichardson/juliet-test-suite-c),
 the version cheribuild uses). Every test case has a *bad* variant (contains
 the CWE's bug) and a *good* variant (same code, bug fixed). Under CheriBSD on
 the gem5 model, a purecap bad test should be stopped by a capability fault
-(SIGPROT); the hybrid build of the same test is the unprotected baseline; good
-tests must pass under both ABIs (no false positives). It also exercises the
+(SIGPROT); the hybrid build (integer pointers on a CHERI system) and the
+plain RV64 build (no CHERI instructions; a core without CHERI) are the
+unprotected baselines; good tests must pass under every ABI (no false
+positives). `build.py --abis plain` adds plain to an existing build. It also exercises the
 model's CHERI checks on ~13k distinct programs per ABI.
 
 ## 1. Build (on a machine with the CHERI SDK)

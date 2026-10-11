@@ -14,15 +14,20 @@
 #   BUILDS        ~/hiwi/coremark-pro-gem5/builds   (from build.sh)
 #   CONFIGS       atomic,minor,minor-passthrough,minor-flat,minor-hierarchical
 #                 (CPU[-TAGMODEL]; tag model none if omitted)
+#   ABIS          purecap,hybrid,plain (e.g. ABIS=plain adds only the plain
+#                 RV64 baseline to existing purecap/hybrid results; merge with
+#                 parse.py OUT_OLD OUT_NEW --into DIR)
 #   ITER  1        JOBS  4
 #   CORE_ARGS     -D=-I1  (core's 1000-iteration preset; empty = default)
 #   plus any CHERI_L1D/L1I/L2/TAG_* knob of cheri-riscv-cheribsd-switch.py
+#   TIMEOUT       host seconds per gem5 run (default 48 h; Juliet 12 h)
 set -eu
 GEM5=$(cd "$(dirname "$0")/../../.." && pwd)
 RESULTS=$(mkdir -p "${1:?usage: $0 RESULTS [TAG]}" && cd "$1" && pwd)
 KERNEL=${CHERI_KERNEL:-$GEM5/tests/kernel}
 BUILDS=${BUILDS:-$HOME/hiwi/coremark-pro-gem5/builds}
 CONFIGS=${CONFIGS:-atomic,minor,minor-passthrough,minor-flat,minor-hierarchical}
+ABIS=${ABIS:-purecap,hybrid,plain}
 ITER=${ITER:-1}
 JOBS=${JOBS:-4}
 CORE_ARGS=${CORE_ARGS--D=-I1}
@@ -31,16 +36,17 @@ khash=$(sha256sum "$KERNEL" | cut -c1-12)
 bhash=$(cat "$BUILDS"/cheribsd-*/clang-cheribsd-*/bin/*.exe | sha256sum |
         cut -c1-12)
 TAG=${2:-$(date +%Y%m%d-%H%M)-k$khash}
-CKPT=$RESULTS/checkpoints/ck-k$khash-b$bhash
+CKPT=$RESULTS/checkpoints/ck-k$khash-b$bhash-$(echo "$ABIS" | tr , _)
 OUT=$RESULTS/coremark/$TAG
 mkdir -p "$RESULTS/checkpoints" "$RESULTS/coremark"
 
-set -- --out "$OUT" --builds "$BUILDS" --configs "$CONFIGS" --iterations "$ITER" \
+set -- --out "$OUT" --builds "$BUILDS" --abis "$ABIS" --configs "$CONFIGS" --iterations "$ITER" \
     --jobs "$JOBS" --checkpoint "$CKPT"
 [ -n "$CORE_ARGS" ] && set -- "$@" --wl-args "core=$CORE_ARGS"
 
 echo "results:    $OUT"
 echo "checkpoint: $CKPT"
+[ -n "${TIMEOUT:-}" ] && set -- "$@" --timeout "$TIMEOUT"
 python3 "$GEM5/util/cheri/coremark/run.py" "$@"
 python3 "$GEM5/util/cheri/coremark/parse.py" "$OUT"
 if python3 -c "import matplotlib, numpy" 2>/dev/null; then

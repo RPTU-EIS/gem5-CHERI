@@ -1,9 +1,25 @@
-# CoreMark-PRO on gem5 CHERI-RISC-V (purecap vs hybrid)
+# CoreMark-PRO on gem5 CHERI-RISC-V (purecap vs hybrid vs plain RV64)
 
 Scripts to build, run and analyse EEMBC CoreMark-PRO on the gem5 CHERI-RISC-V
-model under CheriBSD, comparing the **purecap** ABI (every pointer a
-capability) with the **hybrid** ABI (plain RV64 code, integer pointers, same
-kernel and hardware model) as the baseline.
+model under CheriBSD, in three builds of the same source, on the same kernel
+and hardware model:
+
+| ABI | What it is | Role |
+|---|---|---|
+| **purecap** | every pointer a 16-byte capability | CHERI-protected program |
+| **hybrid** | integer pointers, built for a CHERI system (`xcheri`) | legacy code on a CHERI system |
+| **plain** | RV64 built without CHERI (`-march=rv64imafdc`), 8-byte-word `memcpy` | **baseline**: what a core without CHERI runs |
+
+Why plain and not only hybrid: hybrid code may hold capabilities in memory,
+so the compiler copies 8-byte-aligned structs through libc's tag-preserving
+`memcpy`, and CheriBSD's hybrid `memcpy` copies in 16-byte words, falling
+back to single bytes when source and destination differ mod 16. Plain RV64
+code inlines such copies. Hybrid therefore pays costs a non-CHERI system does
+not (Olden bh: hybrid runs 3x+ more instructions than purecap), which
+understates purecap's overhead. Plain uses the same sysroot (CheriBSD's
+hybrid libc, apart from `memcpy`/`memmove`/`bcopy`, which
+`util/cheri/common/memcpy64.c` replaces) and runs as an ordinary 64-bit
+process on the same kernel, so OS effects are identical.
 
 ## 1. Build (once per CoreMark-PRO source / compiler change)
 
@@ -11,11 +27,14 @@ kernel and hardware model) as the baseline.
 util/cheri/coremark/build.sh [SRC] [WORK]
 #   SRC   default ~/hiwi/coremark-pro/coremark-pro   (left untouched)
 #   WORK  default ~/hiwi/coremark-pro-gem5           (copy that is built)
+#   ABIS="purecap hybrid plain" (default); ABIS=plain adds only plain and
+#   keeps the existing purecap/hybrid builds
 ```
 
-* Both ABIs use the same CHERI LLVM (`$CHERI_SDK`, default
-  `~/cheri/output/sdk`) and flags (`-O2 -static`); only the `--config`
-  differs (`make/clang-cheribsd-{purecap,hybrid}.mak`).
+* All ABIs use the same CHERI LLVM (`$CHERI_SDK`, default
+  `~/cheri/output/sdk`) and flags (`-O2 -static`); only the `--config` (and
+  for plain `-march=rv64imafdc` plus `libmemcpy64.a`) differs
+  (`make/clang-cheribsd-{purecap,hybrid,plain}.mak`).
 * `patches/core-purecap.patch` makes `core` correct under purecap (likely
   what made it fail in CHERI-VP): (1) it aligns pointers through an integer
   type, which must be `intptr_t` or the pointer loses its tag; (2) it sized
@@ -94,6 +113,18 @@ util/cheri/coremark/run.py --out m5out/coremark/<name> \
   | `CHERI_TAG_MODEL` | none, passthrough, flat, hierarchical (none) |
   | `CHERI_TAG_CACHE`, `CHERI_TAG_ASSOC` | tag cache (32KiB, 8) |
 
+### Adding plain to existing purecap/hybrid results
+
+The purecap and hybrid binaries do not change, so earlier runs stay valid:
+
+```sh
+ABIS=plain util/cheri/coremark/build.sh            # build machine
+ABIS=plain JOBS=8 util/cheri/coremark/run_all.sh RESULTS plain   # server
+util/cheri/coremark/parse.py RESULTS/coremark/<old tag> RESULTS/coremark/plain \
+    --into RESULTS/coremark/merged
+util/cheri/coremark/plot.py RESULTS/coremark/merged
+```
+
 ## 3. Analyse
 
 ```sh
@@ -104,8 +135,10 @@ Writes `OUT/<workload>/summary.csv` (that workload's rows) and, for all
 workloads, `results.csv` (per ABI/CPU/workload: CoreMark-PRO's own iterations,
 time and workloads/sec, CRC errors, instructions, cycles, IPC, loads/stores,
 L1D/L1I/L2 misses and MPKI, DRAM bytes, branch mispredictions, tag traffic)
-and `comparison.csv` (purecap/hybrid ratios), and prints the ratios with
-geometric means. `insts_ratio` on the atomic CPU is the metric CHERI-VP
+and `comparison.csv` (ratios for every ABI pair present: purecap/plain,
+hybrid/plain, purecap/hybrid), and prints the ratios with geometric means.
+`plot.py` draws ratios against plain when plain results are present
+(`--baseline hybrid` to override). `insts_ratio` on the atomic CPU is the metric CHERI-VP
 reports; `cycles_ratio` on Minor/O3 is the timing overhead.
 
 Host time (16-core machine, 4 runs in parallel): a 1-iteration workload is

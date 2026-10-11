@@ -46,7 +46,11 @@ DEFAULT_CWES = [121, 122, 124, 126, 127, 134, 188, 415, 416, 587, 588, 680,
 CFG = {
     "purecap": "cheribsd-riscv64-purecap.cfg",
     "hybrid": "cheribsd-riscv64-hybrid-for-purecap-rootfs.cfg",
+    # plain RV64: no CHERI instructions (a core without CHERI), with the
+    # 8-byte-word memcpy/memmove of util/cheri/common/memcpy64.c
+    "plain": "cheribsd-riscv64-hybrid-for-purecap-rootfs.cfg",
 }
+ABI_FLAGS = {"purecap": [], "hybrid": [], "plain": ["-march=rv64imafdc"]}
 TEST_RE = re.compile(r"^(CWE\d+_.+__.+_\d\d)")
 DISPATCH = r'''
 #include <sys/resource.h>
@@ -195,7 +199,8 @@ def main():
         "~/hiwi/juliet-test-suite-c"))
     ap.add_argument("--work", default=os.path.expanduser("~/hiwi/juliet-gem5"))
     ap.add_argument("--cwes", default=",".join(map(str, DEFAULT_CWES)))
-    ap.add_argument("--abis", default="purecap,hybrid")
+    ap.add_argument("--abis", default="purecap,hybrid,plain",
+                    help="ABIs to (re)build; others already built are kept")
     ap.add_argument("--shard-size", type=int, default=250)
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--sdk", default=os.environ.get(
@@ -222,7 +227,7 @@ def main():
     summary = {}
     pool = cf.ThreadPoolExecutor(max_workers=args.jobs)
     for abi in args.abis.split(","):
-        cfg = ["--config", CFG[abi]]
+        cfg = ["--config", CFG[abi]] + ABI_FLAGS[abi]
         for c in cwes:
             extra = ["-cheri-bounds=subobject-safe"] if (
                 c == 188 and abi == "purecap") else []
@@ -238,6 +243,13 @@ def main():
 
             # Support library objects (as the suite's `support` library).
             sup = []
+            if abi == "plain":
+                o = os.path.join(bdir, "memcpy64.o")
+                if not run([cc] + cfg + ["-O2", "-fno-builtin", "-c",
+                           os.path.join(HERE, "..", "common", "memcpy64.c"),
+                           "-o", o], log):
+                    sys.exit("\n".join(log))
+                sup.append(o)
             for s in ("io.c", "std_thread.c"):
                 o = os.path.join(bdir, s + ".o")
                 if not run([cc] + flags + ["-c", os.path.join(support, s),
@@ -394,6 +406,12 @@ def main():
                 os.path.join(HERE, "jrun.c")], log := []):
         sys.exit("\n".join(log))
     run([strip, jr], log)
+    # keep the entries of ABIs/CWEs built earlier and not rebuilt now
+    try:
+        with open(os.path.join(work, "build-summary.json")) as f:
+            summary = dict(json.load(f).get("cwes", {}), **summary)
+    except (OSError, ValueError):
+        pass
     with open(os.path.join(work, "build-summary.json"), "w") as f:
         json.dump({"sdk": sdk, "src": os.path.abspath(args.src),
                    "shard_size": args.shard_size, "cwes": summary}, f,

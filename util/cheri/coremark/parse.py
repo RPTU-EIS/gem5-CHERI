@@ -9,7 +9,9 @@ workload's region in console.log (=== CM-BEGIN/END, CoreMark-PRO's own
 
 Writes
   OUT/results.csv            one row per (abi, cpu, workload)
-  OUT/comparison.csv         purecap / hybrid ratios per (cpu, workload)
+  OUT/comparison.csv         ratios per (config, workload) for every ABI
+                             pair present: purecap/plain, hybrid/plain,
+                             purecap/hybrid (plain: RV64 without CHERI)
   OUT/<workload>/summary.csv that workload's rows (per-workload layout)
   OUT/all_stats.csv          every gem5 statistic of every run, one row per
                              (abi, config, workload)
@@ -223,7 +225,7 @@ def collect(out, all_stats):
     rows = []
     for d, _, files in sorted(os.walk(out)):
         m = re.fullmatch(
-            r"(purecap|hybrid)-([A-Za-z0-9_-]+)", os.path.basename(d)
+            r"(purecap|hybrid|plain)-([A-Za-z0-9_-]+)", os.path.basename(d)
         )
         if not m or "console.log" not in files:
             continue
@@ -376,28 +378,41 @@ def main():
         "l2_misses",
         "dram_bytes_read",
     ]
+    # ABI pairs (numerator, baseline): plain is RV64 compiled without
+    # CHERI, the baseline of a core without CHERI; hybrid is legacy code on
+    # a CHERI system.
+    pairs = [("purecap", "plain"), ("hybrid", "plain"), ("purecap", "hybrid")]
     comp = []
-    for (abi, config, wl), p in by.items():
-        if abi != "purecap" or ("hybrid", config, wl) not in by:
-            continue
-        h = by[("hybrid", config, wl)]
-        c = {
-            "config": config,
-            "cpu": p["cpu"],
-            "tag_model": p["tag_model"],
-            "workload": wl,
-        }
-        for k in ratio_keys:
-            try:
-                c[k + "_ratio"] = float(p[k]) / float(h[k])
-            except (KeyError, ValueError, ZeroDivisionError):
-                c[k + "_ratio"] = float("nan")
-        c["ipc_purecap"] = p.get("ipc", float("nan"))
-        c["ipc_hybrid"] = h.get("ipc", float("nan"))
-        c["errors"] = p["errors"] + h["errors"]
-        comp.append(c)
+    for num, den in pairs:
+        for (abi, config, wl), p in by.items():
+            if abi != num or (den, config, wl) not in by:
+                continue
+            h = by[(den, config, wl)]
+            c = {
+                "abi": num,
+                "baseline": den,
+                "config": config,
+                "cpu": p["cpu"],
+                "tag_model": p["tag_model"],
+                "workload": wl,
+            }
+            for k in ratio_keys:
+                try:
+                    c[k + "_ratio"] = float(p[k]) / float(h[k])
+                except (KeyError, ValueError, ZeroDivisionError):
+                    c[k + "_ratio"] = float("nan")
+            c["ipc_" + num] = p.get("ipc", float("nan"))
+            c["ipc_" + den] = h.get("ipc", float("nan"))
+            c["ipc_abi"] = p.get("ipc", float("nan"))
+            c["ipc_baseline"] = h.get("ipc", float("nan"))
+            c["errors"] = p["errors"] + h["errors"]
+            comp.append(c)
     with open(os.path.join(out, "comparison.csv"), "w", newline="") as f:
-        w = csv.DictWriter(f, list(comp[0]) if comp else ["config"])
+        w = csv.DictWriter(
+            f,
+            list(dict.fromkeys(k for c in comp for k in c)) or ["config"],
+            restval="",
+        )
         w.writeheader()
         w.writerows(comp)
 
@@ -450,9 +465,13 @@ def main():
             math.exp(sum(map(math.log, xs)) / len(xs)) if xs else float("nan")
         )
 
-    for config in sorted({c["config"] for c in comp}):
-        cs = [c for c in comp if c["config"] == config]
-        print(f"\n== {config}: purecap / hybrid")
+    for (num, den), config in sorted(
+        {((c["abi"], c["baseline"]), c["config"]) for c in comp},
+        key=lambda k: (pairs.index(k[0]), k[1]),
+    ):
+        cs = [c for c in comp if c["config"] == config
+              and (c["abi"], c["baseline"]) == (num, den)]
+        print(f"\n== {config}: {num} / {den}")
         hdr = [
             "workload",
             "insts",
@@ -462,7 +481,7 @@ def main():
             "L1D miss",
             "L2 miss",
             "DRAM rd",
-            "IPC p/h",
+            "IPC a/b",
             "err",
         ]
         print(
@@ -480,8 +499,8 @@ def main():
                     c["l1d_misses_ratio"],
                     c["l2_misses_ratio"],
                     c["dram_bytes_read_ratio"],
-                    c["ipc_purecap"],
-                    c["ipc_hybrid"],
+                    c["ipc_abi"],
+                    c["ipc_baseline"],
                     c["errors"],
                 )
             )

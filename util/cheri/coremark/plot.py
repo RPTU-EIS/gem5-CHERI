@@ -73,6 +73,15 @@ MIX = [
     ("Store", ["inst_MemWrite", "inst_FloatMemWrite"]),
 ]
 
+# ABIs in plotting order. plain: RV64 compiled without CHERI (a core
+# without CHERI); hybrid: the same code built for a CHERI system; purecap:
+# every pointer a capability. Ratios are against BASE: plain when present.
+ABI_ORDER = ["plain", "hybrid", "purecap"]
+ABI_NAME = {"plain": "Plain RV64", "hybrid": "Hybrid", "purecap": "Purecap"}
+ABI_LETTER = {"plain": "R", "hybrid": "H", "purecap": "P"}
+ABI_COLOR = {"plain": SLOTS[0], "purecap": SLOTS[1], "hybrid": SLOTS[2]}
+BASE = "hybrid"
+
 HATCH = False
 PLOTTED = []  # rows of plot_data.csv
 
@@ -152,14 +161,16 @@ class Data:
         self.workloads = sorted({k[2] for k in rows},
                                 key=lambda w: SHORT.get(w, w))
         self.configs = {k[1] for k in rows}
+        self.abis = [a for a in ABI_ORDER if any(k[0] == a for k in rows)]
 
     def get(self, abi, config, wl, metric):
         r = self.rows.get((abi, config, wl))
         return fnum(r.get(metric)) if r else None
 
-    def ratio(self, config, wl, metric, num=("purecap", None),
-              den=("hybrid", None)):
-        """num/den; each side is (abi, config or None for `config`)."""
+    def ratio(self, config, wl, metric, num=("purecap", None), den=None):
+        """num/den; each side is (abi, config or None for `config`); den
+        defaults to the baseline ABI."""
+        den = den or (BASE, None)
         a = self.get(num[0], num[1] or config, wl, metric)
         b = self.get(den[0], den[1] or config, wl, metric)
         return a / b if a is not None and b else None
@@ -253,20 +264,26 @@ def fig_overhead(d, out, png):
     timing = pick(d, "minor", "minor-passthrough")
     series = []
     if "atomic" in d.configs:
-        series.append(("Instructions (Atomic)", "atomic", "insts"))
+        series.append(("Purecap instructions (Atomic)", "atomic", "insts",
+                       "purecap"))
     if timing:
-        series.append(("Cycles (Minor)", timing, "cycles"))
+        series.append(("Purecap cycles (Minor)", timing, "cycles",
+                       "purecap"))
+        if BASE == "plain" and "hybrid" in d.abis:
+            series.append(("Hybrid cycles (Minor)", timing, "cycles",
+                           "hybrid"))
     if not series:
         return
     groups, vals = ratio_bars(d, "overhead", {
-        name: {w: d.ratio(cfg, w, metric) for w in d.workloads}
-        for name, cfg, metric in series})
+        name: {w: d.ratio(cfg, w, metric, (abi, None)) for w in d.workloads}
+        for name, cfg, metric, abi in series})
     if len(groups) < 2:
         return
     fig, ax = plt.subplots(figsize=(SINGLE, 1.75))
     grouped_bars(ax, groups, [s[0] for s in series], vals)
-    ax.set_ylabel("Purecap overhead\nvs. hybrid (%)")
-    top_legend(fig, ax, len(series))
+    ax.set_ylabel("Overhead vs.\n%s (%%)" % ABI_NAME[BASE].replace(
+        "Plain", "plain").replace("Hybrid", "hybrid"))
+    top_legend(fig, ax, 2 if len(series) < 3 else 1)
     save(fig, out, "overhead", png)
 
 
@@ -281,22 +298,23 @@ def fig_memory(d, out, png):
     wls = d.workloads
     fig, axs = plt.subplots(1, 3, figsize=(DOUBLE, 1.9), sharey=True)
     y = np.arange(len(wls))[::-1]
+    sizes = [26, 17, 10]
+    markers = ["o", "s", "D"]
     for ax, (m, label) in zip(axs, metrics):
-        h = [d.get("hybrid", cfg, w, m) for w in wls]
-        p = [d.get("purecap", cfg, w, m) for w in wls]
-        for yi, a, b in zip(y, h, p):
-            if a and b:
-                ax.plot([a, b], [yi, yi], color=GRID, linewidth=2,
-                        solid_capstyle="round", zorder=1)
-        ax.scatter([a for a in h if a], [yi for yi, a in zip(y, h) if a],
-                   s=26, color=SLOTS[0], edgecolor="white", linewidth=0.6,
-                   marker="o", label="Hybrid", zorder=3)
-        ax.scatter([b for b in p if b], [yi for yi, b in zip(y, p) if b],
-                   s=11, color=SLOTS[1], edgecolor="white", linewidth=0.4,
-                   marker="D" if HATCH else "o", label="Purecap", zorder=4)
-        for w, a, b in zip(wls, h, p):
-            record("memory", "hybrid", w, m, a)
-            record("memory", "purecap", w, m, b)
+        vals = {a: [d.get(a, cfg, w, m) for w in wls] for a in d.abis}
+        for i, yi in enumerate(y):
+            v = [vals[a][i] for a in d.abis if vals[a][i]]
+            if len(v) > 1:
+                ax.plot([min(v), max(v)], [yi, yi], color=GRID,
+                        linewidth=2, solid_capstyle="round", zorder=1)
+        for k, a in enumerate(d.abis):
+            ax.scatter([v for v in vals[a] if v],
+                       [yi for yi, v in zip(y, vals[a]) if v],
+                       s=sizes[k], color=ABI_COLOR[a], edgecolor="white",
+                       linewidth=0.5, marker=markers[k] if HATCH else "o",
+                       label=ABI_NAME[a], zorder=3 + k)
+            for w, v in zip(wls, vals[a]):
+                record("memory", a, w, m, v)
         ax.set_xscale("log")
         ax.set_xlabel(label)
         ax.grid(axis="x", which="major")
@@ -305,20 +323,20 @@ def fig_memory(d, out, png):
     axs[0].set_yticks(y)
     axs[0].set_yticklabels([SHORT.get(w, w) for w in wls])
     fig.subplots_adjust(wspace=0.08)
-    top_legend(fig, axs[0], 2)
+    top_legend(fig, axs[0], len(d.abis))
     save(fig, out, "memory", png)
 
 
 def fig_instmix(d, out, png):
     """Stacked dynamic instruction mix; each bar is normalised to the
-    hybrid instruction count, so the purecap bar's height is the
+    baseline's instruction count, so a bar's height is that ABI's
     instruction ratio."""
     cfg = pick(d, "atomic", "minor")
     if not cfg:
         return
+    abis = d.abis
     wls = [w for w in d.workloads
-           if d.get("hybrid", cfg, w, "insts")
-           and d.get("purecap", cfg, w, "insts")]
+           if all(d.get(a, cfg, w, "insts") for a in abis)]
     if not wls:
         return
     def share(abi, w, cls):
@@ -328,20 +346,21 @@ def fig_instmix(d, out, png):
                             for _, cs in MIX for c in cs)
         else:
             v = sum(d.get(abi, cfg, w, c) or 0 for c in dict(MIX)[cls])
-        return max(v, 0) / d.get("hybrid", cfg, w, "insts")
+        return max(v, 0) / d.get(BASE, cfg, w, "insts")
 
     # Classes under 0.5% of every bar are left out (stated in the caption).
     classes = [c for c in [m[0] for m in MIX] + ["Other"]
                if max(share(a, w, c) for w in wls
-                      for a in ("hybrid", "purecap")) >= 0.005]
+                      for a in abis) >= 0.005]
     fig, ax = plt.subplots(figsize=(DOUBLE, 1.9))
     xs, ticks, labels = [], [], []
+    step = len(abis) + 0.6
     for i, w in enumerate(wls):
-        for j, abi in enumerate(["hybrid", "purecap"]):
-            x = i * 2.6 + j * 1.0
+        for j, abi in enumerate(abis):
+            x = i * step + j * 1.0
             xs.append(x)
             ticks.append(x)
-            labels.append("H" if abi == "hybrid" else "P")
+            labels.append(ABI_LETTER[abi])
             bottom = 0.0
             for k, cls in enumerate(classes):
                 v = share(abi, w, cls)
@@ -351,14 +370,15 @@ def fig_instmix(d, out, png):
                        label=cls if i == 0 and j == 0 else None, zorder=2)
                 record("instmix", abi, w, cls, v)
                 bottom += v
-        ax.text(i * 2.6 + 0.5, -0.09, SHORT.get(w, w), ha="center",
+        ax.text(i * step + (len(abis) - 1) / 2, -0.09, SHORT.get(w, w),
+                ha="center",
                 va="top", transform=ax.get_xaxis_transform(), fontsize=7,
                 color=INK)
     ax.set_xticks(ticks)
     ax.set_xticklabels(labels, fontsize=6)
     ax.tick_params(axis="x", length=0, pad=1)
     ax.set_xlim(min(xs) - 0.8, max(xs) + 0.8)
-    ax.set_ylabel("Instructions\n(norm. to hybrid)")
+    ax.set_ylabel("Instructions\n(norm. to %s)" % ABI_NAME[BASE])
     top_legend(fig, ax, len(classes))
     save(fig, out, "instmix", png)
 
@@ -420,8 +440,8 @@ def fig_tags(d, out, png, abi):
 
 
 def fig_endtoend(d, out, png):
-    """Purecap with in-memory tags against hybrid on a machine without
-    them: the overhead a system pays to adopt CHERI."""
+    """Purecap with in-memory tags against the baseline (plain RV64 when
+    present) on a machine without them: what adopting CHERI costs."""
     base = "minor"
     series = [("Purecap, no tag storage", pick(d, "minor-passthrough",
                                                 "minor"))]
@@ -431,13 +451,13 @@ def fig_endtoend(d, out, png):
         return
     groups, vals = ratio_bars(d, "endtoend", {
         name: {w: d.ratio(None, w, "cycles", ("purecap", cfg),
-                          ("hybrid", base)) for w in d.workloads}
+                          (BASE, base)) for w in d.workloads}
         for name, cfg in series})
     if len(groups) < 2:
         return
     fig, ax = plt.subplots(figsize=(SINGLE, 1.75))
     grouped_bars(ax, groups, [s[0] for s in series], vals)
-    ax.set_ylabel("Cycle overhead vs.\nhybrid, no tags (%)")
+    ax.set_ylabel("Cycle overhead vs.\n%s, no tags (%%)" % ABI_NAME[BASE])
     top_legend(fig, ax, 1 if len(series) > 2 else 2)
     save(fig, out, "endtoend", png)
 
@@ -454,10 +474,11 @@ def tables(d, out):
         "% Generated by util/cheri/coremark/plot.py",
         "\\begin{tabular}{lrrrrrr}",
         "\\toprule",
-        " & Hybrid & \\multicolumn{2}{c}{Purecap / hybrid} & "
-        "\\multicolumn{2}{c}{IPC (Minor)} & Hybrid \\\\",
+        " & %s & \\multicolumn{2}{c}{Purecap / %s} & "
+        "\\multicolumn{2}{c}{IPC (Minor)} & %s \\\\" % (
+            ABI_NAME[BASE], ABI_NAME[BASE].lower(), ABI_NAME[BASE]),
         "\\cmidrule(lr){3-4}\\cmidrule(lr){5-6}",
-        "Workload & Minst & Insts & Cycles & Hybrid & Purecap & "
+        "Workload & Minst & Insts & Cycles & %s & Purecap & " % ABI_NAME[BASE] +
         "L2 MPKI \\\\",
         "\\midrule",
     ]
@@ -467,15 +488,15 @@ def tables(d, out):
         c = d.ratio(timing, w, "cycles") if timing else None
         ri.append(a)
         rc.append(c)
-        n = d.get("hybrid", "atomic", w, "insts") or (
-            d.get("hybrid", timing, w, "insts") if timing else None)
+        n = d.get(BASE, "atomic", w, "insts") or (
+            d.get(BASE, timing, w, "insts") if timing else None)
         lines.append("%s & %s & %s & %s & %s & %s & %s \\\\" % (
             SHORT.get(w, w).replace("_", "\\_"),
             fmt(n / 1e6 if n else None, "%.0f"), fmt(a, "%.2f"),
             fmt(c, "%.2f"),
-            fmt(d.get("hybrid", timing, w, "ipc"), "%.2f"),
+            fmt(d.get(BASE, timing, w, "ipc"), "%.2f"),
             fmt(d.get("purecap", timing, w, "ipc"), "%.2f"),
-            fmt(d.get("hybrid", timing, w, "l2_mpki"), "%.2f")))
+            fmt(d.get(BASE, timing, w, "l2_mpki"), "%.2f")))
     lines += ["\\midrule",
               "Geomean & & %s & %s & & & \\\\" % (
                   fmt(geomean(ri), "%.2f"), fmt(geomean(rc), "%.2f")),
@@ -514,6 +535,9 @@ def main():
                     help="also write 300 dpi PNGs")
     ap.add_argument("--hatch", action="store_true",
                     help="add hatching / marker shapes for grayscale print")
+    ap.add_argument("--baseline", choices=ABI_ORDER[:2], default=None,
+                    help="ABI that ratios are against (default plain if "
+                    "present, else hybrid)")
     ap.add_argument("--tag-abi", default="purecap",
                     help="ABI shown in tags.pdf (default purecap)")
     a = ap.parse_args()
@@ -524,6 +548,9 @@ def main():
     os.makedirs(out, exist_ok=True)
     style()
     d = Data(load(a.results))
+    global BASE
+    BASE = a.baseline or ("plain" if "plain" in d.abis else "hybrid")
+    print(f"baseline: {BASE}")
     if not d.rows:
         sys.exit("no successful runs in %s" % ", ".join(a.results))
     fig_overhead(d, out, a.png)
