@@ -23,6 +23,9 @@
 #   CHERI_TAG_ASSOC   leaf tag-cache associativity (default 8)
 #   CHERI_L1D, CHERI_L1I, CHERI_L2
 #                     cache sizes (default 16kB, 16kB, 256kB)
+#   CHERI_MISALIGNED  1: misaligned data accesses to DRAM complete (as on
+#                     QEMU or with firmware emulation) instead of trapping
+#                     (SIGBUS in the guest); default 0
 #   CHERI_CKPT_OUT    save a checkpoint there when the guest runs
 #                     `m5 checkpoint`, then exit
 #   CHERI_CKPT_IN     restore from that checkpoint instead of booting
@@ -98,6 +101,7 @@ board = RiscvCheriBoard(
     processor=processor,
     memory=memory,
     cache_hierarchy=cache_hierarchy,
+    misaligned_dram=os.environ.get("CHERI_MISALIGNED", "0") == "1",
 )
 
 # Checked here: otherwise gem5 only panics when the guest runs m5 readfile.

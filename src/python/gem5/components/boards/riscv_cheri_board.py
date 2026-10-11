@@ -85,7 +85,14 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         processor: AbstractProcessor,
         memory: AbstractMemorySystem,
         cache_hierarchy: AbstractCacheHierarchy,
+        misaligned_dram: bool = False,
     ) -> None:
+        """misaligned_dram: misaligned data loads/stores to DRAM complete
+        (as on QEMU, or hardware whose firmware emulates them) instead of
+        raising address-misaligned exceptions, which CheriBSD turns into
+        SIGBUS. Capability accesses must stay 16-byte aligned either way
+        (checked separately, before the PMA)."""
+        self._misaligned_dram = misaligned_dram
         super().__init__(clk_freq, processor, memory, cache_hierarchy)
 
         if processor.get_isa() != ISA.RISCV_CHERI:
@@ -207,7 +214,8 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
         )
         for cpu in cores:
             cpu.get_mmu().pma_checker = CHERIPMAChecker(
-                uncacheable=uncacheable_range
+                uncacheable=uncacheable_range,
+                misaligned=self.mem_ranges if self._misaligned_dram else [],
             )
 
     @overrides(AbstractSystemBoard)
