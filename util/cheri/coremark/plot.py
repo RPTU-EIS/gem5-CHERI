@@ -60,7 +60,7 @@ SHORT = {
     "sha-test": "sha",
     "zip-test": "zip",
 }
-TAG_MODELS = ["flat", "hierarchical"]
+TAG_MODELS = ["nocache", "flat", "hierarchical"]
 
 # Instruction classes (gem5 OpClass) folded for the mix figure.
 MIX = [

@@ -53,7 +53,8 @@ class CheriTagController : public ClockedObject
     DrainState drain() override;
 
   private:
-    /** Set-associative, LRU, write-back cache of 64-byte tag-table lines. */
+    /** Set-associative, LRU, write-back cache of 64-byte tag-table lines.
+     *  Size 0 means no cache. */
     class TagCache
     {
       public:
@@ -64,6 +65,8 @@ class CheriTagController : public ClockedObject
         /** Insert a line that missed. Returns true if a dirty line was
          *  evicted, with its address in victim. */
         bool insert(Addr line, bool dirty, Addr &victim);
+        /** False when built with size 0 (no cache: always misses). */
+        bool enabled() const { return numSets != 0; }
 
       private:
         struct Way

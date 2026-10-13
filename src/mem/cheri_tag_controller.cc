@@ -25,6 +25,11 @@ namespace gem5
 CheriTagController::TagCache::TagCache(uint64_t size_bytes, unsigned _assoc)
     : assoc(std::max(1u, _assoc))
 {
+    if (size_bytes == 0) {
+        // No cache: every lookup misses and nothing is kept.
+        numSets = 0;
+        return;
+    }
     uint64_t lines = std::max<uint64_t>(1, size_bytes / LineBytes);
     numSets = std::max<uint64_t>(1, lines / assoc);
     ways.resize((size_t)numSets * assoc);
@@ -39,6 +44,8 @@ CheriTagController::TagCache::setOf(Addr line) const
 bool
 CheriTagController::TagCache::access(Addr line, bool make_dirty)
 {
+    if (numSets == 0)
+        return false;
     Way *set = &ways[(size_t)setOf(line) * assoc];
     for (unsigned i = 0; i < assoc; i++) {
         if (set[i].valid && set[i].line == line) {
@@ -53,6 +60,10 @@ CheriTagController::TagCache::access(Addr line, bool make_dirty)
 bool
 CheriTagController::TagCache::insert(Addr line, bool dirty, Addr &victim)
 {
+    if (numSets == 0) {
+        victim = 0;
+        return false;
+    }
     Way *set = &ways[(size_t)setOf(line) * assoc];
     Way *v = &set[0];
     for (unsigned i = 0; i < assoc; i++) {
@@ -353,6 +364,11 @@ CheriTagController::handleTagResponse(PacketPtr pkt)
     bool any_write = std::any_of(fill.waiters.begin(), fill.waiters.end(),
                                  [](const Waiter &w) { return w.isWrite; });
     insertLine(fill.isRoot, line, !fill.isRoot && any_write);
+    // Without a leaf cache a tag write is a read-modify-write of the
+    // tag-table line: write it back right away (one write for all the
+    // writes that waited on this read).
+    if (!fill.isRoot && any_write && !leafCache.enabled())
+        issueTagWriteback(line);
 
     for (const Waiter &w : fill.waiters) {
         // After a root fill the access still needs its leaf level.
@@ -486,6 +502,8 @@ CheriTagController::atomicTagWork(const Waiter &w)
     lat += atomicTagAccess(leaf, MemCmd::ReadReq);
     if (leafCache.insert(leaf, w.isWrite, victim))
         atomicTagAccess(victim, MemCmd::WritebackDirty);
+    if (w.isWrite && !leafCache.enabled())
+        atomicTagAccess(leaf, MemCmd::WritebackDirty);  // read-modify-write
     return lat;
 }
 

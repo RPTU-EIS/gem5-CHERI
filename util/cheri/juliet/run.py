@@ -307,6 +307,7 @@ def main():
         if cpu not in ("atomic", "timing", "minor", "o3") or tag not in (
             "none",
             "passthrough",
+            "nocache",
             "flat",
             "hierarchical",
         ):

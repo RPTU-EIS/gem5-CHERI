@@ -19,8 +19,11 @@
 #                                       (baseline with the same topology)
 #                       flat            single-level tag table + tag cache
 #                       hierarchical    root level with zero elision
+#                       nocache         flat table without a tag cache: every
+#                                       lookup reads the tag table in DRAM
 #   CHERI_TAG_CACHE   leaf tag-cache size (default 32KiB)
 #   CHERI_TAG_ASSOC   leaf tag-cache associativity (default 8)
+#   CHERI_TAG_ROOT_CACHE  root tag-cache size, hierarchical (default 1KiB)
 #   CHERI_L1D, CHERI_L1I, CHERI_L2
 #                     cache sizes (default 16kB, 16kB, 256kB)
 #   CHERI_MISALIGNED  1: misaligned data accesses to DRAM complete (as on
@@ -79,15 +82,19 @@ cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
 memory = DualChannelDDR4_2400(size="3GB")
 
 tag_model = os.environ.get("CHERI_TAG_MODEL", "none").lower()
-if tag_model not in ("none", "passthrough", "flat", "hierarchical"):
+if tag_model not in ("none", "passthrough", "nocache", "flat", "hierarchical"):
     raise ValueError(f"Unknown CHERI_TAG_MODEL '{tag_model}'")
 if tag_model != "none":
     memory = CheriTaggedMemory(
         memory,
         enabled=tag_model != "passthrough",
         hierarchical=tag_model == "hierarchical",
-        leaf_cache_size=os.environ.get("CHERI_TAG_CACHE", "32KiB"),
+        # nocache: flat table, no tag cache (every lookup reads the table)
+        leaf_cache_size="0B"
+        if tag_model == "nocache"
+        else os.environ.get("CHERI_TAG_CACHE", "32KiB"),
         leaf_cache_assoc=int(os.environ.get("CHERI_TAG_ASSOC", "8")),
+        root_cache_size=os.environ.get("CHERI_TAG_ROOT_CACHE", "1KiB"),
     )
 processor = SimpleSwitchableProcessor(
     starting_core_type=CPUTypes.ATOMIC,

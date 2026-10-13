@@ -69,6 +69,7 @@ ENV_KNOBS = [
     "CHERI_TAG_MODEL",
     "CHERI_TAG_CACHE",
     "CHERI_TAG_ASSOC",
+    "CHERI_TAG_ROOT_CACHE",
     "CHERI_L1D",
     "CHERI_L1I",
     "CHERI_L2",
@@ -505,6 +506,7 @@ def main():
         if cpu not in ("atomic", "timing", "minor", "o3") or tag not in (
             "none",
             "passthrough",
+            "nocache",
             "flat",
             "hierarchical",
         ):

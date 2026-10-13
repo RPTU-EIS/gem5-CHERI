@@ -113,7 +113,9 @@ def checks(out):
 
 
 def main():
-    dirs = [a for a in sys.argv[1:] if not a.startswith("--")]
+    argv = sys.argv[1:]
+    into = argv[argv.index("--into") + 1] if "--into" in argv else None
+    dirs = [a for a in argv if not a.startswith("--") and a != into]
     if not dirs:
         sys.exit(__doc__)
     allchecks = {}

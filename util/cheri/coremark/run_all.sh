@@ -17,6 +17,7 @@
 #   ABIS          purecap,hybrid,plain (e.g. ABIS=plain adds only the plain
 #                 RV64 baseline to existing purecap/hybrid results; merge with
 #                 parse.py OUT_OLD OUT_NEW --into DIR)
+#   WORKLOADS     all nine (comma list)
 #   ITER  1        JOBS  4
 #   CORE_ARGS     -D=-I1  (core's 1000-iteration preset; empty = default)
 #   plus any CHERI_L1D/L1I/L2/TAG_* knob of cheri-riscv-cheribsd-switch.py
@@ -43,6 +44,7 @@ mkdir -p "$RESULTS/checkpoints" "$RESULTS/coremark"
 set -- --out "$OUT" --builds "$BUILDS" --abis "$ABIS" --configs "$CONFIGS" --iterations "$ITER" \
     --jobs "$JOBS" --checkpoint "$CKPT"
 [ -n "$CORE_ARGS" ] && set -- "$@" --wl-args "core=$CORE_ARGS"
+[ -n "${WORKLOADS:-}" ] && set -- "$@" --workloads "$WORKLOADS"
 
 echo "results:    $OUT"
 echo "checkpoint: $CKPT"

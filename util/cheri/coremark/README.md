@@ -110,8 +110,15 @@ util/cheri/coremark/run.py --out m5out/coremark/<name> \
   | `CHERI_KERNEL` | kernel ELF (`tests/kernel`) |
   | `CHERI_DISK` | disk image (`tests/cheribsd-riscv64-purecap.img`) |
   | `CHERI_L1D`, `CHERI_L1I`, `CHERI_L2` | cache sizes (16kB, 16kB, 256kB) |
-  | `CHERI_TAG_MODEL` | none, passthrough, flat, hierarchical (none) |
-  | `CHERI_TAG_CACHE`, `CHERI_TAG_ASSOC` | tag cache (32KiB, 8) |
+  | `CHERI_TAG_MODEL` | none, passthrough, nocache, flat, hierarchical (none) |
+  | `CHERI_TAG_CACHE`, `CHERI_TAG_ASSOC` | leaf tag cache (32KiB, 8) |
+  | `CHERI_TAG_ROOT_CACHE` | root tag cache, hierarchical (1KiB) |
+
+  Tag models (configs `minor-<model>`): `passthrough` (tag controller, no
+  tag traffic: the baseline), `nocache` (flat tag table without a tag cache:
+  every lookup reads the table in DRAM, every tag write is a read-modify-
+  write), `flat` (table + 32 KiB leaf tag cache), `hierarchical` (leaf
+  cache + root level with zero elision).
 
 ### Adding plain to existing purecap/hybrid results
 
@@ -169,6 +176,26 @@ Several directories are merged (later ones replace runs with the same ABI,
 config and workload); failed runs (non-zero status or CRC errors) are listed
 and left out. Geometric means cover only workloads present in every series
 of a figure. `--hatch` adds hatching for grayscale printing.
+
+## Cache-size sweep
+
+How much of purecap's cost is cache capacity: rerun the experiment at
+several L1D and L2 sizes (config `minor`, no tag model), one results
+directory per point, reusing the checkpoints:
+
+```sh
+WORKLOADS=parser-125k,core ABIS=purecap,hybrid,plain JOBS=8 \
+    util/cheri/cache_sweep.sh coremark RESULTS          # or: olden
+util/cheri/cache_sweep_collect.py RESULTS/coremark/<main run> \
+    RESULTS/coremark/sweep-*
+```
+
+`L2_SIZES` (default `128kB 512kB 1MB 2MB`, at L1D 16kB) and `L1D_SIZES`
+(default `32kB 64kB`, at L2 256kB) choose the points; the main run is the
+default point (16kB / 256kB). `cache_sweep.csv` has one row per (L1D, L2,
+ABI, workload); the printout gives every ABI's cycles relative to the
+baseline ABI at the default sizes, and the simulated points at which
+purecap is at least as fast as that.
 
 ## Re-running with another kernel
 

@@ -94,6 +94,18 @@ the same CSVs as CoreMark-PRO (`results.csv`, `comparison.csv`,
 `all_stats.csv`, `tag_costs.csv`, per-workload `summary.csv`) plus
 `validation.csv`. `plot.py` makes the same paper figures.
 
+## No tag cache, cache-size sweep
+
+```sh
+CONFIGS=minor-nocache JOBS=16 util/cheri/olden/run_all.sh RESULTS olden-nocache
+util/cheri/olden/parse.py RESULTS/olden/<main> RESULTS/olden/olden-nocache \
+    --into RESULTS/olden/merged
+JOBS=16 util/cheri/cache_sweep.sh olden RESULTS
+util/cheri/cache_sweep_collect.py RESULTS/olden/<main> RESULTS/olden/sweep-*
+```
+
+(see the CoreMark-PRO README for the tag models and the sweep options).
+
 ## Everything in one place (e.g. on a server)
 
 ```sh

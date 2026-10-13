@@ -27,7 +27,11 @@ class CheriTagController(ClockedObject):
     hierarchical = Param.Bool(
         True, "Two-level table with a root level and zero elision"
     )
-    leaf_cache_size = Param.MemorySize("32KiB", "Leaf tag-cache size")
+    leaf_cache_size = Param.MemorySize(
+        "32KiB",
+        "Leaf tag-cache size; 0 = no tag cache (every lookup reads the tag "
+        "table, every tag write is a read-modify-write of its line)",
+    )
     leaf_cache_assoc = Param.Unsigned(8, "Leaf tag-cache associativity")
     root_cache_size = Param.MemorySize("1KiB", "Root tag-cache size")
     root_cache_assoc = Param.Unsigned(4, "Root tag-cache associativity")
