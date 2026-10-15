@@ -1,0 +1,62 @@
+{
+ "plain/bh": {
+  "CHERI_STATS_AT_PC": "0x29fcc:1,0x2a428:1,0x45948:1"
+ },
+ "plain/bisort": {
+  "CHERI_STATS_AT_PC": "0x29596:1,0x297d4:1,0x42d38:1"
+ },
+ "plain/em3d": {
+  "CHERI_STATS_AT_PC": "0x2a17a:1,0x297fc:1,0x43938:1"
+ },
+ "plain/health": {
+  "CHERI_STATS_AT_PC": "0x29578:1,0x29b48:1,0x43252:1"
+ },
+ "plain/mst": {
+  "CHERI_STATS_AT_PC": "0x29888:1,0x296d4:1,0x42e98:1"
+ },
+ "plain/perimeter": {
+  "CHERI_STATS_AT_PC": "0x2969c:1,0x292d8:1,0x42bc8:1"
+ },
+ "plain/power": {
+  "CHERI_STATS_AT_PC": "0x2948c:1,0x296f8:1,0x43526:1"
+ },
+ "plain/treeadd": {
+  "CHERI_STATS_AT_PC": "0x29340:1,0x2930c:1,0x42778:1"
+ },
+ "plain/tsp": {
+  "CHERI_STATS_AT_PC": "0x294d4:1,0x29866:1,0x434b8:1"
+ },
+ "plain/voronoi": {
+  "CHERI_STATS_AT_PC": "0x2aee4:1,0x29d30:1,0x452c8:1"
+ },
+ "purecap/bh": {
+  "CHERI_STATS_AT_PC": "0x3e8f0:1,0x3edf2:1,0x57a86:1"
+ },
+ "purecap/bisort": {
+  "CHERI_STATS_AT_PC": "0x3c590:1,0x3c7f8:1,0x53486:1"
+ },
+ "purecap/em3d": {
+  "CHERI_STATS_AT_PC": "0x3d5ac:1,0x3cac0:1,0x544f6:1"
+ },
+ "purecap/health": {
+  "CHERI_STATS_AT_PC": "0x3c538:1,0x3cbd6:1,0x53a56:1"
+ },
+ "purecap/mst": {
+  "CHERI_STATS_AT_PC": "0x3ca08:1,0x3c808:1,0x53766:1"
+ },
+ "purecap/perimeter": {
+  "CHERI_STATS_AT_PC": "0x3c54a:1,0x3c122:1,0x531a6:1"
+ },
+ "purecap/power": {
+  "CHERI_STATS_AT_PC": "0x3c3c0:1,0x3c646:1,0x53d7e:1"
+ },
+ "purecap/treeadd": {
+  "CHERI_STATS_AT_PC": "0x3c1ec:1,0x3c1b0:1,0x52d36:1"
+ },
+ "purecap/tsp": {
+  "CHERI_STATS_AT_PC": "0x3c50a:1,0x3c930:1,0x53d76:1"
+ },
+ "purecap/voronoi": {
+  "CHERI_STATS_AT_PC": "0x3e428:1,0x3d1a0:1,0x56376:1"
+ }
+}

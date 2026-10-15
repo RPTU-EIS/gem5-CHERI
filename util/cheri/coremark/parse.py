@@ -238,6 +238,12 @@ def collect(out, all_stats):
             if os.path.isfile(os.path.join(d, "stats.txt"))
             else []
         )
+        # CHERI_STATS_AT_PC dumps (cumulative, inside the region) come before
+        # the region's workend dump; drop them (single-region runs, as Olden)
+        with open(os.path.join(d, "console.log"), errors="replace") as f:
+            n_pc = sum(line.startswith("[pc-stats] dump") for line in f)
+        if n_pc and len(regions) == 1:
+            dumps = dumps[n_pc:]
         info = {}
         if os.path.isfile(os.path.join(d, "run_info.json")):
             with open(os.path.join(d, "run_info.json")) as f:

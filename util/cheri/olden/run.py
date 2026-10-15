@@ -100,6 +100,11 @@ def main():
     )
     ap.add_argument("--sdk", default=os.path.expanduser("~/cheri/output/sdk"))
     ap.add_argument("--checkpoint", required=True, help="checkpoint base")
+    ap.add_argument(
+        "--job-env",
+        help="JSON file {\"<abi>/<workload>\": {VAR: value}}: extra "
+        "environment for that run only (e.g. its CHERI_STATS_AT_PC)",
+    )
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -133,6 +138,10 @@ def main():
             sys.exit(f"bad config {c}")
         cfg[c] = (cpu, tag)
 
+    job_env = {}
+    if args.job_env:
+        with open(args.job_env) as f:
+            job_env = json.load(f)
     out = os.path.abspath(args.out)
     os.makedirs(os.path.join(out, "bin"), exist_ok=True)
     env = dict(os.environ)
@@ -185,6 +194,7 @@ def main():
         "system_files": system_files,
         "binaries": binaries,
         "command": " ".join(sys.argv),
+        "job_env": job_env,
     }
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
@@ -236,7 +246,7 @@ def main():
                 scripts[(wl, abi)],
                 ckpts[tag != "none"],
                 args.timeout,
-                env,
+                dict(env, **job_env.get(f"{abi}/{wl}", {})),
             ))
         for fut in cf.as_completed(futs):
             outdir, rc, secs = fut.result()

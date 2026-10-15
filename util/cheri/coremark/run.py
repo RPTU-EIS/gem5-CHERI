@@ -73,6 +73,11 @@ ENV_KNOBS = [
     "CHERI_L1D",
     "CHERI_L1I",
     "CHERI_L2",
+    "CHERI_PRIV_STATS",
+    "CHERI_STATS_AT_PC",
+    "CHERI_L1D_PF",
+    "CHERI_L2_PF",
+    "CHERI_PF_ON_ACCESS",
 ]
 
 

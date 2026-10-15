@@ -16,6 +16,11 @@
 #   ABIS          all built (purecap,hybrid,plain); e.g. ABIS=plain
 #   plus any CHERI_L1D/L1I/L2/TAG_* knob of cheri-riscv-cheribsd-switch.py
 #   TIMEOUT       host seconds per gem5 run (default 48 h; Juliet 12 h)
+#   CHECKPOINT    checkpoint base to use instead of the one named above,
+#                 e.g. an existing ...-hybrid_plain_purecap one when running
+#                 fewer ABIs (it may hold more binaries than needed)
+#   JOB_ENV       run.py --job-env file, e.g. util/cheri/olden/phase-pcs.json
+#                 (per-run CHERI_STATS_AT_PC phase boundaries)
 set -eu
 GEM5=$(cd "$(dirname "$0")/../../.." && pwd)
 RESULTS=$(mkdir -p "${1:?usage: $0 RESULTS [TAG]}" && cd "$1" && pwd)
@@ -31,9 +36,10 @@ TAG=${2:-$(date +%Y%m%d-%H%M)-k$khash}
 OUT=$RESULTS/olden/$TAG
 mkdir -p "$RESULTS/checkpoints" "$RESULTS/olden"
 
+CHECKPOINT=${CHECKPOINT:-$RESULTS/checkpoints/olden-k$khash-b$bhash-$(echo "$ABIS" | tr , _)}
 set -- --out "$OUT" --work "$WORK" --configs "$CONFIGS" --jobs "$JOBS" \
-    --abis "$ABIS" \
-    --checkpoint "$RESULTS/checkpoints/olden-k$khash-b$bhash-$(echo "$ABIS" | tr , _)"
+    --abis "$ABIS" --checkpoint "$CHECKPOINT"
+[ -n "${JOB_ENV:-}" ] && set -- "$@" --job-env "$JOB_ENV"
 [ -n "${WORKLOADS:-}" ] && set -- "$@" --workloads "$WORKLOADS"
 
 echo "results: $OUT"

@@ -106,6 +106,32 @@ util/cheri/cache_sweep_collect.py RESULTS/olden/<main> RESULTS/olden/sweep-*
 
 (see the CoreMark-PRO README for the tag models and the sweep options).
 
+## Phases, privilege modes, prefetcher training
+
+```sh
+CHERI_PRIV_STATS=1 CHERI_PF_ON_ACCESS=1 CONFIGS=minor ABIS=plain,purecap \
+    JOB_ENV=util/cheri/olden/phase-pcs.json \
+    CHECKPOINT=RESULTS/checkpoints/<existing olden-...-hybrid_plain_purecap> \
+    JOBS=16 util/cheri/olden/run_all.sh RESULTS olden-pfaccess
+util/cheri/phase_stats.py RESULTS/olden/olden-pfaccess/<wl>/plain-minor \
+    RESULTS/olden/olden-pfaccess/<wl>/purecap-minor \
+    --labels startup,build,compute,exit
+```
+
+* `CHERI_PRIV_STATS=1`: committed instructions and cycles per privilege
+  mode (user / supervisor), so the kernel's share (page faults, zeroing,
+  teardown) is visible.
+* `JOB_ENV=phase-pcs.json` gives each run its `CHERI_STATS_AT_PC`: stats
+  dumps at the first call of the build function, of the compute function
+  and of `exit()` (`phase_pcs.py` regenerates the file after a rebuild).
+  `parse.py` ignores these dumps; `util/cheri/phase_stats.py` uses them.
+* `CHERI_PF_ON_ACCESS=1`: the L1D/L2 stride prefetchers train on every
+  access instead of only misses and prefetch hits (gem5's default). With
+  miss-only training, purecap's 48-byte treeadd nodes (4 per 3 cache lines)
+  look like a changing stride and the prefetcher stays unconfident; the
+  traversal then misses ~44x more than plain. `CHERI_L1D_PF`/`CHERI_L2_PF`
+  choose other prefetchers.
+
 ## Everything in one place (e.g. on a server)
 
 ```sh
