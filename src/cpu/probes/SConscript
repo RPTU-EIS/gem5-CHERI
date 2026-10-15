@@ -36,4 +36,7 @@ Source("pc_count_tracker_manager.cc")
 SimObject("PrivModeTracker.py", sim_objects=["PrivModeTracker"])
 Source("priv_mode_tracker.cc")
 
+SimObject("PcProfile.py", sim_objects=["PcProfile"])
+Source("pc_profile.cc")
+
 DebugFlag("PcCountTracker")

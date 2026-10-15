@@ -42,6 +42,10 @@
 #                     cycles per privilege mode (stats ...priv_tracker.insts
 #                     and .cycles ::user/supervisor/machine; a cycle counts
 #                     for the mode of the next committed instruction)
+#   CHERI_PC_PROFILE  1: committed instructions and cycles of the detailed
+#                     CPU per (privilege mode, PC), written to
+#                     pcprof-<n>.csv at every statistics dump (symbolised
+#                     by util/cheri/pc_profile.py)
 #   CHERI_STATS_AT_PC comma-separated PC[:COUNT] (guest virtual addresses,
 #                     hex): when the detailed CPU commits the instruction at
 #                     PC for the COUNT-th time (default 1), the statistics
@@ -187,6 +191,11 @@ if os.environ.get("CHERI_PRIV_STATS", "0") == "1":
     switch_core.priv_tracker = PrivModeTracker(
         core=switch_core, manager=switch_core
     )
+
+if os.environ.get("CHERI_PC_PROFILE", "0") == "1":
+    from m5.objects import PcProfile
+
+    switch_core.pc_profile = PcProfile(core=switch_core, manager=switch_core)
 
 pc_targets = []
 for item in filter(None, os.environ.get("CHERI_STATS_AT_PC", "").split(",")):

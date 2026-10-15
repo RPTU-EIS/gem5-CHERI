@@ -78,6 +78,7 @@ ENV_KNOBS = [
     "CHERI_L1D_PF",
     "CHERI_L2_PF",
     "CHERI_PF_ON_ACCESS",
+    "CHERI_PC_PROFILE",
 ]
 
 
