@@ -26,12 +26,30 @@
 #   CHERI_TAG_ROOT_CACHE  root tag-cache size, hierarchical (default 1KiB)
 #   CHERI_L1D, CHERI_L1I, CHERI_L2
 #                     cache sizes (default 16kB, 16kB, 256kB)
+#   CHERI_L1D_PF, CHERI_L2_PF
+#                     L1D / L2 hardware prefetcher (default stride, gem5's
+#                     classic-cache default): none, stride, tagged
+#                     (next-line), bop, ampm, dcpt, indirect, isb, spp
+#   CHERI_PF_ON_ACCESS 1: those prefetchers train on every access, not only
+#                     on misses and prefetch hits (gem5's default)
 #   CHERI_MISALIGNED  1: misaligned data accesses to DRAM complete (as on
 #                     QEMU or with firmware emulation) instead of trapping
 #                     (SIGBUS in the guest); default 0
 #   CHERI_CKPT_OUT    save a checkpoint there when the guest runs
 #                     `m5 checkpoint`, then exit
 #   CHERI_CKPT_IN     restore from that checkpoint instead of booting
+#   CHERI_PRIV_STATS  1: count the detailed CPU's committed instructions and
+#                     cycles per privilege mode (stats ...priv_tracker.insts
+#                     and .cycles ::user/supervisor/machine; a cycle counts
+#                     for the mode of the next committed instruction)
+#   CHERI_STATS_AT_PC comma-separated PC[:COUNT] (guest virtual addresses,
+#                     hex): when the detailed CPU commits the instruction at
+#                     PC for the COUNT-th time (default 1), the statistics
+#                     are dumped without a reset, i.e. cumulative since the
+#                     workbegin, so differences between dumps split the
+#                     region into phases. These dumps come before the
+#                     workend one: use a separate results directory (the
+#                     suites' parse.py expect one dump per region)
 #
 # Statistics are reset at every `m5 workbegin` and dumped at every
 # `m5 workend`, so a guest can bracket several regions in one run.
@@ -74,7 +92,64 @@ if switch_cpu not in switch_cpus:
         f"not '{switch_cpu}'"
     )
 
-cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
+PREFETCHERS = {
+    "stride": "StridePrefetcher",
+    "tagged": "TaggedPrefetcher",
+    "bop": "BOPPrefetcher",
+    "ampm": "AMPMPrefetcher",
+    "dcpt": "DCPTPrefetcher",
+    "indirect": "IndirectMemoryPrefetcher",
+    "isb": "IrregularStreamBufferPrefetcher",
+    "spp": "SignaturePathPrefetcher",
+}
+pf_choice = {
+    level: os.environ.get(var, "stride").lower()
+    for level, var in (("l1d", "CHERI_L1D_PF"), ("l2", "CHERI_L2_PF"))
+}
+for level, kind in pf_choice.items():
+    if kind != "none" and kind not in PREFETCHERS:
+        raise ValueError(
+            f"{level} prefetcher must be none or one of {list(PREFETCHERS)}, "
+            f"not '{kind}'"
+        )
+
+
+def make_prefetcher(kind):
+    import m5.objects
+    from m5.params import NULL
+
+    return NULL if kind == "none" else getattr(m5.objects, PREFETCHERS[kind])()
+
+
+class CheriCacheHierarchy(PrivateL1PrivateL2WalkCacheHierarchy):
+    """The default hierarchy, with the L1D/L2 prefetchers replaced as asked
+    (the caches only exist once the board incorporates the hierarchy)."""
+
+    def incorporate_cache(self, board):
+        super().incorporate_cache(board)
+        from gem5.components.cachehierarchies.classic.caches.l1dcache import (
+            L1DCache,
+        )
+        from gem5.components.cachehierarchies.classic.caches.l2cache import (
+            L2Cache,
+        )
+
+        on_access = os.environ.get("CHERI_PF_ON_ACCESS", "0") == "1"
+        for obj in self.descendants():
+            for cls, level in ((L1DCache, "l1d"), (L2Cache, "l2")):
+                if not isinstance(obj, cls):
+                    continue
+                if pf_choice[level] != "stride":
+                    obj.prefetcher = make_prefetcher(pf_choice[level])
+                if on_access and pf_choice[level] != "none":
+                    # gem5 checks prefetch_on_pf_hit first: with it set (the
+                    # default) a hit only trains when it hits a prefetched
+                    # line, whatever prefetch_on_access says
+                    obj.prefetcher.prefetch_on_access = True
+                    obj.prefetcher.prefetch_on_pf_hit = False
+
+
+cache_hierarchy = CheriCacheHierarchy(
     l1d_size=os.environ.get("CHERI_L1D", "16kB"),
     l1i_size=os.environ.get("CHERI_L1I", "16kB"),
     l2_size=os.environ.get("CHERI_L2", "256kB"),
@@ -102,6 +177,36 @@ processor = SimpleSwitchableProcessor(
     isa=ISA.RISCV_CHERI,
     num_cores=1,
 )
+
+# the detailed CPU switched in at the first workbegin
+switch_core = processor._switchable_cores["switch"][0].get_simobject()
+
+if os.environ.get("CHERI_PRIV_STATS", "0") == "1":
+    from m5.objects import PrivModeTracker
+
+    switch_core.priv_tracker = PrivModeTracker(
+        core=switch_core, manager=switch_core
+    )
+
+pc_targets = []
+for item in filter(None, os.environ.get("CHERI_STATS_AT_PC", "").split(",")):
+    pc, _, count = item.strip().partition(":")
+    pc_targets.append((int(pc, 16), int(count or 1)))
+if pc_targets:
+    from m5.objects import (
+        PcCountTracker,
+        PcCountTrackerManager,
+    )
+    from m5.params import PcCountPair
+
+    pairs = [PcCountPair(pc, n) for pc, n in pc_targets]
+    switch_core.pc_stats_manager = PcCountTrackerManager(targets=pairs)
+    switch_core.pc_stats_tracker = PcCountTracker(
+        targets=pairs,
+        core=switch_core,
+        ptmanager=switch_core.pc_stats_manager,
+        manager=switch_core,
+    )
 
 board = RiscvCheriBoard(
     clk_freq="3GHz",
@@ -162,6 +267,21 @@ def on_workend():
         yield False
 
 
+def on_pc_target():
+    # CHERI_STATS_AT_PC: a target PC was committed for the COUNT-th time
+    n = 0
+    while True:
+        n += 1
+        pair = switch_core.pc_stats_manager.getCurrentPcCountPair()
+        print(
+            f"[pc-stats] dump {n}: pc={pair.get_pc():#x} "
+            f"count={pair.get_count()} tick={m5.curTick()}",
+            flush=True,
+        )
+        m5.stats.dump()
+        yield False
+
+
 ckpt_out = os.environ.get("CHERI_CKPT_OUT")
 ckpt_in = os.environ.get("CHERI_CKPT_IN")
 
@@ -185,6 +305,7 @@ simulator = Simulator(
         ExitEvent.WORKBEGIN: on_workbegin(),
         ExitEvent.WORKEND: on_workend(),
         ExitEvent.CHECKPOINT: on_checkpoint(),
+        ExitEvent.SIMPOINT_BEGIN: on_pc_target(),
     },
 )
 simulator.run()

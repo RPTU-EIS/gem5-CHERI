@@ -33,4 +33,7 @@ SimObject(
 Source("pc_count_tracker.cc")
 Source("pc_count_tracker_manager.cc")
 
+SimObject("PrivModeTracker.py", sim_objects=["PrivModeTracker"])
+Source("priv_mode_tracker.cc")
+
 DebugFlag("PcCountTracker")
