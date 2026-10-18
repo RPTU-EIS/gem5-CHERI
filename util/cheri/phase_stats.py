@@ -58,6 +58,8 @@ def phases(run, labels):
                      con)
     dumps = [counters(d) for d in
              cm.stat_dumps(os.path.join(run, "stats.txt"))]
+    # a booted run's first dump is the boot + setup ("[boot-stats]")
+    dumps = dumps[con.count("[boot-stats] dump"):]
     # gem5 dumps once more at exit (after the workend): ignore that one
     if len(dumps) < len(pcs) + 1:
         sys.exit(f"{run}: {len(dumps)} stats dumps for {len(pcs)} PC dumps "

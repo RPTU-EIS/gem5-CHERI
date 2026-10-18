@@ -47,10 +47,10 @@ def lookup(table, pc):
     return names[i] if i >= 0 else None
 
 
-def load_dumps(run, nphases):
+def load_dumps(run, nphases, skip=0):
     files = sorted((f for f in os.listdir(run)
                     if re.fullmatch(r"pcprof-\d+\.csv", f)),
-                   key=lambda f: int(f[7:-4]))
+                   key=lambda f: int(f[7:-4]))[skip:]
     if len(files) < nphases:
         sys.exit(f"{run}: {len(files)} profile dumps, need {nphases}")
     dumps = []
@@ -69,7 +69,8 @@ def profile(run, binary, kernel, labels, phase):
     n_pc = con.count("[pc-stats] dump")
     names = labels if labels and len(labels) == n_pc + 1 else \
         [f"phase{i}" for i in range(n_pc + 1)]
-    dumps = load_dumps(run, n_pc + 1)
+    # a booted run's first dump is the boot + setup ("[boot-stats]")
+    dumps = load_dumps(run, n_pc + 1, con.count("[boot-stats] dump"))
     if phase and phase != "total":
         i = names.index(phase)
         cur, prev = dumps[i], dumps[i - 1] if i else {}

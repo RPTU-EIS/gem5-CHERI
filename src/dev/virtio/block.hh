@@ -88,6 +88,9 @@ class VirtIOBlock : public VirtIODeviceBase
     struct GEM5_PACKED Config
     {
         uint64_t capacity;
+        /** only part of the config space with F_SEG_MAX (seg_max > 0) */
+        uint32_t size_max;
+        uint32_t seg_max;
     };
     Config config;
 

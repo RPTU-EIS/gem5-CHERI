@@ -54,44 +54,11 @@ namespace CHERIRiscvISA
 namespace
 {
 
-// ── Bring-up fixup for the firmware-less, physical-entry boot. ──
-// CheriBSD locore builds rvbp->kern_l1pt via PC-relative (auipcc) addressing
-// while it is still running at PHYSICAL PC (we enter physically so its satp
-// computation, which uses the PC-relative L1PT address directly as the PPN, is
-// correct). So kern_l1pt -- and hence kernel_pmap->pm_top -- arrives PHYSICAL.
-// This kernel expects it already virtual: initriscv passes rvbp->kern_l1pt
-// straight to pmap_bootstrap, which stores it as pm_top with no conversion, and
-// pmap_pinit0 later does vtophys(pm_top). With a physical pm_top,
-// pmap_kextract() treats it as a VA, finds no L2, and panics "pmap_kextract:
-// No l2". Fire at pmap_bootstrap entry and rewrite arg0 (ca0 = kern_l1pt) from
-// its physical address to the kernel VA so pm_top is a mapped kernel pointer.
-// (A real loader hands the kernel a virtual kern_l1pt; we have no loader.)
-class KernL1ptFixupEvent : public PCEvent
-{
-  public:
-    KernL1ptFixupEvent(PCEventScope *s, const std::string &desc, Addr addr)
-        : PCEvent(s, desc, addr) {}
-
-    void
-    process(ThreadContext *tc) override
-    {
-        constexpr Addr VA_BASE = 0xffffffc000000000ULL;
-        constexpr Addr PA_BASE = 0x80200000ULL;
-        constexpr Addr RAM_LO  = 0x80000000ULL;
-        constexpr Addr RAM_HI  = 0x140000000ULL;
-
-        CapRegContainer cap;
-        tc->getReg(cap_reg::CA0, &cap);
-        Addr pa = cap.getAddress();
-        if (pa >= RAM_LO && pa < RAM_HI) {
-            Addr va = pa - PA_BASE + VA_BASE;
-            CapRegContainer fixed = CapRegContainer::almighty(va);
-            tc->setReg(cap_reg::CA0, &fixed);
-            warn("pmap_bootstrap: rewrote kern_l1pt PA %#x -> VA %#x "
-                 "(firmware-less boot handoff)\n", pa, va);
-        }
-    }
-};
+// (A former bring-up fixup rewrote pmap_bootstrap's first argument from a
+// physical to a virtual address. It no longer fired on the 2024 kernels,
+// where that argument is already virtual, and is wrong for 2026 kernels,
+// whose pmap_bootstrap(kernstart, kernlen) takes the physical kernel start,
+// so it was removed.)
 
 } // anonymous namespace
 
@@ -236,31 +203,50 @@ BootloaderKernelWorkload::loadKernel()
 
         processCapRelocs();
 
-        // ── EXPERIMENT (bring-up): keep the DTB pointer alive in a1. ──
-        // CheriBSD locore maps the DTB into its devmap region only if a1 (the
-        // DTB physical pointer) is non-zero at VA 0xf4 (`c.beqz a1`). But the
-        // kernel clears a1 at VA 0x48 (`c.li a1,0` = 0x4581), so with no real
-        // loader/firmware to re-provide it that mapping is skipped, and the
-        // later DTB read faults into an unrecoverable trap. We seed a1 with the
-        // DTB physical (see loadDtb, survives Reset) and neutralise the clear
-        // by patching 0x80200048: c.li a1,0 (0x4581) -> c.nop (0x0001), so
-        // locore maps the DTB itself. Remove this block to restore stock
-        // kernel behaviour.
+        // Keep the DTB pointer alive across the kernel's entry (no loader).
+        // gem5 enters CheriBSD at its ELF entry `_start` (the loader(8)
+        // entry) with a1 = DTB physical and a0 = 0, as SBI firmware would
+        // enter `_alt_start`. `_start` then discards the DTB pointer, since
+        // a loader passes it in its metadata instead:
+        //  - 2024 kernels clear a1 (`c.li a1,0`, 0x4581), and locore maps
+        //    the DTB only if a1 != 0 -> patch to c.nop (0x0001);
+        //  - 2026 kernels zero s4, the stashed DTB pointer (`c.li s4,0`,
+        //    0x4a01) -> patch to `c.mv s4,a1` (0x8a2e), which is what
+        //    `_alt_start` does; with s3 (modulep) = a0 = 0 the kernel then
+        //    builds its preload metadata from the DTB (fake_preload_metadata).
+        // The first such instruction within 16 bytes of `_start` is patched.
         {
-            const Addr a1_clear_paddr = 0x80200048ULL;
-            uint16_t before = 0;
-            system->physProxy.readBlob(a1_clear_paddr,
-                                       (uint8_t *)&before, sizeof(before));
-            if (before == 0x4581) {
-                uint16_t cnop = 0x0001;  // c.nop
-                system->physProxy.writeBlob(a1_clear_paddr,
-                                        (const uint8_t *)&cnop, sizeof(cnop));
-                inform("Patched c.li a1,0 @%#x -> c.nop (preserve DTB ptr in "
-                       "a1)\n", a1_clear_paddr);
-            } else {
-                warn("Expected c.li a1,0 (0x4581) @%#x but found %#x; DTB "
-                     "a1-preserve patch NOT applied\n", a1_clear_paddr, before);
+            constexpr Addr VA_BASE = 0xffffffc000000000ULL;
+            constexpr Addr PA_BASE = 0x80200000ULL;
+            auto sym = kernelSymbolTable.find("_start");
+            Addr start_pa = sym != kernelSymbolTable.end()
+                ? sym->address() - VA_BASE + PA_BASE : 0x80200044ULL;
+            bool patched = false;
+            for (Addr pa = start_pa; pa < start_pa + 16 && !patched;
+                 pa += 2) {
+                uint16_t insn = 0;
+                system->physProxy.readBlob(pa, (uint8_t *)&insn,
+                                           sizeof(insn));
+                uint16_t repl = 0;
+                const char *what = nullptr;
+                if (insn == 0x4581) {
+                    repl = 0x0001;
+                    what = "c.li a1,0 -> c.nop";
+                } else if (insn == 0x4a01) {
+                    repl = 0x8a2e;
+                    what = "c.li s4,0 -> c.mv s4,a1";
+                }
+                if (what) {
+                    system->physProxy.writeBlob(pa, (const uint8_t *)&repl,
+                                                sizeof(repl));
+                    inform("Patched %s @%#x (keep the DTB pointer)\n",
+                           what, pa);
+                    patched = true;
+                }
             }
+            if (!patched)
+                warn("No DTB-pointer clear found near _start @%#x; DTB "
+                     "patch NOT applied\n", start_pa);
         }
 
         delete kernel;
@@ -420,12 +406,6 @@ BootloaderKernelWorkload::initState()
     loadKernel();
     loadDtb();
 
-    // Rewrite rvbp->kern_l1pt (arg0) from physical to the kernel VA when
-    // pmap_bootstrap is entered -- see KernL1ptFixupEvent above.
-    kernL1ptFixupEvent = addFuncEvent<KernL1ptFixupEvent>(
-        kernelSymbolTable, "pmap_bootstrap");
-    warn_if(!kernL1ptFixupEvent,
-            "Failed to find kernel symbol 'pmap_bootstrap' for kern_l1pt fixup");
 
     // ── Enter the kernel PHYSICALLY (not at its virtual link address). ──
     // CheriBSD's early locore runs *before* it enables paging and derives the

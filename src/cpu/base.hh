@@ -521,6 +521,9 @@ class BaseCPU : public ClockedObject
     probing::PMUUPtr ppRetiredInsts;
     probing::PMUUPtr ppRetiredInstsPC;
 
+    /** Every committed (micro-)op, for per-instruction profiles. */
+    ProbePointArg<StaticInstPtr> *ppRetiredInstsStatic;
+
     /** Retired load instructions */
     probing::PMUUPtr ppRetiredLoads;
     /** Retired store instructions */

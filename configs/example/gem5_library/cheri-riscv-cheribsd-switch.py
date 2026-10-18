@@ -32,6 +32,11 @@
 #                     (next-line), bop, ampm, dcpt, indirect, isb, spp
 #   CHERI_PF_ON_ACCESS 1: those prefetchers train on every access, not only
 #                     on misses and prefetch hits (gem5's default)
+#   CHERI_VIRTIO_SEG_MAX  virtio disk: advertise VIRTIO_BLK_F_SEG_MAX with
+#                     this many segments (126 = QEMU's value for a 128-entry
+#                     queue); needed by CheriBSD 2026 kernels (else a CHERI
+#                     bounds fault in busdma at boot); default 0 = the
+#                     original device (2024 setups unchanged)
 #   CHERI_MISALIGNED  1: misaligned data accesses to DRAM complete (as on
 #                     QEMU or with firmware emulation) instead of trapping
 #                     (SIGBUS in the guest); default 0
@@ -46,6 +51,11 @@
 #                     CPU per (privilege mode, PC), written to
 #                     pcprof-<n>.csv at every statistics dump (symbolised
 #                     by util/cheri/pc_profile.py)
+#   CHERI_INST_PROFILE 1: committed (micro-)ops of the detailed CPU per
+#                     (privilege mode, mnemonic), written to
+#                     instprof-<n>.csv at every statistics dump (e.g. to
+#                     split capability-width loads/stores from integer ones);
+#                     the boot CPU's to instprof-start-<n>.csv
 #   CHERI_STATS_AT_PC comma-separated PC[:COUNT] (guest virtual addresses,
 #                     hex): when the detailed CPU commits the instruction at
 #                     PC for the COUNT-th time (default 1), the statistics
@@ -56,7 +66,9 @@
 #                     suites' parse.py expect one dump per region)
 #
 # Statistics are reset at every `m5 workbegin` and dumped at every
-# `m5 workend`, so a guest can bracket several regions in one run.
+# `m5 workend`, so a guest can bracket several regions in one run. A run
+# that booted rather than restored a checkpoint also dumps them once at the
+# first workbegin, before the reset (the boot + setup; "[boot-stats] dump").
 
 import os
 
@@ -197,6 +209,18 @@ if os.environ.get("CHERI_PC_PROFILE", "0") == "1":
 
     switch_core.pc_profile = PcProfile(core=switch_core, manager=switch_core)
 
+if os.environ.get("CHERI_INST_PROFILE", "0") == "1":
+    from m5.objects import InstProfile
+
+    switch_core.inst_profile = InstProfile(
+        core=switch_core, manager=switch_core
+    )
+    # the boot CPU too (instprof-start-<n>.csv): the boot's instruction mix
+    start_core = processor._switchable_cores["start"][0].get_simobject()
+    start_core.inst_profile = InstProfile(
+        core=start_core, manager=start_core, file_prefix="instprof-start"
+    )
+
 pc_targets = []
 for item in filter(None, os.environ.get("CHERI_STATS_AT_PC", "").split(",")):
     pc, _, count = item.strip().partition(":")
@@ -224,6 +248,7 @@ board = RiscvCheriBoard(
     cache_hierarchy=cache_hierarchy,
     misaligned_dram=os.environ.get("CHERI_MISALIGNED", "0") == "1",
 )
+board.disk.vio.seg_max = int(os.environ.get("CHERI_VIRTIO_SEG_MAX", "0"))
 
 # Checked here: otherwise gem5 only panics when the guest runs m5 readfile.
 readfile = os.environ.get("CHERI_READFILE", "./tests/overflow")
@@ -257,7 +282,14 @@ board.set_kernel_disk_workload(
 
 
 def on_workbegin():
-    # First workbegin: switch to the detailed CPU and start counting.
+    # First workbegin: switch to the detailed CPU and start counting. A run
+    # that booted (no checkpoint) first dumps the statistics of the boot and
+    # the job's setup (never reset until here), so both are kept; scripts
+    # recognise this dump by the "[boot-stats] dump" console line.
+    if not os.environ.get("CHERI_CKPT_IN"):
+        print(f"[boot-stats] dump: boot + setup, tick={m5.curTick()}",
+              flush=True)
+        m5.stats.dump()
     print(
         f"[switch] m5 workbegin: switching to the {switch_cpu} CPU", flush=True
     )

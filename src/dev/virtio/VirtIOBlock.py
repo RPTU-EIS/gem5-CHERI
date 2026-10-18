@@ -46,5 +46,10 @@ class VirtIOBlock(VirtIODeviceBase):
     cxx_class = "gem5::VirtIOBlock"
 
     queueSize = Param.Unsigned(128, "Output queue size (pages)")
+    seg_max = Param.Unsigned(
+        0,
+        "Advertise VIRTIO_BLK_F_SEG_MAX with this many segments per "
+        "request (QEMU: queueSize - 2); 0 = not advertised",
+    )
 
     image = Param.DiskImage("Disk image")

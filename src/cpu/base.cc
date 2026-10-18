@@ -378,6 +378,8 @@ BaseCPU::regProbePoints()
 
     ppRetiredInsts = pmuProbePoint("RetiredInsts");
     ppRetiredInstsPC = pmuProbePoint("RetiredInstsPC");
+    ppRetiredInstsStatic = new ProbePointArg<StaticInstPtr>(
+        getProbeManager(), "RetiredInstsStatic");
     ppRetiredLoads = pmuProbePoint("RetiredLoads");
     ppRetiredStores = pmuProbePoint("RetiredStores");
     ppRetiredBranches = pmuProbePoint("RetiredBranches");
@@ -389,6 +391,8 @@ BaseCPU::regProbePoints()
 void
 BaseCPU::probeInstCommit(const StaticInstPtr &inst, Addr pc)
 {
+    ppRetiredInstsStatic->notify(inst);
+
     if (!inst->isMicroop() || inst->isLastMicroop()) {
         ppRetiredInsts->notify(1);
         ppRetiredInstsPC->notify(pc);

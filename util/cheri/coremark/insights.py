@@ -248,21 +248,32 @@ def fig_regimes(res, abis, base, out, save, table):
                         fontsize=5, ha="right", va="top")
         elif abi == "purecap":
             labels.append((x, y, short(w)))
-    # spread labels of nearby points over four sides
-    cand = [((3, 2), "left"), ((3, -7), "left"), ((-3, 2), "right"),
-            ((-3, -7), "right")]
-    placed = []
+    # place each label at the first candidate offset whose rendered box
+    # does not overlap an already placed label or a marker
+    cand = [((4, 3), "left"), ((-4, 3), "right"), ((4, -9), "left"),
+            ((-4, -9), "right"), ((0, 8), "center"), ((0, -13), "center"),
+            ((10, 10), "left"), ((-10, -15), "right")]
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    renderer = fig.canvas.get_renderer()
+    marks = [ax.transData.transform((x, y)) for (x, y) in pts.values()]
+    boxes = []
     for x, y, t in sorted(labels):
-        near = [k for (px, py, k) in placed
-                if abs(px - x) < 0.1 * hi and abs(py - y) < 0.1 * hi]
-        k = next(i for i in range(len(cand)) if i not in near) \
-            if len(near) < len(cand) else 0
-        placed.append((x, y, k))
-        ax.annotate(t, (x, y), xytext=cand[k][0], textcoords="offset points",
-                    fontsize=5.5, ha=cand[k][1])
+        for k, (off, ha) in enumerate(cand):
+            ann = ax.annotate(t, (x, y), xytext=off,
+                              textcoords="offset points", fontsize=5.5,
+                              ha=ha)
+            bb = ann.get_window_extent(renderer).expanded(1.05, 1.15)
+            hit = any(bb.overlaps(b) for b in boxes) or any(
+                bb.contains(mx, my) for mx, my in marks
+                if abs(mx - ax.transData.transform((x, y))[0]) > 1e-6)
+            if not hit or k == len(cand) - 1:
+                boxes.append(bb)
+                break
+            ann.remove()
     ax.plot([lo, hi], [lo, hi], color="#ff0000", linestyle=(0, (4, 2)),
             linewidth=0.6, zorder=1)
-    ax.text(hi * 0.62, hi * 0.62, "cycles = insts", rotation=45,
+    ax.text(hi * 0.42, hi * 0.42, "cycles = insts", rotation=45,
             ha="right", va="bottom", fontsize=5.5, color="#ff0000")
     ax.set_xlim(lo, hi)
     ax.set_ylim(lo, hi)
@@ -414,7 +425,11 @@ def main():
     ap.add_argument("--suite", default="CoreMark-PRO",
                     help="suite name in figure titles")
     ap.add_argument("--png", action="store_true")
+    ap.add_argument("--figures", default="tag_hw,tag_scatter,regimes,pareto",
+                    help="which figures (e.g. regimes only, for runs "
+                    "without tag-model configs)")
     a = ap.parse_args()
+    figs = set(a.figures.split(","))
     out = a.out or os.path.join(a.merged, "plots")
     os.makedirs(out, exist_ok=True)
     style()
@@ -427,17 +442,21 @@ def main():
 
     res = load(a.merged)
     table = []
-    fig_tag_hw(res, a.abi, out, save, table)
-    fig_tag_scatter(res, out, save, table, a.suite)
-    fig_regimes(res, ["hybrid", "purecap"], a.baseline, out, save, table)
-    if a.sweep:
+    if "tag_hw" in figs:
+        fig_tag_hw(res, a.abi, out, save, table)
+    if "tag_scatter" in figs:
+        fig_tag_scatter(res, out, save, table, a.suite)
+    if "regimes" in figs:
+        fig_regimes(res, [x for x in ("hybrid", "purecap")
+                          if any(k[0] == x for k in res)],
+                    a.baseline, out, save, table)
+    if a.sweep and "pareto" in figs:
         fig_pareto(a.sweep, a.baseline, out, save, table)
     with open(os.path.join(out, "insights.csv"), "w", newline="") as f:
         w = csv.DictWriter(f, list(table[0]))
         w.writeheader()
         w.writerows(table)
-    print(f"wrote {out}/: tag_hw_{a.abi}.pdf, tag_scatter.pdf, regimes.pdf"
-          + (", sweep_pareto.pdf" if a.sweep else "") + ", insights.csv")
+    print(f"wrote {out}/: {', '.join(sorted(figs))} figures, insights.csv")
 
 
 if __name__ == "__main__":

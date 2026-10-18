@@ -22,6 +22,9 @@
 #   CORE_ARGS     -D=-I1  (core's 1000-iteration preset; empty = default)
 #   plus any CHERI_L1D/L1I/L2/TAG_* knob of cheri-riscv-cheribsd-switch.py
 #   TIMEOUT       host seconds per gem5 run (default 48 h; Juliet 12 h)
+#   NO_CHECKPOINT 1: no checkpoint, every run boots (boot kept as its own
+#                 stats dump)     CHECKPOINT  checkpoint base override
+#   REVOCATION    run.py --revocation: default | on | off
 set -eu
 GEM5=$(cd "$(dirname "$0")/../../.." && pwd)
 RESULTS=$(mkdir -p "${1:?usage: $0 RESULTS [TAG]}" && cd "$1" && pwd)
@@ -41,8 +44,13 @@ CKPT=$RESULTS/checkpoints/ck-k$khash-b$bhash-$(echo "$ABIS" | tr , _)
 OUT=$RESULTS/coremark/$TAG
 mkdir -p "$RESULTS/checkpoints" "$RESULTS/coremark"
 
+CKPT=${CHECKPOINT:-$CKPT}
 set -- --out "$OUT" --builds "$BUILDS" --abis "$ABIS" --configs "$CONFIGS" --iterations "$ITER" \
-    --jobs "$JOBS" --checkpoint "$CKPT"
+    --jobs "$JOBS"
+# NO_CHECKPOINT=1: every run boots CheriBSD itself (run.py without
+# --checkpoint); the boot is recorded as its own stats dump
+[ "${NO_CHECKPOINT:-0}" = 1 ] || set -- "$@" --checkpoint "$CKPT"
+[ -n "${REVOCATION:-}" ] && set -- "$@" --revocation "$REVOCATION"
 [ -n "$CORE_ARGS" ] && set -- "$@" --wl-args "core=$CORE_ARGS"
 [ -n "${WORKLOADS:-}" ] && set -- "$@" --workloads "$WORKLOADS"
 

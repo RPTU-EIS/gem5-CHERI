@@ -42,12 +42,10 @@ GEM5 = cm.GEM5
 OUTPUT_INLINE_MAX = 32 * 1024
 
 
-def region(wl, exe, args, witness):
-    """Guest commands for one workload (restored guest, binaries in
-    /root/cm/<abi>/)."""
+def region(wl, exe, args, witness, revocation="default"):
+    """Guest commands for one workload (binaries in /root/cm/<abi>/)."""
     lines = ["#!/bin/sh", "cd /tmp"]
-    if not witness:
-        lines.append("sysctl debug.witness.watch=0 >/dev/null 2>&1")
+    lines += cm.guest_prelude("on" if witness else "off", revocation)
     lines += [
         f'echo "=== CM-BEGIN {wl}"',
         "/sbin/m5 workbegin",
@@ -90,6 +88,14 @@ def main():
         "check against the native reference then does not apply)",
     )
     ap.add_argument("--witness", choices=("off", "on"), default="off")
+    ap.add_argument(
+        "--revocation",
+        choices=("default", "on", "off"),
+        default="default",
+        help="purecap heap revocation (security.cheri."
+        "runtime_revocation_default) for the workloads; default: the "
+        "kernel's",
+    )
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument(
         "--timeout",
@@ -99,7 +105,12 @@ def main():
         "long workloads on Minor take many hours on a loaded machine)",
     )
     ap.add_argument("--sdk", default=os.path.expanduser("~/cheri/output/sdk"))
-    ap.add_argument("--checkpoint", required=True, help="checkpoint base")
+    ap.add_argument(
+        "--checkpoint",
+        help="checkpoint base; without it every run boots CheriBSD from "
+        "scratch (fast CPU, so the caches, TLBs and predictor carry the "
+        "boot's state into the region) and unpacks its own binary",
+    )
     ap.add_argument(
         "--job-env",
         help="JSON file {\"<abi>/<workload>\": {VAR: value}}: extra "
@@ -190,6 +201,7 @@ def main():
         "build_workloads": {wl: wls[wl] for wl in workloads},
         "work": work,
         "guest_witness": args.witness,
+        "guest_revocation": args.revocation,
         "env_knobs": knobs,
         "system_files": system_files,
         "binaries": binaries,
@@ -203,8 +215,9 @@ def main():
         return
 
     ckpts = {}
-    base = os.path.abspath(args.checkpoint)
-    for tagged in sorted({tag != "none" for _, tag in cfg.values()}):
+    base = os.path.abspath(args.checkpoint) if args.checkpoint else None
+    for tagged in sorted({tag != "none" for _, tag in cfg.values()}
+                         if base else []):
         ckpt = base + ("-tagged" if tagged else "-notag")
         cm.ensure_checkpoint(ckpt, tagged, system_files, binaries,
                              bins_by_abi, out, env, args.timeout)
@@ -226,10 +239,28 @@ def main():
         os.makedirs(os.path.join(out, wl), exist_ok=True)
         for abi in abis:
             path = os.path.join(out, wl, f"job-{abi}.sh")
-            with open(path, "w") as f:
-                f.write("\n".join(region(
-                    wl, f"/root/cm/{abi}/cm_{wl}.exe", wl_args[wl],
-                    args.witness == "on")) + "\n")
+            if base:
+                with open(path, "w") as f:
+                    f.write("\n".join(region(
+                        wl, f"/root/cm/{abi}/cm_{wl}.exe", wl_args[wl],
+                        args.witness == "on", args.revocation)) + "\n")
+            else:
+                # booted guest: the job unpacks its own binary first, to
+                # the same path as in the checkpoints (/root/cm/<abi>/),
+                # and syncs as the checkpoint runner does
+                tgz = path + ".tgz"
+                cm.bundle(tgz, [(dict(bins_by_abi[abi])[wl],
+                                 f"{abi}/cm_{wl}.exe")])
+                body = region(wl, f"/root/cm/{abi}/cm_{wl}.exe",
+                              wl_args[wl], args.witness == "on",
+                              args.revocation)
+                cm.write_payload_script(path, body[:2] + [
+                    "mkdir -p /root/cm",
+                    'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C /root/cm '
+                    '|| { echo "=== CM-UNPACK-FAILED"; exit 1; }',
+                    f"chmod +x /root/cm/{abi}/cm_{wl}.exe",
+                    "sync",
+                ] + body[2:], tgz)
             scripts[(wl, abi)] = path
 
     jobs = [(wl, abi, c) for wl in workloads for abi in abis for c in cfg]
@@ -238,16 +269,16 @@ def main():
         futs = []
         for wl, abi, c in jobs:
             cpu, tag = cfg[c]
-            futs.append(pool.submit(
-                cm.run_restored,
-                os.path.join(out, wl, f"{abi}-{c}"),
-                cpu,
-                tag,
-                scripts[(wl, abi)],
-                ckpts[tag != "none"],
-                args.timeout,
-                dict(env, **job_env.get(f"{abi}/{wl}", {})),
-            ))
+            jenv = dict(env, **job_env.get(f"{abi}/{wl}", {}))
+            outdir = os.path.join(out, wl, f"{abi}-{c}")
+            if base:
+                futs.append(pool.submit(
+                    cm.run_restored, outdir, cpu, tag, scripts[(wl, abi)],
+                    ckpts[tag != "none"], args.timeout, jenv))
+            else:
+                futs.append(pool.submit(
+                    cm.run_one, outdir, cpu, tag, scripts[(wl, abi)],
+                    args.timeout, jenv))
         for fut in cf.as_completed(futs):
             outdir, rc, secs = fut.result()
             status = cm.workload_status(outdir)

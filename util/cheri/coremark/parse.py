@@ -92,6 +92,48 @@ INST_TYPES = [
 ]
 
 
+# CHERI_INST_PROFILE (instprof-<n>.csv): gem5's memory op classes split by
+# access width. Mnemonics from the decoder's CapLoad / CapStore formats (and
+# amoswap.c, src/arch/riscv_cheri/isa/decoder.isa) move a capability with its
+# tag; every other MemRead / MemWrite op moves integer data (also the
+# explicitly capability- or DDC-relative *_cap / *_ddc forms). Split by op
+# class, so the kinds partition committedInstType::(Float)Mem{Read,Write}.
+CAP_MEM = {"clc", "c_lq", "c_lqsp", "lc_cap", "lc_ddc", "lr_c", "lr_c_cap",
+           "csc", "c_sq", "c_sqsp", "sc_cap", "sc_ddc", "sc_c", "sc_c_cap",
+           "amoswap_c"}
+MIX_KINDS = ["cap_load", "int_load", "float_load",
+             "cap_store", "int_store", "float_store"]
+MIX_CLASS = {"MemRead": "load", "MemWrite": "store",
+             "FloatMemRead": "float_load", "FloatMemWrite": "float_store"}
+
+
+def inst_mix(run, n, prefix=""):
+    """inst_<kind> (all modes) and inst_user_<kind> of stats dump N from
+    instprof-<n>.csv (detailed CPU) plus instprof-start-<n>.csv (boot CPU,
+    if present); {} if the run has no such profile."""
+    paths = [os.path.join(run, f"{p}-{n}.csv")
+             for p in ("instprof", "instprof-start")]
+    paths = [p for p in paths if os.path.isfile(p)]
+    if not paths:
+        return {}
+    mix = {}
+    for k in MIX_KINDS:
+        mix[prefix + "inst_" + k] = 0
+        mix[prefix + "inst_user_" + k] = 0
+    for path in paths:
+        for r in csv.DictReader(open(path)):
+                k = MIX_CLASS.get(r["op_class"])
+                if k is None:
+                    continue
+                if k in ("load", "store"):
+                    cap = r["mnemonic"].replace(".", "_") in CAP_MEM
+                    k = ("cap_" if cap else "int_") + k
+                mix[prefix + "inst_" + k] += int(r["count"])
+                if r["mode"] == "0":
+                    mix[prefix + "inst_user_" + k] += int(r["count"])
+    return mix
+
+
 def metrics(d):
     """Named metrics from one stats dump (sums over cores/caches/channels).
     Everything else is in all_stats.csv."""
@@ -241,7 +283,12 @@ def collect(out, all_stats):
         # CHERI_STATS_AT_PC dumps (cumulative, inside the region) come before
         # the region's workend dump; drop them (single-region runs, as Olden)
         with open(os.path.join(d, "console.log"), errors="replace") as f:
-            n_pc = sum(line.startswith("[pc-stats] dump") for line in f)
+            con = f.read().splitlines()
+        # a booted run's first dump is the boot + setup ("[boot-stats]")
+        n_boot = sum(line.startswith("[boot-stats] dump") for line in con)
+        n_pc = sum(line.startswith("[pc-stats] dump") for line in con)
+        boot_dump = dumps[0] if n_boot and dumps else None
+        dumps = dumps[n_boot:]
         if n_pc and len(regions) == 1:
             dumps = dumps[n_pc:]
         info = {}
@@ -291,8 +338,20 @@ def collect(out, all_stats):
                 "boot_and_unpack_sim_seconds",
                 (ck.get("checkpoint_tick") or 0) / 1e12 or "",
             )
+            if boot_dump is not None:
+                # the boot + job setup before the first workbegin
+                bm = metrics(boot_dump)
+                row["boot_insts"] = bm["insts"]
+                row["boot_sim_seconds"] = bm["sim_seconds"]
+                row["boot_host_seconds"] = bm["host_seconds"]
+                for t in INST_TYPES:
+                    row["boot_inst_" + t] = bm["inst_" + t]
+                row.update(inst_mix(d, 1, "boot_"))
             if i < len(dumps):
                 row.update(metrics(dumps[i]))
+                # instprof-<n>.csv belongs to stats dump n (1-based)
+                row.update(inst_mix(d, n_boot + n_pc * (len(regions) == 1)
+                                    + i + 1))
                 all_stats.append(
                     dict(
                         {

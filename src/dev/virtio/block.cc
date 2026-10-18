@@ -49,7 +49,17 @@ VirtIOBlock::VirtIOBlock(const Params &params)
     // mounts root read-only (non-exclusive in GEOM). This tests whether the
     // GEOM re-taste storm that starves init is driven by the exclusive rw
     // root mount spoiling other consumers. Revert to 0 once diagnosed.
-    : VirtIODeviceBase(params, ID_BLOCK, sizeof(Config), (1 << 5)),
+    // (GEOM checks the flag only on the disk's first open, so the image's
+    // m5_init.sh can still `mount -u -o rw /`.)
+    // With seg_max > 0 the device also advertises VIRTIO_BLK_F_SEG_MAX (as
+    // QEMU does, seg_max = queue size - 2): CheriBSD 2026's virtio_blk
+    // otherwise assumes one data segment per request and asks busdma for
+    // page alignment, whose bounce-buffer copy overruns small buffers (a
+    // CHERI bounds fault at boot). seg_max = 0 keeps the original feature
+    // set and an 8-byte config space.
+    : VirtIODeviceBase(params, ID_BLOCK,
+                       params.seg_max ? sizeof(Config) : sizeof(uint64_t),
+                       (1 << 5) | (params.seg_max ? F_SEG_MAX : 0)),
       qRequests(params.system->physProxy, byteOrder,
                 params.queueSize, *this),
       image(*params.image)
@@ -57,6 +67,8 @@ VirtIOBlock::VirtIOBlock(const Params &params)
     registerQueue(qRequests);
 
     config.capacity = image.size();
+    config.size_max = 0;
+    config.seg_max = params.seg_max;
 }
 
 
@@ -69,6 +81,8 @@ VirtIOBlock::readConfig(PacketPtr pkt, Addr cfgOffset)
 {
     Config cfg_out;
     cfg_out.capacity = htog(config.capacity, byteOrder);
+    cfg_out.size_max = htog(config.size_max, byteOrder);
+    cfg_out.seg_max = htog(config.seg_max, byteOrder);
 
     readConfigBlob(pkt, cfgOffset, (uint8_t *)&cfg_out);
 }

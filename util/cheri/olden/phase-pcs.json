@@ -29,6 +29,36 @@
  "plain/voronoi": {
   "CHERI_STATS_AT_PC": "0x2aee4:1,0x29d30:1,0x452c8:1"
  },
+ "hybrid/bh": {
+  "CHERI_STATS_AT_PC": "0x29fac:1,0x2a408:1,0x45768:1"
+ },
+ "hybrid/bisort": {
+  "CHERI_STATS_AT_PC": "0x29556:1,0x29794:1,0x42bd8:1"
+ },
+ "hybrid/em3d": {
+  "CHERI_STATS_AT_PC": "0x2a14a:1,0x297cc:1,0x437e8:1"
+ },
+ "hybrid/health": {
+  "CHERI_STATS_AT_PC": "0x29538:1,0x29b08:1,0x430f2:1"
+ },
+ "hybrid/mst": {
+  "CHERI_STATS_AT_PC": "0x29848:1,0x29694:1,0x42d38:1"
+ },
+ "hybrid/perimeter": {
+  "CHERI_STATS_AT_PC": "0x2965c:1,0x29298:1,0x42a68:1"
+ },
+ "hybrid/power": {
+  "CHERI_STATS_AT_PC": "0x2944c:1,0x296b8:1,0x433c6:1"
+ },
+ "hybrid/treeadd": {
+  "CHERI_STATS_AT_PC": "0x29300:1,0x292cc:1,0x42618:1"
+ },
+ "hybrid/tsp": {
+  "CHERI_STATS_AT_PC": "0x294a4:1,0x29836:1,0x43368:1"
+ },
+ "hybrid/voronoi": {
+  "CHERI_STATS_AT_PC": "0x2aea4:1,0x29cf0:1,0x45188:1"
+ },
  "purecap/bh": {
   "CHERI_STATS_AT_PC": "0x3e8f0:1,0x3edf2:1,0x57a86:1"
  },

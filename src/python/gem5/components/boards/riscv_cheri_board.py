@@ -573,11 +573,27 @@ class RiscvCheriBoard(AbstractSystemBoard, KernelDiskWorkload):
 
         else:
             self.workload.kernel_addr = 0x0
-            # self.workload.entry_point = 0x80200044
-            self.workload.entry_point = 0xFFFFFFC000000044
-            # self.workload.entry_point = 0x80200000
+            # The kernel's ELF entry (`_start`: VA 0xffffffc000000044 in the
+            # 2024 CheriBSD kernels, ...0046 in 2026 ones); the workload
+            # converts it to the physical load address.
+            self.workload.entry_point = self._kernel_entry()
 
         self._connect_things()
+
+    def _kernel_entry(self) -> int:
+        """e_entry of the kernel ELF (the workload's object_file); falls
+        back to the 2024 CheriBSD `_start` if it cannot be read."""
+        import struct
+
+        try:
+            with open(str(self.workload.object_file), "rb") as f:
+                hdr = f.read(32)
+            if hdr[:4] == b"\x7fELF" and hdr[4] == 2 and hdr[5] == 1:
+                return struct.unpack_from("<Q", hdr, 0x18)[0]
+        except OSError:
+            pass
+        return 0xFFFFFFC000000044
+
 
     @overrides(KernelDiskWorkload)
     def _add_disk_to_board(self, disk_image: AbstractResource):

@@ -19,6 +19,9 @@
 #   CHECKPOINT    checkpoint base to use instead of the one named above,
 #                 e.g. an existing ...-hybrid_plain_purecap one when running
 #                 fewer ABIs (it may hold more binaries than needed)
+#   NO_CHECKPOINT 1: no checkpoint, every run boots (CHECKPOINT unused)
+#   REVOCATION    run.py --revocation: default | on | off (purecap heap
+#                 revocation; default: the kernel's)
 #   JOB_ENV       run.py --job-env file, e.g. util/cheri/olden/phase-pcs.json
 #                 (per-run CHERI_STATS_AT_PC phase boundaries)
 set -eu
@@ -38,7 +41,11 @@ mkdir -p "$RESULTS/checkpoints" "$RESULTS/olden"
 
 CHECKPOINT=${CHECKPOINT:-$RESULTS/checkpoints/olden-k$khash-b$bhash-$(echo "$ABIS" | tr , _)}
 set -- --out "$OUT" --work "$WORK" --configs "$CONFIGS" --jobs "$JOBS" \
-    --abis "$ABIS" --checkpoint "$CHECKPOINT"
+    --abis "$ABIS"
+# NO_CHECKPOINT=1: every run boots CheriBSD itself (run.py without
+# --checkpoint); the boot is recorded as its own stats dump
+[ "${NO_CHECKPOINT:-0}" = 1 ] || set -- "$@" --checkpoint "$CHECKPOINT"
+[ -n "${REVOCATION:-}" ] && set -- "$@" --revocation "$REVOCATION"
 [ -n "${JOB_ENV:-}" ] && set -- "$@" --job-env "$JOB_ENV"
 [ -n "${WORKLOADS:-}" ] && set -- "$@" --workloads "$WORKLOADS"
 

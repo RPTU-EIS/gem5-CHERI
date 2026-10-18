@@ -79,6 +79,8 @@ ENV_KNOBS = [
     "CHERI_L2_PF",
     "CHERI_PF_ON_ACCESS",
     "CHERI_PC_PROFILE",
+    "CHERI_INST_PROFILE",
+    "CHERI_VIRTIO_SEG_MAX",
 ]
 
 
@@ -157,21 +159,50 @@ def bundle(tgz, members):
             tar.add(src, arcname=name, filter=executable)
 
 
-def make_runner(path, bins, iterations, extra_args, wl_args):
-    """Guest script: unpack the binaries, then one region per workload."""
+def guest_prelude(witness="off", revocation="default"):
+    """Guest commands before the regions: WITNESS lock-order checking off
+    (a debug-kernel cost; harmless without WITNESS) and the purecap heap
+    revocation default for the processes started afterwards."""
+    lines = []
+    if witness == "off":
+        lines.append("sysctl debug.witness.watch=0 >/dev/null 2>&1")
+    if revocation != "default":
+        lines.append("sysctl security.cheri.runtime_revocation_default="
+                     f"{1 if revocation == 'on' else 0}")
+    return lines
+
+
+def make_runner(path, bins, iterations, extra_args, wl_args, abi=None,
+                prelude=()):
+    """Guest script for a booted guest: unpack the binaries, then one region
+    per workload. With ABI, the binaries go to /root/cm/<abi>/ (the layout
+    of the checkpoints) and are synced to disk before the first region;
+    without, to /tmp."""
     tgz = path + ".tgz"
-    bundle(tgz, [(exe, f"cm_{wl}.exe") for wl, exe in bins])
+    if abi:
+        dest = "/root/cm"
+        bundle(tgz, [(exe, f"{abi}/cm_{wl}.exe") for wl, exe in bins])
+        exe_dir = f"/root/cm/{abi}"
+    else:
+        dest = "/tmp"
+        bundle(tgz, [(exe, f"cm_{wl}.exe") for wl, exe in bins])
+        exe_dir = "/tmp"
     lines = [
         "#!/bin/sh",
         "cd /tmp",
-        'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C /tmp || '
+        f"mkdir -p {dest}",
+        f'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C {dest} || '
         '{ echo "=== CM-UNPACK-FAILED"; exit 1; }',
-        "chmod +x /tmp/cm_*.exe",
+        f"chmod +x {exe_dir}/cm_*.exe",
     ]
+    if abi:
+        lines.append("sync")
+    lines += list(prelude)
     lines += regions(
-        [wl for wl, _ in bins], iterations, extra_args, "/tmp", wl_args
+        [wl for wl, _ in bins], iterations, extra_args, exe_dir, wl_args
     )
-    lines += ["rm -f /tmp/cm_*.exe"]
+    if not abi:
+        lines += ["rm -f /tmp/cm_*.exe"]
     write_payload_script(path, lines, tgz)
 
 
@@ -467,6 +498,21 @@ def main():
     )
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument(
+        "--witness",
+        choices=("off", "on"),
+        default="off",
+        help="WITNESS lock-order checking in the guest kernel (debug "
+        "kernels; off before the regions by default)",
+    )
+    ap.add_argument(
+        "--revocation",
+        choices=("default", "on", "off"),
+        default="default",
+        help="purecap heap revocation (security.cheri."
+        "runtime_revocation_default) for the workloads; default: the "
+        "kernel's",
+    )
+    ap.add_argument(
         "--timeout",
         type=int,
         default=48 * 3600,
@@ -570,6 +616,8 @@ def main():
         "system_files": system_files,
         "binaries": binaries,
         "command": " ".join(sys.argv),
+        "guest_witness": args.witness,
+        "guest_revocation": args.revocation,
     }
     with open(os.path.join(out, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
@@ -618,11 +666,13 @@ def main():
         os.makedirs(os.path.join(out, wl), exist_ok=True)
         for abi in abis:
             path = os.path.join(out, wl, f"job-{abi}.sh")
+            prelude = guest_prelude(args.witness, args.revocation)
             if args.checkpoint:
                 with open(path, "w") as f:
                     f.write(
                         "\n".join(
-                            regions(
+                            prelude
+                            + regions(
                                 [wl],
                                 iterations,
                                 args.extra_args,
@@ -635,7 +685,8 @@ def main():
             else:
                 exe = dict(bins_by_abi[abi])[wl]
                 make_runner(
-                    path, [(wl, exe)], iterations, args.extra_args, wl_args
+                    path, [(wl, exe)], iterations, args.extra_args, wl_args,
+                    abi=abi, prelude=prelude,
                 )
             scripts[(wl, abi)] = path
 

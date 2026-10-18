@@ -78,6 +78,14 @@ INST_CLASSES = [
     ("FP store", ["inst_FloatMemWrite"], "#999999", "++++"),
     ("Other", ["inst_No_OpClass"], "#000000", ""),
 ]
+# with CHERI_INST_PROFILE runs (parse.py inst_<kind> columns): loads and
+# stores split into capability-width and integer ones
+INST_CLASSES_SPLIT = INST_CLASSES[:3] + [
+    ("Int load", ["inst_int_load"], "#E69F00", "\\\\"),
+    ("Cap load", ["inst_cap_load"], "#E69F00", "oo"),
+    ("Int store", ["inst_int_store"], "#CC79A7", "||||"),
+    ("Cap store", ["inst_cap_store"], "#CC79A7", "OO"),
+] + INST_CLASSES[5:]
 ABI_LETTER = {"plain": "P", "hybrid": "H", "purecap": "C"}
 SHORT = {
     "cjpeg-rose7-preset": "cjpeg", "linear_alg-mid-100x100-sp": "linear_alg",
@@ -252,6 +260,10 @@ def instmix(ax, groups, rows, abis, baseline, table, clip=2.0):
     (break mark, total printed), as in panel()."""
     width = 0.8 / len(abis)
     pos, gaps, end = x_layout(groups)
+    # split loads/stores when every plotted run has an instruction profile
+    classes = INST_CLASSES_SPLIT if rows and all(
+        value(r, ["inst_cap_load"]) is not None for r in rows.values()) \
+        else INST_CLASSES
     totals = []
     for x, wl in pos:
         b = rows.get((baseline, wl))
@@ -259,7 +271,7 @@ def instmix(ax, groups, rows, abis, baseline, table, clip=2.0):
             r = rows.get((abi, wl))
             if r and b and value(b, ["insts"]):
                 totals.append(100.0 * sum(value(r, c) or 0.0 for _, c, _, _
-                                          in INST_CLASSES) /
+                                          in classes) /
                               value(b, ["insts"]))
     totals.sort(reverse=True)
     cut = None
@@ -275,7 +287,7 @@ def instmix(ax, groups, rows, abis, baseline, table, clip=2.0):
                 continue
             xb = x - 0.4 + width * (i + 0.5)
             y = 0.0
-            for cls, cols, col, hatch in INST_CLASSES:
+            for cls, cols, col, hatch in classes:
                 v = value(r, cols) or 0.0
                 pct = 100.0 * v / bv
                 if cut is None or y < cut:
@@ -316,7 +328,7 @@ def instmix(ax, groups, rows, abis, baseline, table, clip=2.0):
     names = ", ".join(f"{ABI_LETTER.get(a, a[0].upper())} = {ABI_NAME[a]}"
                       for a in abis)
     legend(ax, [Patch(facecolor="white", edgecolor=col, hatch=hatch,
-                      label=cls) for cls, _, col, hatch in INST_CLASSES],
+                      label=cls) for cls, _, col, hatch in classes],
            f"Instruction mix - % of {ABI_NAME[baseline]} instructions "
            f"({names})", 4)
     hi = max(tops) if tops else 100
