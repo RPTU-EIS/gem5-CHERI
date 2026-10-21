@@ -108,7 +108,6 @@ class PCState : public GenericISA::UPCState<4>
         _vtype = pcstate._vtype;
         _vl = pcstate._vl;
         _pcc = pcstate._pcc;
-        _capMode = pcstate._capMode;
     }
 
     void compressed(bool c) { _compressed = c; }
