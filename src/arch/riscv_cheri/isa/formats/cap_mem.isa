@@ -167,7 +167,6 @@ def template CapLoadCompleteAcc {{
         if (pkt->req->getClearTagOnLoad()) {
             tag = false;
         }
-
         // ── Assemble into CapRegContainer ──
         CapRegContainer _loadedCap;
         _loadedCap.fromMemory(data, tag);
@@ -301,8 +300,20 @@ def template CapStoreCompleteAcc {{
         // carries the tag that writeCapMem attached. Without this, a stored
         // capability reloads with tag=0, and cjr/cjalr then refuse to jump to
         // the (untagged) return capability and fall through -> crash.
+        //
+        // Pass the issuing instruction's sequence number (when known, i.e.
+        // under O3) so CheriTagTable can reject this write if a
+        // program-order-later write to the same granule already landed --
+        // completeAcc for two stores to the same granule can fire out of
+        // program order (see CheriTagTable::admitWrite for the full
+        // rationale; this fixed a real boot panic in
+        // witness_lock_order_add, where a byte-wise memset's tag-clearing
+        // completeAcc raced with the very next capability store's
+        // tag-setting completeAcc for the same 16 bytes).
         xc->tcBase()->getSystemPtr()->cheritagtable.setTag(
-            pkt->getAddr(), pkt->req->getCapTag());
+            pkt->getAddr(), pkt->req->getCapTag(),
+            pkt->req->hasInstSeqNum(),
+            pkt->req->hasInstSeqNum() ? pkt->req->getReqInstSeqNum() : 0);
 
         // ── Optional result writeback (store-conditional: SC.C) ──
         // Most cap stores have no destination register, so op_decl/postacc/
@@ -508,8 +519,22 @@ def template CapDataStoreCompleteAcc {{
         // StoreCompleteAcc). This is the common case for the kernel (memset
         // uses sb.cap, struct writes use sd.cap): without clearing, a scalar
         // write over old capability bytes leaves a stale valid tag behind.
+        //
+        // Pass the sequence number so a byte-wise scalar write (e.g. one
+        // iteration of a memset loop) can't retroactively clobber a
+        // program-order-LATER capability store to the same granule just
+        // because this store's completeAcc happens to fire after that
+        // later store's -- see CapStoreCompleteAcc and
+        // CheriTagTable::admitWrite. This is the actual root cause of the
+        // witness_lock_order_add panic root-caused on 2026-10-16: the
+        // kernel does memset(&entry, 0, sizeof(entry)) immediately before
+        // entry.wlod_next = ...; a byte of the memset landing after the
+        // wlod_next store's completeAcc wiped a tag that should have
+        // survived.
         xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
-            pkt->getAddr(), pkt->getSize());
+            pkt->getAddr(), pkt->getSize(),
+            pkt->req->hasInstSeqNum(),
+            pkt->req->hasInstSeqNum() ? pkt->req->getReqInstSeqNum() : 0);
         return NoFault;
     }
 }};

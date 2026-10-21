@@ -210,6 +210,24 @@ Walker::startWalkWrapper()
     if (e) {
        fault = tlb->checkPermissions(currState->status, currState->pmode,
                                      vaddr, currState->mode, e->pte);
+       // CHERI: checkPermissions() only covers the base r/w/x/u bits.
+       // A capability access to a page whose hardware-managed
+       // capability-dirty bit isn't set yet still needs a real walk
+       // (see TLB::doTranslate's checkCheriPte/set_cd handling) even
+       // though the cached entry otherwise looks like a plain hit.
+       // Without this, this TLB-hit fast path repeatedly declares the
+       // walk already resolved, calls tlb->translateTiming() again,
+       // which re-discovers the same unset CD bit and starts another
+       // walk -- which gets fast-pathed (and so squashed) the exact
+       // same way before it can ever complete and persist cd=1,
+       // looping forever.
+       if (fault == NoFault) {
+           bool set_cd = false;
+           fault = tlb->checkCheriPte(currState->tc, currState->req, vaddr,
+                                       currState->mode, e->pte, set_cd);
+           if (fault == NoFault && set_cd)
+               e = nullptr;
+       }
     }
 
     while ((num_squashed < numSquashable) && currState &&
@@ -250,6 +268,20 @@ Walker::startWalkWrapper()
                fault = tlb->checkPermissions(currState->status,
                                              currState->pmode, vaddr,
                                              currState->mode, e->pte);
+               // CHERI: same checkCheriPte/set_cd check as above -- see
+               // the comment there. Without this here too, a walk this
+               // same loop just (re)started via translateTiming() above
+               // (Walker::start() runs it synchronously when the walker
+               // is idle) immediately becomes currStates.front() and
+               // gets fast-pathed/squashed again before it can complete.
+               if (fault == NoFault) {
+                   bool set_cd = false;
+                   fault = tlb->checkCheriPte(currState->tc, currState->req,
+                                               vaddr, currState->mode,
+                                               e->pte, set_cd);
+                   if (fault == NoFault && set_cd)
+                       e = nullptr;
+               }
             }
         } else {
             currState = NULL;
@@ -546,7 +578,16 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
     inflight--;
     if (squashed) {
         // if were were squashed, return true once inflight is zero and
-        // this WalkerState will be freed there.
+        // this WalkerState will be freed there. Unlike the non-squashed
+        // paths below (which store a read response in `read` for later
+        // deletion in endWalk()/stepWalk(), or delete a write response
+        // directly), this early return never took ownership of `pkt` --
+        // leaking both the Packet and its Request on every walk response
+        // that arrives after a squash. TLB misses mid-walk-squash are
+        // routine under O3 (every speculative translation whose
+        // instruction gets squashed before its walk completes hits this),
+        // so this leaked without bound over a long run.
+        delete pkt;
         return (inflight == 0);
     }
     if (pkt->isRead()) {
