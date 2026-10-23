@@ -255,6 +255,10 @@ class Request : public Extensible<Request>
         CHERI_CAP_LOAD              = 0x0001000000000000,
         /** CHERI: The request is a capability store (16-byte, aligned) */
         CHERI_CAP_STORE             = 0x0002000000000000,
+        /** CHERI: a functional tag-table read (cloadtags) -- serviced
+         *  locally via Request::localAccessor, never issued to the
+         *  cache hierarchy. */
+        CHERI_TAG_LOAD              = 0x0004000000000000,
 
         /**
          * These flags are *not* cleared when a Request object is
@@ -543,7 +547,7 @@ class Request : public Extensible<Request>
           _pc(other._pc), _reqInstSeqNum(other._reqInstSeqNum),
           _localAccessor(other._localAccessor),
           translateDelta(other.translateDelta),
-          accessDelta(other.accessDelta), depth(other.depth), 
+          accessDelta(other.accessDelta), depth(other.depth),
           _cheriCapTag(other._cheriCapTag),
           _cheriClearTagOnLoad(other._cheriClearTagOnLoad),
           _cheriTagNeutral(other._cheriTagNeutral),
@@ -1157,9 +1161,14 @@ class Request : public Extensible<Request>
     bool isCapLoad() const { return _flags.isSet(CHERI_CAP_LOAD); }
     bool isCapStore() const { return _flags.isSet(CHERI_CAP_STORE); }
     bool isCapAccess() const { return isCapLoad() || isCapStore(); }
+    // Deliberately not folded into isCapAccess(): a tag load carries no
+    // capability data of its own, it just needs the same local-access
+    // (not cache-hierarchy) + single-request treatment in the O3 LSQ.
+    bool isCheriTagLoad() const { return _flags.isSet(CHERI_TAG_LOAD); }
 
     void setCapLoad() { _flags.set(CHERI_CAP_LOAD); }
     void setCapStore() { _flags.set(CHERI_CAP_STORE); }
+    void setCheriTagLoad() { _flags.set(CHERI_TAG_LOAD); }
 
     bool getCapTag() const { return _cheriCapTag; }
     void setCapTag(bool t) { _cheriCapTag = t; }

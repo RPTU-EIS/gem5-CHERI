@@ -253,6 +253,22 @@ class LSQUnit
     Fault checkViolations(typename LoadQueue::iterator& loadIt,
             const DynInstPtr& inst);
 
+    /** CHERI: for a tag-table read (cloadtags) serviced via local
+     * access -- which otherwise bypasses read()'s normal store-queue
+     * forwarding scan entirely -- check whether an older, still-live
+     * store in the SQ overlaps its range and hasn't yet applied its
+     * tag-table write (i.e. isn't completed() yet). If so, stall this
+     * load exactly as the forwarding scan's PartialAddrRangeCoverage
+     * case does (reschedule, discard the request) and return true, so
+     * the caller returns before reading a possibly-stale tag. Unlike
+     * that scan, this also considers stores between storeWBIt and the
+     * SQ head (already sent, response not yet back) and never
+     * forwards data -- there is none to forward, only a write to wait
+     * out.
+     */
+    bool stallOnOlderOverlappingStore(LSQRequest *request,
+            ssize_t load_idx);
+
     /** Check if an incoming invalidate hits in the lsq on a load
      * that might have issued out of order wrt another load beacuse
      * of the intermediate invalidate.
@@ -489,6 +505,17 @@ class LSQUnit
     InstSeqNum stallingStoreIsn;
     /** The index of the above store. */
     ssize_t stallingLoadIdx;
+    /** True iff the load currently occupying the stall slot above is a
+     * CHERI tag load stalled by stallOnOlderOverlappingStore() rather
+     * than by read()'s own partial-forwarding scan. Needed because by
+     * the time storePostSend() runs, the stalling load's request has
+     * already been discarded, so its CHERI_TAG_LOAD flag is no longer
+     * reachable from here -- unlike an ordinary partial-forwarding
+     * stall, a tag load must not be unstalled at store *send* time
+     * (storePostSend()), only once the store's response has actually
+     * landed and its tag-table write has happened (completeStore()).
+     */
+    bool stallingLoadIsCheriTagLoad;
 
     /** The packet that needs to be retried. */
     PacketPtr retryPkt;

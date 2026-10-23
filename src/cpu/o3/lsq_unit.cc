@@ -251,6 +251,7 @@ LSQUnit::resetState()
     memDepViolator = NULL;
 
     stalled = false;
+    stallingLoadIsCheriTagLoad = false;
 
     cacheBlockMask = ~(cpu->cacheLineSize() - 1);
 }
@@ -949,6 +950,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
             stalled = false;
             stallingStoreIsn = 0;
             stallingLoadIdx = 0;
+            stallingLoadIsCheriTagLoad = false;
         }
 
         // hardware transactional memory
@@ -1056,8 +1058,14 @@ LSQUnit::getLatestHtmUid() const
 void
 LSQUnit::storePostSend()
 {
+    // CHERI: a tag load must not be unstalled here -- this runs when the
+    // blocking store is merely *sent*, not when its response (and
+    // therefore its completeAcc()-driven tag-table write) has actually
+    // landed. Leave it stalled; completeStore() releases it once the
+    // write has happened.
     if (isStalled() &&
-        storeWBIt->instruction()->seqNum == stallingStoreIsn) {
+        storeWBIt->instruction()->seqNum == stallingStoreIsn &&
+        !stallingLoadIsCheriTagLoad) {
         DPRINTF(LSQUnit, "Unstalling, stalling store [sn:%lli] "
                 "load idx:%li\n",
                 stallingStoreIsn, stallingLoadIdx);
@@ -1189,6 +1197,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx)
                 stallingStoreIsn, stallingLoadIdx);
         stalled = false;
         stallingStoreIsn = 0;
+        stallingLoadIsCheriTagLoad = false;
         iewStage->replayMemInst(loadQueue[stallingLoadIdx].instruction());
     }
 
@@ -1327,6 +1336,80 @@ LSQUnit::cacheLineSize()
     return cpu->cacheLineSize();
 }
 
+bool
+LSQUnit::stallOnOlderOverlappingStore(LSQRequest *request, ssize_t load_idx)
+{
+    LQEntry &load_entry = loadQueue[load_idx];
+    const DynInstPtr &load_inst = load_entry.instruction();
+
+    Addr req_s = request->mainReq()->getVaddr();
+    Addr req_e = req_s + request->mainReq()->getSize();
+
+    auto store_it = load_inst->sqIt;
+    // Unlike read()'s own forwarding scan a few lines down (which stops
+    // at storeWBIt, since it only cares about stores still queued to be
+    // sent), this must also see stores that have already been sent but
+    // whose response -- and therefore whose completeAcc()-driven
+    // tag-table write -- hasn't landed yet. Those sit between
+    // storeQueue.begin() and storeWBIt. completed() is what makes
+    // scanning that far safe: an already-completed store's tag write
+    // has already happened, so it's not a hazard even though it's
+    // below storeWBIt (and skipping it here is what avoids the
+    // "Should not check one of these" panic a few lines down, which
+    // assumes -- correctly, for that narrower scan -- that a
+    // partial-coverage entry is never already completed).
+    while (store_it != storeQueue.begin()) {
+        store_it--;
+        assert(store_it->valid());
+        assert(store_it->instruction()->seqNum < load_inst->seqNum);
+
+        if (store_it->completed())
+            continue;
+
+        int store_size = store_it->size();
+        if (store_size == 0 || store_it->instruction()->strictlyOrdered() ||
+            (store_it->request()->mainReq() &&
+             store_it->request()->mainReq()->isCacheMaintenance()))
+            continue;
+
+        assert(store_it->instruction()->effAddrValid());
+        Addr st_s = store_it->instruction()->effAddr;
+        Addr st_e = st_s + store_size;
+
+        if (req_s < st_e && st_s < req_e) {
+            // Overlap with an older store whose tag-table write (if
+            // any) hasn't happened yet. Stall exactly as read()'s own
+            // PartialAddrRangeCoverage case does below -- there is no
+            // data to forward for a tag read, only a write to wait
+            // out, so any overlap (not just partial) takes this path.
+            if (!stalled ||
+                (stalled &&
+                 load_inst->seqNum <
+                 loadQueue[stallingLoadIdx].instruction()->seqNum)) {
+                stalled = true;
+                stallingStoreIsn = store_it->instruction()->seqNum;
+                stallingLoadIdx = load_idx;
+                stallingLoadIsCheriTagLoad = true;
+            }
+
+            iewStage->rescheduleMemInst(load_inst);
+            load_inst->clearIssued();
+            load_inst->effAddrValid(false);
+            ++stats.rescheduledLoads;
+
+            DPRINTF(LSQUnit, "CHERI tag load [sn:%lli] stalling on older "
+                    "store idx %i to addr %#x\n", load_inst->seqNum,
+                    store_it._idx, request->mainReq()->getVaddr());
+
+            request->discard();
+            load_entry.setRequest(nullptr);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 Fault
 LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {
@@ -1378,6 +1461,11 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         load_inst->tcBase()->getIsaPtr()->handleLockedRead(load_inst.get(),
                 request->mainReq());
         load_inst->recordResult(true);
+    }
+
+    if (request->mainReq()->isCheriTagLoad() &&
+            stallOnOlderOverlappingStore(request, load_idx)) {
+        return NoFault;
     }
 
     if (request->mainReq()->isLocalAccess()) {
@@ -1577,6 +1665,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     stalled = true;
                     stallingStoreIsn = store_it->instruction()->seqNum;
                     stallingLoadIdx = load_idx;
+                    stallingLoadIsCheriTagLoad = false;
                 }
 
                 // Tell IQ/mem dep unit that this instruction will need to be

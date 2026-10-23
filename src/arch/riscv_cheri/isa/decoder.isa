@@ -5887,39 +5887,22 @@ decode QUADRANT default Unknown::unknown() {
                             Cd = capSealEntry(Cs1);
                         }});
 
-                        0x12: cloadtags({{
+                        0x12: CTagLoad::cloadtags({{
 
+                            // ── Functional-only path (AtomicSimpleCPU / the
+                            // functional proxy). The timing path
+                            // (CTagLoadInitiateAcc/CompleteAcc, in
+                            // formats/capability.isa) issues a real,
+                            // locally-serviced LSQ read instead of doing its
+                            // own translation here -- see that format's
+                            // comments for why (it's what lets this
+                            // instruction track just the stores it actually
+                            // races with, instead of being fully serialized
+                            // like the old IsNonSpeculative version).
                             using namespace gem5::CHERIRiscvISA;
 
-                            RegIndex cs1Idx = CS1 + cap_reg::_CNullIdx;
-                            RegIndex dstIdx = RD + int_reg::_ZeroIdx;
-
-                            DPRINTF(CheriDecode, "Loading tags from memory at c%d and storing in x%d\n", cs1Idx, dstIdx);
-
-                            uint64_t vaddr = Cs1.getAddress();
                             const uint64_t caps_per_cache_line = 8;
                             const uint64_t cap_size = 16;  // 128-bit capability
-                            const uint64_t access_length =
-                                caps_per_cache_line * cap_size;
-
-                            // Sail CLoadTags: tag, seal, PERMIT_LOAD,
-                            // PERMIT_LOAD_CAP, bounds, then alignment. (Early
-                            // kernel caps don't carry correct perms yet, so
-                            // this
-                            // is only enforced where cheriEnforcing() is
-                            // true.)
-                            if (Fault _f = CHERIRiscvISA::capEnforce(
-                                    xc->tcBase(),
-                                    capCheckMemAccess(Cs1, vaddr,
-                                        access_length,
-                                        CheriAccLoad | CheriAccLoadTags),
-                                    CS1, vaddr))
-                                return _f;
-                            if (CHERIRiscvISA::cheriEnforcing(xc->tcBase()) &&
-                                    (vaddr & (access_length - 1)) != 0) {
-                                return std::make_shared<AddressFault>(vaddr,
-                                    ExceptionCode::LOAD_ADDR_MISALIGNED);
-                            }
 
                             // cloadtags is a register-format instruction so it
                             // does not go through the load/store translation
@@ -5932,13 +5915,13 @@ decode QUADRANT default Unknown::unknown() {
                             // request and translateFunctional()'s getVaddr()
                             // would assert.
                             RequestPtr treq = std::make_shared<Request>(
-                                vaddr, access_length, Request::Flags(),
+                                EA, access_length, Request::Flags(),
                                 Request::funcRequestorId, /*pc*/0,
                                 ctc->contextId());
                             Fault tf = ctc->getMMUPtr()->translateFunctional(
                                 treq, ctc, BaseMMU::Read);
                             uint64_t tag_bits = 0;
-                            Addr pa = vaddr;
+                            Addr pa = EA;
                             System *csys = ctc->getSystemPtr();
                             bool clear_tags = false;
                             if (tf == NoFault &&
@@ -5946,7 +5929,7 @@ decode QUADRANT default Unknown::unknown() {
                                 auto *mmu = static_cast<CHERIRiscvISA::MMU *>(
                                     ctc->getMMUPtr());
                                 if (Fault f = mmu->checkCheriPteFunctional(
-                                        ctc, vaddr, BaseMMU::Read, true,
+                                        ctc, EA, BaseMMU::Read, true,
                                         false, clear_tags))
                                     return f;
                             }
@@ -5963,8 +5946,10 @@ decode QUADRANT default Unknown::unknown() {
                                 // faults. Fall back to treating the capability
                                 // address as physical (identity) -- the tags for
                                 // that region are already in the table.
-                                pa = vaddr;
-                                DPRINTF(CheriDecode, "cloadtags translate failed for vaddr %#llx, using identity pa\n", (unsigned long long)vaddr);
+                                pa = EA;
+                                DPRINTF(CheriDecode, "cloadtags translate
+                                failed for vaddr %#llx, using identity pa\n",
+                                 (unsigned long long)EA);
                             }
                             for (uint64_t i = 0;
                                     !clear_tags && i < caps_per_cache_line;
@@ -5973,10 +5958,38 @@ decode QUADRANT default Unknown::unknown() {
                                     tag_bits |= (1ULL << i);
                             }
 
-                            DPRINTF(CheriDecode, "Loaded tag bits = %#llx from vaddr %#llx (pa-based)\n", (unsigned long long)tag_bits, (unsigned long long)vaddr);
+                            DPRINTF(CheriDecode, "Loaded tag bits =
+                                %#llx from vaddr %#llx (pa-based)\n",
+                                 (unsigned long long)tag_bits,
+                                 (unsigned long long)EA);
                             Rd = tag_bits;
 
-                        }}, IsNonSpeculative);
+                        }}, {{
+                            // ea_code
+                            EA = Cs1.getAddress();
+                        }}, {{
+                            // cap_check_code
+                            using namespace gem5::CHERIRiscvISA;
+                            const uint64_t access_length = 8 * 16;
+
+                            // Sail CLoadTags: tag, seal, PERMIT_LOAD,
+                            // PERMIT_LOAD_CAP, bounds, then alignment. (Early
+                            // kernel caps don't carry correct perms yet, so
+                            // this is only enforced where cheriEnforcing() is
+                            // true.)
+                            if (Fault _f = CHERIRiscvISA::capEnforce(
+                                    xc->tcBase(),
+                                    capCheckMemAccess(Cs1, EA,
+                                        access_length,
+                                        CheriAccLoad | CheriAccLoadTags),
+                                    CS1, EA))
+                                return _f;
+                            if (CHERIRiscvISA::cheriEnforcing(xc->tcBase()) &&
+                                    (EA & (access_length - 1)) != 0) {
+                                return std::make_shared<AddressFault>(EA,
+                                    ExceptionCode::LOAD_ADDR_MISALIGNED);
+                            }
+                        }}, IsLoad);
 
                         0x14: jalr_pcc({{
                             // JALR.PCC rd, rs1 (Sail JALR_PCC = RISCV_JALR):

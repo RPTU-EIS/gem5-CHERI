@@ -108,3 +108,144 @@ def format COp(code, *opt_flags) {{
     decode_block = BasicDecode.subst(iop)
     exec_output = BasicExecute.subst(iop)
 }};
+
+////////////////////////////////////////////////////////////////////
+//
+// CHERI tag-table load (cloadtags): a register-format op that reads
+// 8 capability-tag bits for a 128-byte, 16-byte-granule-aligned
+// region. Unlike COp, this goes through initiateAcc/completeAcc so it
+// can be given a real LSQ presence (see lsq.cc's CHERI_TAG_LOAD
+// handling) instead of being fully serialized against the store
+// queue -- see decoder.isa's cloadtags definition for why.
+//
+
+def template CTagLoadDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+
+        Fault execute(ExecContext *, trace::InstRecord *) const override;
+        Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
+        Fault completeAcc(PacketPtr, ExecContext *,
+                          trace::InstRecord *) const override;
+    };
+}};
+
+def template CTagLoadConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst):
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+    }
+}};
+
+def template CTagLoadExecute {{
+    // Functional path (AtomicSimpleCPU and the functional proxy):
+    // unchanged from before this format existed, so it stays the
+    // oracle to compare the timing path (InitiateAcc/CompleteAcc,
+    // below) against.
+    Fault
+    %(class_name)s::execute(
+        ExecContext *xc, trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        // ── Capability permission and bounds check ──
+        %(cap_check_code)s;
+
+        %(code)s;
+        %(op_wb)s;
+        return NoFault;
+    }
+}};
+
+def template CTagLoadInitiateAcc {{
+    Fault
+    %(class_name)s::initiateAcc(ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        Addr EA;
+
+        %(op_src_decl)s;
+        %(op_rd)s;
+        %(ea_code)s;
+
+        // ── Capability permission and bounds check ──
+        %(cap_check_code)s;
+
+        // ── Issue a single, 128-byte, locally-serviced tag-table
+        // read through the LSQ. CHERI_CAP_LOAD gets us
+        // TLB::checkCheriPte's CR/CRM revocation-barrier checks and
+        // Request::setClearTagOnLoad "for free" via the normal
+        // initiateTranslation/translateTiming path -- replacing the
+        // manual MMU::checkCheriPteFunctional call the old
+        // IsNonSpeculative version of this instruction used.
+        // CHERI_TAG_LOAD makes LSQ::pushRequest force a single
+        // (non-split) request regardless of cache-line crossing and
+        // makes LSQ::addReq install a local accessor, so this never
+        // reaches the cache hierarchy -- see lsq.cc.
+        const std::vector<bool> byte_enable(128, true);
+        return xc->initiateMemRead(EA, 128,
+            Request::CHERI_CAP_LOAD | Request::CHERI_TAG_LOAD,
+            byte_enable);
+    }
+}};
+
+def template CTagLoadCompleteAcc {{
+    Fault
+    %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
+        trace::InstRecord *traceData) const
+    {
+        %(op_decl)s;
+
+        // ── Read the 8 granule tags from the CHERI tag table by
+        // physical address. The packet's data payload is never
+        // touched -- this access is serviced locally (see
+        // LSQ::addReq's CHERI_TAG_LOAD accessor), not by any real
+        // memory, so there is nothing in it to read.
+        uint64_t tag_bits = 0;
+        bool clear_tags = pkt->req->getClearTagOnLoad();
+        System *csys = xc->tcBase()->getSystemPtr();
+        for (uint64_t i = 0; !clear_tags && i < 8; i++) {
+            if (csys->cheritagtable.getTag(pkt->getAddr() + i * 16))
+                tag_bits |= (1ULL << i);
+        }
+        Rd = tag_bits;
+
+        %(op_wb)s;
+
+        return NoFault;
+    }
+}};
+
+let {{
+def CTagLoadBase(name, Name, ea_code, cap_check_code, code, inst_flags,
+        base_class='CapOp'):
+
+    iop = InstObjParams(name, Name, base_class,
+        {'ea_code': ea_code,
+         'cap_check_code': cap_check_code,
+         'code': code},
+        inst_flags)
+
+    return (CTagLoadDeclare.subst(iop),
+        CTagLoadConstructor.subst(iop),
+        BasicDecode.subst(iop),
+        CTagLoadExecute.subst(iop) +
+        CTagLoadInitiateAcc.subst(iop) +
+        CTagLoadCompleteAcc.subst(iop))
+}};
+
+def format CTagLoad(code, ea_code, cap_check_code, *opt_flags) {{
+    (header_output, decoder_output, decode_block, exec_output) = \
+        CTagLoadBase(name, Name, ea_code, cap_check_code, code, opt_flags)
+}};
