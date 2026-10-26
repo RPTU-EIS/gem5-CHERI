@@ -2358,7 +2358,7 @@ decode QUADRANT default Unknown::unknown() {
                         CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                     }},
                     offset_code = {{ offset = 0; }},
-                    postacc_code = {{ Rd = 0; }},
+                    postacc_code = {{ Rd = result; }},
                     mem_flags = LLSC,
                     inst_flags = [IsStore, IsStoreConditional]);
             }
@@ -5947,8 +5947,8 @@ decode QUADRANT default Unknown::unknown() {
                                 // address as physical (identity) -- the tags for
                                 // that region are already in the table.
                                 pa = EA;
-                                DPRINTF(CheriDecode, "cloadtags translate
-                                failed for vaddr %#llx, using identity pa\n",
+                                DPRINTF(CheriDecode, "cloadtags translate "
+                                "failed for vaddr %#llx, using identity pa\n",
                                  (unsigned long long)EA);
                             }
                             for (uint64_t i = 0;
@@ -5958,8 +5958,8 @@ decode QUADRANT default Unknown::unknown() {
                                     tag_bits |= (1ULL << i);
                             }
 
-                            DPRINTF(CheriDecode, "Loaded tag bits =
-                                %#llx from vaddr %#llx (pa-based)\n",
+                            DPRINTF(CheriDecode, "Loaded tag bits = "
+                                "%#llx from vaddr %#llx (pa-based)\n",
                                  (unsigned long long)tag_bits,
                                  (unsigned long long)EA);
                             Rd = tag_bits;

@@ -233,17 +233,23 @@ def template CapStoreExecute {{
         // the CPU (_pendingCapTag); the atomic CPU records it in the tag table
         // by physical address. Without this the stored capability reloads with
         // tag=0 and cjr/cjalr later refuse the (untagged) return capability.
+        // Store-conditional (SC.C, LLSC): the CPU reports gem5's success
+        // flag in _scSuccess (1 = written); RISC-V's SC result is its
+        // inverse (0 = success), as in StoreCondExecute.
+        uint64_t _scSuccess = 0;
         {
             uint8_t capData[16];
             _storeCap.toMemory(capData);
 
             const std::vector<bool> byte_enable(16, true);
             Fault fault = xc->writeCapMem(
-                capData, 16, EA, memAccessFlags, nullptr,
+                capData, 16, EA, memAccessFlags,
+                isStoreConditional() ? &_scSuccess : nullptr,
                 _storeCap.getTag(), byte_enable);
             if (fault != NoFault)
                 return fault;
         }
+        [[maybe_unused]] uint64_t result = !_scSuccess;
 
         %(postacc_code)s;
         %(op_wb)s;
@@ -310,15 +316,26 @@ def template CapStoreCompleteAcc {{
         // witness_lock_order_add, where a byte-wise memset's tag-clearing
         // completeAcc raced with the very next capability store's
         // tag-setting completeAcc for the same 16 bytes).
-        xc->tcBase()->getSystemPtr()->cheritagtable.setTag(
-            pkt->getAddr(), pkt->req->getCapTag(),
-            pkt->req->hasInstSeqNum(),
-            pkt->req->hasInstSeqNum() ? pkt->req->getReqInstSeqNum() : 0);
+        //
+        // A failed store-conditional (SC.C, LLSC: gem5 success flag
+        // getExtraData() == 0) wrote no data, so it must not change the tag
+        // either.
+        const bool _scFailed =
+            isStoreConditional() && !pkt->req->getExtraData();
+        if (!_scFailed) {
+            xc->tcBase()->getSystemPtr()->cheritagtable.setTag(
+                pkt->getAddr(), pkt->req->getCapTag(),
+                pkt->req->hasInstSeqNum(),
+                pkt->req->hasInstSeqNum() ? pkt->req->getReqInstSeqNum() : 0);
+        }
 
         // ── Optional result writeback (store-conditional: SC.C) ──
         // Most cap stores have no destination register, so op_decl/postacc/
-        // op_wb expand to nothing. SC.C sets Rd here (=0, success) via
-        // postacc_code and writes it back after the store completes.
+        // op_wb expand to nothing. SC.C sets Rd = result (RISC-V: 0 =
+        // success, 1 = failure; the inverse of gem5's flag, as in
+        // StoreCondCompleteAcc) and writes it back after the store
+        // completes.
+        [[maybe_unused]] uint64_t result = _scFailed;
         %(op_decl)s;
         %(op_rd)s;
         %(postacc_code)s;
