@@ -35,6 +35,12 @@ class CheriTagController(ClockedObject):
     leaf_cache_assoc = Param.Unsigned(8, "Leaf tag-cache associativity")
     root_cache_size = Param.MemorySize("1KiB", "Root tag-cache size")
     root_cache_assoc = Param.Unsigned(4, "Root tag-cache associativity")
+    silent_write_elimination = Param.Bool(
+        False,
+        "A data write dirties its tag-table line only if it changes the "
+        "line's tags (Joannou et al., ICCD 2017); otherwise every data "
+        "write dirties it",
+    )
     lookup_latency = Param.Cycles(
         2, "Tag-cache lookup latency on the miss path"
     )

@@ -27,6 +27,7 @@
 #ifndef __MEM_CHERI_TAG_CONTROLLER_HH__
 #define __MEM_CHERI_TAG_CONTROLLER_HH__
 
+#include <bitset>
 #include <unordered_map>
 #include <vector>
 
@@ -58,13 +59,26 @@ class CheriTagController : public ClockedObject
     class TagCache
     {
       public:
+        /** Data lines a leaf line covers (for spatial/temporal hits). */
+        static constexpr unsigned SubLines = 128;
+
         TagCache(uint64_t size_bytes, unsigned assoc);
 
-        /** Look up a line (updates LRU); optionally mark it dirty. */
-        bool access(Addr line, bool make_dirty);
+        /** Look up a line (updates LRU); optionally mark it dirty. With
+         *  sub >= 0 (the data line, within the line's coverage, the
+         *  lookup is for), *temporal tells whether this cached line
+         *  already served that data line (temporal hit) or not (spatial
+         *  hit: its tags came in with a miss on a neighbour). */
+        bool access(Addr line, bool make_dirty, int sub = -1,
+                    bool *temporal = nullptr);
+        void markDirty(Addr line);
+        /** Record that a cached line served data line sub. */
+        void serve(Addr line, int sub);
         /** Insert a line that missed. Returns true if a dirty line was
-         *  evicted, with its address in victim. */
-        bool insert(Addr line, bool dirty, Addr &victim);
+         *  evicted, with its address in victim; *evicted tells whether
+         *  any valid line was evicted. */
+        bool insert(Addr line, bool dirty, Addr &victim,
+                    bool *evicted = nullptr);
         /** False when built with size 0 (no cache: always misses). */
         bool enabled() const { return numSets != 0; }
 
@@ -75,7 +89,9 @@ class CheriTagController : public ClockedObject
             bool valid = false;
             bool dirty = false;
             uint64_t lastUse = 0;
+            std::bitset<SubLines> served;
         };
+        Way *find(Addr line);
         unsigned numSets;
         unsigned assoc;
         uint64_t useClock = 0;
@@ -118,6 +134,7 @@ class CheriTagController : public ClockedObject
         PacketPtr pkt;   // data read whose response waits; nullptr: write
         Addr dataAddr;
         bool isWrite;
+        unsigned size;   // bytes written (writes)
     };
 
     /** An outstanding tag-table line read (an MSHR). */
@@ -142,6 +159,7 @@ class CheriTagController : public ClockedObject
     const Addr rootBase;
     const bool enabled;
     const bool hierarchical;
+    const bool silentWriteElim;
     const Cycles lookupLatency;
     RequestorID requestorId = 0;
 
@@ -163,10 +181,33 @@ class CheriTagController : public ClockedObject
     static constexpr Addr RootLineCoverage =
         LineBytes * 8 * LeafLineCoverage;                         // 4 MiB
 
+    static constexpr Addr DataLineBytes = 64;
+
     Addr leafLineOf(Addr data_addr) const;
     Addr rootLineOf(Addr data_addr) const;
     Addr leafRegionOf(Addr data_addr) const;
     bool leafRegionHasTags(Addr data_addr) const;
+    /** Index of the data line within its leaf line's coverage. */
+    int subLineOf(Addr data_addr) const;
+
+    // ---- Tag values, for silent-write elimination ----
+    /** One bit per 16-byte granule of a leaf line's 8 KiB. */
+    using LeafBits = std::bitset<LeafLineCoverage / 16>;
+    /** Leaf lines as memory holds them (absent: all zero) and as the
+     *  leaf cache holds them. The functional tag table has the current
+     *  tags; these lag behind it until data is written back. */
+    std::unordered_map<Addr, LeafBits> memTags;
+    std::unordered_map<Addr, LeafBits> cachedTags;
+
+    /** A data write reaches the tag table: does it change its leaf
+     *  line's tags (as cached, or in memory without a leaf cache)?
+     *  Updates the held copy. Always true without elimination. */
+    bool writeChangesTags(Addr leaf, const Waiter &w);
+    /** Leaf-cache insertion with eviction bookkeeping (writeback of a
+     *  dirty victim, tag values). Returns the victim writeback, if any. */
+    bool insertLeaf(Addr leaf, Addr &victim);
+    /** Apply the waiting accesses to a leaf line that just came in. */
+    bool applyFill(Addr leaf, const std::vector<Waiter> &ws);
 
     // ---- Request handling ----
     bool needsTagWork(PacketPtr pkt) const;
@@ -193,7 +234,12 @@ class CheriTagController : public ClockedObject
         Stats(statistics::Group *parent);
 
         statistics::Scalar leafHits;
+        statistics::Scalar leafSpatialHits;
+        statistics::Scalar leafTemporalHits;
         statistics::Scalar leafMisses;
+        statistics::Scalar leafEvictions;
+        statistics::Scalar leafDirtyEvictions;
+        statistics::Scalar silentWrites;
         statistics::Scalar rootHits;
         statistics::Scalar rootMisses;
         statistics::Scalar zeroElided;
@@ -205,6 +251,7 @@ class CheriTagController : public ClockedObject
         statistics::Scalar delayTicks;
         statistics::Formula avgDelayTicks;
         statistics::Formula leafHitRate;
+        statistics::Formula leafDirtyEvictionRatio;
         statistics::Formula tagTrafficRatio;
     } stats;
 };

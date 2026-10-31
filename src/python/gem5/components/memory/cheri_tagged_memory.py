@@ -44,6 +44,8 @@ class CheriTaggedMemory(AbstractMemorySystem):
     :param leaf_cache_assoc: Leaf tag-cache associativity.
     :param root_cache_size: Root tag-cache size.
     :param root_cache_assoc: Root tag-cache associativity.
+    :param silent_write_elimination: A data write dirties its tag-table
+                                     line only if it changes its tags.
     """
 
     def __init__(
@@ -55,6 +57,7 @@ class CheriTaggedMemory(AbstractMemorySystem):
         leaf_cache_assoc: int = 8,
         root_cache_size: str = "1KiB",
         root_cache_assoc: int = 4,
+        silent_write_elimination: bool = False,
     ) -> None:
         super().__init__()
         self._memory = memory
@@ -66,6 +69,7 @@ class CheriTaggedMemory(AbstractMemorySystem):
             leaf_cache_assoc=leaf_cache_assoc,
             root_cache_size=root_cache_size,
             root_cache_assoc=root_cache_assoc,
+            silent_write_elimination=silent_write_elimination,
         )
         # Fans the controller out to the (possibly interleaved) channels. No
         # added latency, so enabled=False matches the plain memory system.

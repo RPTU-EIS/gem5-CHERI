@@ -24,6 +24,9 @@
 #   CHERI_TAG_CACHE   leaf tag-cache size (default 32KiB)
 #   CHERI_TAG_ASSOC   leaf tag-cache associativity (default 8)
 #   CHERI_TAG_ROOT_CACHE  root tag-cache size, hierarchical (default 1KiB)
+#   CHERI_TAG_SWE     1: silent-write elimination in the tag controller (a
+#                     data write dirties its tag line only if its tags
+#                     change; Joannou et al., ICCD 2017)
 #   CHERI_L1D, CHERI_L1I, CHERI_L2
 #                     cache sizes (default 16kB, 16kB, 256kB)
 #   CHERI_L1D_PF, CHERI_L2_PF
@@ -186,6 +189,7 @@ if tag_model != "none":
         else os.environ.get("CHERI_TAG_CACHE", "32KiB"),
         leaf_cache_assoc=int(os.environ.get("CHERI_TAG_ASSOC", "8")),
         root_cache_size=os.environ.get("CHERI_TAG_ROOT_CACHE", "1KiB"),
+        silent_write_elimination=os.environ.get("CHERI_TAG_SWE", "0") == "1",
     )
 processor = SimpleSwitchableProcessor(
     starting_core_type=CPUTypes.ATOMIC,

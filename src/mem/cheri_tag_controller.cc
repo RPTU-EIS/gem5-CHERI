@@ -41,25 +41,56 @@ CheriTagController::TagCache::setOf(Addr line) const
     return (line / LineBytes) % numSets;
 }
 
-bool
-CheriTagController::TagCache::access(Addr line, bool make_dirty)
+CheriTagController::TagCache::Way *
+CheriTagController::TagCache::find(Addr line)
 {
     if (numSets == 0)
-        return false;
+        return nullptr;
     Way *set = &ways[(size_t)setOf(line) * assoc];
     for (unsigned i = 0; i < assoc; i++) {
-        if (set[i].valid && set[i].line == line) {
-            set[i].lastUse = ++useClock;
-            set[i].dirty |= make_dirty;
-            return true;
-        }
+        if (set[i].valid && set[i].line == line)
+            return &set[i];
     }
-    return false;
+    return nullptr;
 }
 
 bool
-CheriTagController::TagCache::insert(Addr line, bool dirty, Addr &victim)
+CheriTagController::TagCache::access(Addr line, bool make_dirty, int sub,
+                                     bool *temporal)
 {
+    Way *w = find(line);
+    if (!w)
+        return false;
+    w->lastUse = ++useClock;
+    w->dirty |= make_dirty;
+    if (sub >= 0) {
+        if (temporal)
+            *temporal = w->served[sub];
+        w->served[sub] = true;
+    }
+    return true;
+}
+
+void
+CheriTagController::TagCache::markDirty(Addr line)
+{
+    if (Way *w = find(line))
+        w->dirty = true;
+}
+
+void
+CheriTagController::TagCache::serve(Addr line, int sub)
+{
+    if (Way *w = find(line))
+        w->served[sub] = true;
+}
+
+bool
+CheriTagController::TagCache::insert(Addr line, bool dirty, Addr &victim,
+                                     bool *evicted)
+{
+    if (evicted)
+        *evicted = false;
     if (numSets == 0) {
         victim = 0;
         return false;
@@ -75,11 +106,14 @@ CheriTagController::TagCache::insert(Addr line, bool dirty, Addr &victim)
             v = &set[i];
     }
     bool evict_dirty = v->valid && v->dirty;
+    if (evicted)
+        *evicted = v->valid;
     victim = v->line;
     v->line = line;
     v->valid = true;
     v->dirty = dirty;
     v->lastUse = ++useClock;
+    v->served.reset();
     return evict_dirty;
 }
 
@@ -96,6 +130,7 @@ CheriTagController::CheriTagController(const CheriTagControllerParams &p)
                        LineBytes, LineBytes)),
       enabled(p.enabled),
       hierarchical(p.hierarchical),
+      silentWriteElim(p.silent_write_elimination),
       lookupLatency(p.lookup_latency),
       leafCache(p.leaf_cache_size, p.leaf_cache_assoc),
       rootCache(p.root_cache_size, p.root_cache_assoc),
@@ -213,6 +248,82 @@ CheriTagController::leafRegionHasTags(Addr data_addr) const
                                                LeafLineCoverage);
 }
 
+int
+CheriTagController::subLineOf(Addr data_addr) const
+{
+    return (data_addr - leafRegionOf(data_addr)) / DataLineBytes;
+}
+
+// ---------------------------------------------------------------------------
+// Tag values (silent-write elimination) and leaf-cache bookkeeping
+
+bool
+CheriTagController::writeChangesTags(Addr leaf, const Waiter &w)
+{
+    if (!w.isWrite)
+        return false;
+    if (!silentWriteElim)
+        return true;
+    // The copy the write updates: the cached line, or memory's without a
+    // leaf cache (a read-modify-write of the table).
+    auto c = cachedTags.find(leaf);
+    LeafBits &held = c != cachedTags.end() ? c->second : memTags[leaf];
+    Addr region = leafRegionOf(w.dataAddr);
+    bool changed = false;
+    for (Addr a = w.dataAddr & ~Addr(15);
+         a < w.dataAddr + w.size && a < region + LeafLineCoverage; a += 16) {
+        size_t bit = (a - region) / 16;
+        bool tag = system->cheritagtable.getTag(a);
+        if (held[bit] != tag) {
+            held[bit] = tag;
+            changed = true;
+        }
+    }
+    if (!changed)
+        stats.silentWrites++;
+    return changed;
+}
+
+bool
+CheriTagController::insertLeaf(Addr leaf, Addr &victim)
+{
+    bool evicted;
+    bool dirty_victim = leafCache.insert(leaf, false, victim, &evicted);
+    if (evicted) {
+        stats.leafEvictions++;
+        if (dirty_victim)
+            stats.leafDirtyEvictions++;
+        auto it = cachedTags.find(victim);
+        if (it != cachedTags.end()) {
+            if (dirty_victim) {
+                if (it->second.any())
+                    memTags[victim] = it->second;
+                else
+                    memTags.erase(victim);
+            }
+            cachedTags.erase(it);
+        }
+    }
+    if (silentWriteElim && leafCache.enabled()) {
+        auto m = memTags.find(leaf);
+        cachedTags[leaf] = m != memTags.end() ? m->second : LeafBits();
+    }
+    return dirty_victim;
+}
+
+bool
+CheriTagController::applyFill(Addr leaf, const std::vector<Waiter> &ws)
+{
+    bool dirty = false;
+    for (const Waiter &w : ws) {
+        leafCache.serve(leaf, subLineOf(w.dataAddr));
+        dirty |= writeChangesTags(leaf, w);
+    }
+    if (dirty)
+        leafCache.markDirty(leaf);
+    return dirty;
+}
+
 bool
 CheriTagController::needsTagWork(PacketPtr pkt) const
 {
@@ -242,7 +353,8 @@ CheriTagController::ResponsePort::recvTimingReq(PacketPtr pkt)
 
     if (parent.needsTagWork(pkt)) {
         bool is_read = pkt->isRead();
-        Waiter w{is_read ? pkt : nullptr, pkt->getAddr(), !is_read};
+        Waiter w{is_read ? pkt : nullptr, pkt->getAddr(), !is_read,
+                 pkt->getSize()};
         if (is_read) {
             parent.stats.dataReads++;
             // Register before starting: a fill may complete synchronously
@@ -265,8 +377,15 @@ bool
 CheriTagController::startTagWork(const Waiter &w)
 {
     Addr leaf = leafLineOf(w.dataAddr);
-    if (leafCache.access(leaf, w.isWrite)) {
+    bool temporal = false;
+    if (leafCache.access(leaf, false, subLineOf(w.dataAddr), &temporal)) {
         stats.leafHits++;
+        if (temporal)
+            stats.leafTemporalHits++;
+        else
+            stats.leafSpatialHits++;
+        if (writeChangesTags(leaf, w))
+            leafCache.markDirty(leaf);
         return false;
     }
     stats.leafMisses++;
@@ -291,11 +410,17 @@ CheriTagController::leafStep(const Waiter &w)
 {
     Addr leaf = leafLineOf(w.dataAddr);
     // The leaf may have been filled while the root was being read.
-    if (leafCache.access(leaf, w.isWrite))
+    if (leafCache.access(leaf, false, subLineOf(w.dataAddr))) {
+        if (writeChangesTags(leaf, w))
+            leafCache.markDirty(leaf);
         return false;
+    }
     if (!leafRegionHasTags(w.dataAddr)) {
-        // The root bit says this leaf line is all zero: no leaf access.
+        // The root bit says this leaf line is all zero: no leaf access
+        // (and memory's copy of it no longer matters).
         stats.zeroElided++;
+        if (w.isWrite)
+            memTags.erase(leaf);
         return false;
     }
     attachToFill(leaf, false, w);
@@ -361,14 +486,18 @@ CheriTagController::handleTagResponse(PacketPtr pkt)
     TagFill fill = std::move(it->second);
     fills.erase(it);
 
-    bool any_write = std::any_of(fill.waiters.begin(), fill.waiters.end(),
-                                 [](const Waiter &w) { return w.isWrite; });
-    insertLine(fill.isRoot, line, !fill.isRoot && any_write);
-    // Without a leaf cache a tag write is a read-modify-write of the
-    // tag-table line: write it back right away (one write for all the
-    // writes that waited on this read).
-    if (!fill.isRoot && any_write && !leafCache.enabled())
-        issueTagWriteback(line);
+    if (fill.isRoot) {
+        insertLine(true, line, false);
+    } else {
+        Addr victim;
+        if (insertLeaf(line, victim))
+            issueTagWriteback(victim);
+        // Without a leaf cache a tag write is a read-modify-write of the
+        // tag-table line: write it back right away (one write for all the
+        // writes that waited on this read).
+        if (applyFill(line, fill.waiters) && !leafCache.enabled())
+            issueTagWriteback(line);
+    }
 
     for (const Waiter &w : fill.waiters) {
         // After a root fill the access still needs its leaf level.
@@ -440,7 +569,7 @@ CheriTagController::ResponsePort::recvAtomic(PacketPtr pkt)
 {
     bool tag_work = parent.needsTagWork(pkt);
     bool is_read = pkt->isRead();
-    Waiter w{nullptr, pkt->getAddr(), !is_read};
+    Waiter w{nullptr, pkt->getAddr(), !is_read, pkt->getSize()};
 
     Tick lat = parent.requestPort.sendAtomic(pkt);
     if (tag_work) {
@@ -476,8 +605,15 @@ Tick
 CheriTagController::atomicTagWork(const Waiter &w)
 {
     Addr leaf = leafLineOf(w.dataAddr);
-    if (leafCache.access(leaf, w.isWrite)) {
+    bool temporal = false;
+    if (leafCache.access(leaf, false, subLineOf(w.dataAddr), &temporal)) {
         stats.leafHits++;
+        if (temporal)
+            stats.leafTemporalHits++;
+        else
+            stats.leafSpatialHits++;
+        if (writeChangesTags(leaf, w))
+            leafCache.markDirty(leaf);
         return 0;
     }
     stats.leafMisses++;
@@ -496,13 +632,15 @@ CheriTagController::atomicTagWork(const Waiter &w)
         }
         if (!leafRegionHasTags(w.dataAddr)) {
             stats.zeroElided++;
+            if (w.isWrite)
+                memTags.erase(leaf);
             return lat;
         }
     }
     lat += atomicTagAccess(leaf, MemCmd::ReadReq);
-    if (leafCache.insert(leaf, w.isWrite, victim))
+    if (insertLeaf(leaf, victim))
         atomicTagAccess(victim, MemCmd::WritebackDirty);
-    if (w.isWrite && !leafCache.enabled())
+    if (applyFill(leaf, {w}) && !leafCache.enabled())
         atomicTagAccess(leaf, MemCmd::WritebackDirty);  // read-modify-write
     return lat;
 }
@@ -514,8 +652,20 @@ CheriTagController::Stats::Stats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(leafHits, statistics::units::Count::get(),
                "Leaf tag-cache hits"),
+      ADD_STAT(leafSpatialHits, statistics::units::Count::get(),
+               "Leaf hits for a data line the cached line had not served "
+               "yet (its tags came with a miss on a neighbour)"),
+      ADD_STAT(leafTemporalHits, statistics::units::Count::get(),
+               "Leaf hits for a data line the cached line served before"),
       ADD_STAT(leafMisses, statistics::units::Count::get(),
                "Leaf tag-cache misses"),
+      ADD_STAT(leafEvictions, statistics::units::Count::get(),
+               "Leaf lines evicted from the tag cache"),
+      ADD_STAT(leafDirtyEvictions, statistics::units::Count::get(),
+               "Leaf lines evicted dirty (written back)"),
+      ADD_STAT(silentWrites, statistics::units::Count::get(),
+               "Data writes that left their leaf line's tags unchanged "
+               "(with silent-write elimination)"),
       ADD_STAT(rootHits, statistics::units::Count::get(),
                "Root tag-cache hits"),
       ADD_STAT(rootMisses, statistics::units::Count::get(),
@@ -539,11 +689,14 @@ CheriTagController::Stats::Stats(statistics::Group *parent)
                "Average wait of a delayed data response"),
       ADD_STAT(leafHitRate, statistics::units::Ratio::get(),
                "Leaf tag-cache hit rate"),
+      ADD_STAT(leafDirtyEvictionRatio, statistics::units::Ratio::get(),
+               "Share of evicted leaf lines that were dirty"),
       ADD_STAT(tagTrafficRatio, statistics::units::Ratio::get(),
                "Tag-table accesses per data access")
 {
     avgDelayTicks = delayTicks / delayedReads;
     leafHitRate = leafHits / (leafHits + leafMisses);
+    leafDirtyEvictionRatio = leafDirtyEvictions / leafEvictions;
     tagTrafficRatio = (tagReads + tagWrites) / (dataReads + dataWrites);
 }
 
