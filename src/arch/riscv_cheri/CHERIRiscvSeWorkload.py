@@ -23,6 +23,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from m5.defines import buildEnv
 from m5.objects.Workload import SEWorkload
 from m5.params import *
 
@@ -41,7 +42,12 @@ class CHERIRiscvEmuLinux(CHERIRiscvSEWorkload):
 
     @classmethod
     def _is_compatible_with(cls, obj):
-        return obj.get_arch() in (
-            "cheri_riscv64",
-            "cheri_riscv32",
-        ) and obj.get_op_sys() in ("linux", "unknown")
+        archs = ("cheri_riscv64", "cheri_riscv32")
+        # Without the stock RISC-V ISA in the build, plain RV64/RV32 ELFs
+        # run here too, in integer mode (as linux/se_workload.cc).
+        if not buildEnv.get("USE_RISCV_ISA", False):
+            archs += ("riscv64", "riscv32")
+        return obj.get_arch() in archs and obj.get_op_sys() in (
+            "linux",
+            "unknown",
+        )

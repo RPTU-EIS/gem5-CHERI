@@ -62,7 +62,11 @@ Source('remote_gdb.cc', tags='riscv cheri isa')
 Source('semihosting.cc', tags='riscv cheri isa')
 Source('tlb.cc', tags='riscv cheri isa')
 
-Source('linux/se_workload.cc', tags='riscv cheri isa')
+# Without the stock RISC-V ISA, the CHERI Linux loader also takes plain RV64
+# ELFs (SE mode, integer mode); with it, they stay with the RISC-V loader.
+Source('linux/se_workload.cc', tags='riscv cheri isa',
+       append={} if env['CONF']['USE_RISCV_ISA'] else
+              {'CPPDEFINES': ['CHERI_SE_ACCEPT_PLAIN_RISCV']})
 Source('linux/fs_workload.cc', tags='riscv cheri isa')
 
 Source('bare_metal/fs_workload.cc', tags='riscv cheri isa')

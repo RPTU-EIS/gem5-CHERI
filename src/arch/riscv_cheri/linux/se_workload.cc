@@ -53,6 +53,15 @@ class LinuxLoader : public Process::Loader
         auto arch = obj->getArch();
         auto opsys = obj->getOpSys();
 
+#ifdef CHERI_SE_ACCEPT_PLAIN_RISCV
+        // No stock RISC-V ISA in this build: plain RV64/RV32 ELFs run here,
+        // in integer mode (the ELF loader never reports CHERIRiscv*).
+        if (arch == loader::Riscv64)
+            arch = loader::CHERIRiscv64;
+        else if (arch == loader::Riscv32)
+            arch = loader::CHERIRiscv32;
+#endif
+
         if (arch != loader::CHERIRiscv64 && arch != loader::CHERIRiscv32)
             return nullptr;
 
@@ -86,7 +95,11 @@ EmuLinux::syscall(ThreadContext *tc)
     // This will move into the base SEWorkload function at some point.
     process->Process::syscall(tc);
 
-    RegVal num = tc->getReg(CHERIRiscvISA::SyscallNumReg);
+    // a7 is the address field of ca7 in the merged register file (the
+    // integer register class is not where userspace's writes land).
+    CapRegContainer num_cap;
+    tc->getReg(CHERIRiscvISA::SyscallNumCap, &num_cap);
+    RegVal num = num_cap.getAddress();
     if (dynamic_cast<CHERIRiscvProcess64 *>(process))
         syscallDescs64.get(num)->doSyscall(tc);
     else

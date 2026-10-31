@@ -190,6 +190,9 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         pc_state.pcc(new_pcc);
         pc_state.set(addr);
         tc->pcState(pc_state);
+    } else {
+        // SE mode: emulate (e.g. a syscall) or panic, as stock RISC-V.
+        invokeSE(tc, inst);
     }
 }
 

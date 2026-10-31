@@ -147,6 +147,35 @@ struct Argument<CHERIRiscvISA::RegABI64, pseudo_inst::GuestAddr>
     }
 };
 
+// SE-mode syscalls (SyscallABI64 is RegABI64) take the other integral
+// types too (int, unsigned, ...): read them the same way, again as full
+// specializations. uint64_t is unsigned long here, handled above.
+#define CHERI_RISCV_INT_ARGUMENT(T)                                     \
+template <>                                                             \
+struct Argument<CHERIRiscvISA::RegABI64, T>                             \
+{                                                                       \
+    static T                                                            \
+    get(ThreadContext *tc, CHERIRiscvISA::RegABI64::State &state)      \
+    {                                                                   \
+        return (T)Argument<CHERIRiscvISA::RegABI64, uint64_t>::get(    \
+            tc, state);                                                 \
+    }                                                                   \
+};
+
+CHERI_RISCV_INT_ARGUMENT(bool)
+CHERI_RISCV_INT_ARGUMENT(char)
+CHERI_RISCV_INT_ARGUMENT(signed char)
+CHERI_RISCV_INT_ARGUMENT(unsigned char)
+CHERI_RISCV_INT_ARGUMENT(short)
+CHERI_RISCV_INT_ARGUMENT(unsigned short)
+CHERI_RISCV_INT_ARGUMENT(int)
+CHERI_RISCV_INT_ARGUMENT(unsigned int)
+CHERI_RISCV_INT_ARGUMENT(long)
+CHERI_RISCV_INT_ARGUMENT(long long)
+CHERI_RISCV_INT_ARGUMENT(unsigned long long)
+
+#undef CHERI_RISCV_INT_ARGUMENT
+
 }
 
 } // namespace gem5
