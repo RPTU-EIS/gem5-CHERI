@@ -57,9 +57,10 @@
 #include "sim/full_system.hh"
 #include "sim/system.hh"
 
-#include "arch/riscv_cheri/pcstate.hh"
-#include  "arch/generic/cap_reg.hh"
-#include "arch/riscv_cheri/faults.hh"
+#include "arch/generic/cap_reg.hh"
+#ifdef GEM5_CHERI_RISCV
+#include "cpu/simple/timing_cheri.hh"
+#endif
 
 
 namespace gem5
@@ -736,28 +737,17 @@ TimingSimpleCPU::fetch()
     bool needToFetch = !isRomMicroPC(upc) && !curMacroStaticInst;
 
     if (needToFetch) {
-        // Pcc validation being done here. If Pcc is valid the fetch will proceed. 
-        auto &cheri_pc = thread->pcState().as<CHERIRiscvISA::PCState>();
-        const auto &pcc = cheri_pc.pcc();
-        DPRINTF(SimpleCPU, "Fetch initiated with PCC\n");
-
-        if (!pcc.getTag()) {
-            DPRINTF(SimpleCPU, "PCC tag violation at %#x\n", cheri_pc.instAddr());
-            Fault fault = std::make_shared<CHERIRiscvISA::CheriCapFault>(CHERIRiscvISA::CheriCapException::TagViolation);
+#ifdef GEM5_CHERI_RISCV
+        // Pcc validation being done here. If Pcc is valid the fetch will
+        // proceed.
+        if (Fault fault = cheriFetchCheck(thread->pcState());
+                fault != NoFault) {
+            DPRINTF(SimpleCPU, "PCC violation at fetch of %#x: %s\n",
+                    thread->pcState().instAddr(), fault->name());
             advanceInst(fault);
             return;
         }
-
-        CHERIRiscvISA::CAPTYPE meta = pcc.getMetadata();
-        if (meta.perm == 0) {
-            DPRINTF(SimpleCPU, "PCC execute permission violation at %#x\n", cheri_pc.instAddr());
-            Fault fault = std::make_shared<CHERIRiscvISA::CheriCapFault>(CHERIRiscvISA::CheriCapException::PermitExecuteViolation);
-            advanceInst(fault);
-            return;
-        }
-
-        //Check sentry and bounds violations in the same way
-        DPRINTF(SimpleCPU, "Fetch with PCC continues. No violations found\n");
+#endif
 
         _status = BaseSimpleCPU::Running;
         RequestPtr ifetch_req = std::make_shared<Request>();

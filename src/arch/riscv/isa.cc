@@ -253,6 +253,9 @@ RegClass vecPredRegClass(VecPredRegClass, VecPredRegClassName, 0,
         debug::IntRegs);
 RegClass matRegClass(MatRegClass, MatRegClassName, 0, debug::MatRegs);
 RegClass ccRegClass(CCRegClass, CCRegClassName, 0, debug::IntRegs);
+// No capability registers (CHERI): an empty class in the CapRegClass slot
+// (cpu/reg_class.hh), so the classes after it keep their indices.
+RegClass capRegClass(CapRegClass, CapRegClassName, 0, debug::IntRegs);
 
 } // anonymous namespace
 
@@ -261,6 +264,7 @@ ISA::ISA(const Params &p) : BaseISA(p, "riscv"),
     _privilegeModeSet(p.privilege_mode_set)
 {
     _regClasses.push_back(&intRegClass);
+    _regClasses.push_back(&capRegClass);
     _regClasses.push_back(&floatRegClass);
     _regClasses.push_back(&vecRegClass);
     _regClasses.push_back(&vecElemClass);
