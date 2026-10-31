@@ -19,7 +19,9 @@ import subprocess
 import sys
 import time
 
-SHELL_PROMPT_Q = b"Enter full pathname of shell or RETURN for /bin/sh:"
+# Only the prompt's start: kernel messages (e.g. "random: unblocking
+# device.") can land inside the rest of it.
+SHELL_PROMPT_Q = b"Enter full pathname of shell"
 ROOT_PROMPT = re.compile(rb"(^|\n)# $")
 
 

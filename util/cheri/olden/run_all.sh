@@ -24,7 +24,10 @@
 #                 revocation; default: the kernel's)
 #   JOB_ENV       run.py --job-env file, e.g. util/cheri/olden/phase-pcs.json
 #                 (per-run CHERI_STATS_AT_PC phase boundaries)
+#   SUITE_NAME    olden: results go to RESULTS/<SUITE_NAME>/ (another
+#                 build.py-style WORK, e.g. util/cheri/tagval/run_all.sh)
 set -eu
+SUITE_NAME=${SUITE_NAME:-olden}
 GEM5=$(cd "$(dirname "$0")/../../.." && pwd)
 RESULTS=$(mkdir -p "${1:?usage: $0 RESULTS [TAG]}" && cd "$1" && pwd)
 KERNEL=${CHERI_KERNEL:-$GEM5/tests/kernel}
@@ -36,12 +39,12 @@ ABIS=${ABIS:-$(python3 -c "import json,sys; print(','.join(json.load(open(sys.ar
 khash=$(sha256sum "$KERNEL" | cut -c1-12)
 bhash=$(cat "$WORK"/builds/*/bin/* | sha256sum | cut -c1-12)
 TAG=${2:-$(date +%Y%m%d-%H%M)-k$khash}
-OUT=$RESULTS/olden/$TAG
-mkdir -p "$RESULTS/checkpoints" "$RESULTS/olden"
+OUT=$RESULTS/$SUITE_NAME/$TAG
+mkdir -p "$RESULTS/checkpoints" "$RESULTS/$SUITE_NAME"
 
-CHECKPOINT=${CHECKPOINT:-$RESULTS/checkpoints/olden-k$khash-b$bhash-$(echo "$ABIS" | tr , _)}
+CHECKPOINT=${CHECKPOINT:-$RESULTS/checkpoints/$SUITE_NAME-k$khash-b$bhash-$(echo "$ABIS" | tr , _)}
 set -- --out "$OUT" --work "$WORK" --configs "$CONFIGS" --jobs "$JOBS" \
-    --abis "$ABIS"
+    --abis "$ABIS" --suite "$SUITE_NAME"
 # NO_CHECKPOINT=1: every run boots CheriBSD itself (run.py without
 # --checkpoint); the boot is recorded as its own stats dump
 [ "${NO_CHECKPOINT:-0}" = 1 ] || set -- "$@" --checkpoint "$CHECKPOINT"
