@@ -113,6 +113,29 @@ confusion: 58/60 SIGPROT); use after free (CWE416) is not detected in
 either ABI, since CheriBSD's revocation only invalidates capabilities to
 freed memory after a revocation pass, not on `free()`.
 
+## Reference on CHERI-QEMU
+
+```sh
+util/cheri/juliet/run_qemu.py --out RESULTS/juliet/qemu [--abis purecap,plain] [--jobs 6]
+util/cheri/juliet/parse.py RESULTS/juliet/qemu
+util/cheri/juliet/compare.py GEM5/results.csv RESULTS/juliet/qemu/results.csv --latex
+```
+
+Same binaries, kernel, disk, memory size and inputs as gem5, one boot per
+shard, config `qemu` in the same layout. `-icount shift=0,sleep=off` with a 2 s
+test timeout gives a CPU-bound test about the instructions of gem5's 1 s, and a
+test that spins to its timeout takes seconds instead of hours, so all shards
+finish (about 25 min on 6 host cores). `/tmp` is on the root file system as on
+gem5: some bad tests depend on stdio's buffer size, which follows the block size.
+
+Result (2026-11-04, plain and purecap, two QEMU runs): no false positive on either
+simulator and all good versions agree. On purecap, gem5 and QEMU agree on all 25,180
+comparable executions that do not depend on `rand()`; the other differences are tests
+seeded from the guest clock (flow variant `_12`, `_rand` sources), and the two QEMU
+runs differ from each other on such tests too. On plain, one QEMU run matches gem5 on all
+24,498 such executions; the other differs on 99, all in two shards whose outcome changes
+between QEMU boots.
+
 ## Everything in one place (e.g. on a server)
 
 ```sh

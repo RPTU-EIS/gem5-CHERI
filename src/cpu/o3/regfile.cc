@@ -96,9 +96,7 @@ PhysRegFile::PhysRegFile(unsigned _numPhysicalIntRegs,
                 phys_reg, flat_reg_idx++);
     }
 
-    // The next batch of the registers are the capability physical
-    // registers (e.g. CHERI); put them onto the capability free list.
-    // On ISAs without a capability register class this is 0 and a no-op.
+    // Then the capability registers (CHERI), if the ISA has them.
     for (phys_reg = 0; phys_reg < numPhysicalCapRegs; phys_reg++) {
         capRegIds.emplace_back(*reg_classes.at(CapRegClass),
                 phys_reg, flat_reg_idx++);

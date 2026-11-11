@@ -1,13 +1,6 @@
 """
-encode.py — Encode one instruction by looking it up in the ISA and dispatching
-to the appropriate format encoder.
-
-The flow:
-  1. Look up the instruction's JSON entry (format + fixed fields + operands).
-  2. Parse the user-supplied operand tokens, resolving registers and immediates.
-  3. Place each operand value into the right field (rd / rs1 / rs2 / imm).
-  4. Layer the fixed-field values on top (in case operands didn't cover them).
-  5. Call the appropriate format encoder.
+encode.py: encode one instruction from its ISA JSON entry (format,
+fixed fields and operands).
 """
 
 from encoders import encode_r, encode_i, encode_s, encode_u, encode_b, encode_j
@@ -52,7 +45,7 @@ def encode_instruction(mnemonic, operand_tokens, isa):
             f"got {len(operand_tokens)}"
         )
 
-    # ── Resolve each operand into a field value ──
+    # Resolve each operand into a field value
     field_values = {
         "rd":     _hex_field(fields, "rd",     0),
         "rs1":    _hex_field(fields, "rs1",    0),
@@ -72,13 +65,12 @@ def encode_instruction(mnemonic, operand_tokens, isa):
         else:
             raise ValueError(f"Unknown operand type: {op_type}")
 
-    # ── Common encoding fields ──
+    # Common encoding fields
     opcode = _hex_field(fields, "opcode")
     funct3 = _hex_field(fields, "funct3", 0)
     funct7 = _hex_field(fields, "funct7", 0)
 
-    # ── Dispatch by format ──
-    # NOTE: CHERI_R is identical bit layout to R-type, just a logical label
+    # Dispatch by format (CHERI_R has the R-type layout)
     if fmt == "R" or fmt == "CHERI_R":
         return encode_r(
             opcode, funct3, funct7,

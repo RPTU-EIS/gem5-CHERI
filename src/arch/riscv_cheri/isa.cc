@@ -373,9 +373,7 @@ ISA::copyRegsFrom(ThreadContext *src)
                 capMiscRegFile.size());
     }
 
-    // Copy the whole PC state: PC/NPC, the compressed flag, vector state
-    // and PCC. (Rebuilding it from the source PCC's address field is wrong:
-    // that field is not updated as the PC advances sequentially.)
+    // Copy the whole PC state, including PCC
     tc->pcState(src->pcState());
 }
 
@@ -765,8 +763,6 @@ ISA::readCapMiscRegNoEffect(RegIndex idx) const
 CapRegContainer
 ISA::readCapMiscReg(RegIndex idx)
 {
-    // For now, no special handling for capability registers
-    // Future: could add access permission checks here?
     return readCapMiscRegNoEffect(idx);
 }
 
@@ -802,8 +798,6 @@ ISA::setCapMiscRegNoEffect(RegIndex idx, const CapRegContainer& val)
 void
 ISA::setCapMiscReg(RegIndex idx, const CapRegContainer& val)
 {
-    // For now, no special handling needed
-    // Future: could add privilege checks, permission updates, etc.
     setCapMiscRegNoEffect(idx, val);
 }
 

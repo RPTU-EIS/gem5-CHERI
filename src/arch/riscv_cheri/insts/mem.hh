@@ -71,15 +71,6 @@ class Store : public MemInst
         Addr pc, const loader::SymbolTable *symtab) const override;
 };
 
-// class StoreCap : public MemInst
-// {
-//   protected:
-//     using MemInst::MemInst;
-
-//     std::string generateDisassembly(
-//         Addr pc, const loader::SymbolTable *symtab) const override;
-// };
-
 } // namespace CHERIRiscvISA
 } // namespace gem5
 

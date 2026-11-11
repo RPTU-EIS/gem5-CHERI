@@ -1,26 +1,6 @@
 /*
- * CHERI Concentrate (CC128) bounds compression helpers.
- *
- * These are shared, self-consistent encode/decode routines for the 128-bit
- * compressed-capability bounds. The format matches the reference
- * CTSRD-CHERI/cheri-compressed-cap CC128 layout:
- *
- *   metadata bit 26      : IE (internal exponent) flag
- *   metadata bits 25..14 : TOP field    (T=25..17, TE=16..14)
- *   metadata bits 13..0  : BOTTOM field (B=13..3,  BE=2..0)
- *   MANTISSA_WIDTH = 14, MAX_EXPONENT = 52, no LEN_MSB.
- *
- * The DECODE below is byte-for-byte the same math the cgetbase / cgetlen /
- * cgettop / cincoffset decoders use, so anything this header encodes will
- * round-trip through those instructions.
- *
- * The ENCODE picks the smallest exponent whose encoding decodes back to
- * exactly [req_base, req_base+req_length). Representability in CC128 depends
- * on base alignment, not just length (a page-sized region needs IE=1 even at
- * E=0), so rather than a closed-form E = f(length) -- which has gaps and bit
- * us before -- we verify each candidate against the real decode. This mirrors
- * the reference's iterative "incE" step but guarantees consistency with our
- * own decoder.
+ * CHERI Concentrate (CC128) bounds encoding and decoding, following the
+ * reference cheri-compressed-cap library (compute_ebt, compute_base_top).
  */
 #ifndef __ARCH_RISCV_CHERI_REGS_CC128_BOUNDS_HH__
 #define __ARCH_RISCV_CHERI_REGS_CC128_BOUNDS_HH__
@@ -34,8 +14,7 @@ namespace gem5
 namespace CHERIRiscvISA
 {
 
-// Decode [base, top) from a capability address and metadata. This is the exact
-// reconstruction cgetbase/cgetlen use; keep the two in sync.
+// Decode [base, top) from a capability's address and metadata
 inline void
 cc128DecodeBounds(uint64_t addr, CAPTYPE meta,
                   uint64_t &out_base, uint64_t &out_top)
@@ -88,10 +67,7 @@ cc128DecodeBounds(uint64_t addr, CAPTYPE meta,
         else c_t = 0;
     }
 
-    // Guard every shift: during encoding we probe exponents up to 52, so
-    // E+14 can reach/exceed 64 (a shift >= width is undefined in C++). Real
-    // capabilities only ever use a small E, so clamping the out-of-range high
-    // part to 0 never affects a selected encoding.
+    // Encoding probes E up to 52: guard shifts of 64 or more
     uint64_t sh_hi  = E + 14;
     uint64_t a_top  = (sh_hi >= 64) ? 0 : (addr >> sh_hi);
     uint64_t base_hi = (sh_hi >= 64) ? 0 : (((a_top + (uint64_t)c_b) & 0xFFFFFFFFFFFFFFFFULL) << sh_hi);
@@ -102,9 +78,7 @@ cc128DecodeBounds(uint64_t addr, CAPTYPE meta,
     out_top  = top_hi | top_lo;
 }
 
-// Exponent for a requested length, matching the reference cc128 compute_e
-// (bwidth == MANTISSA_WIDTH == 14): E == 0 for lengths that fit the mantissa
-// without an internal exponent, otherwise msb(length) - 12.
+// Exponent for a requested length (reference compute_e)
 inline uint32_t
 cc128GetExponent(uint64_t req_length)
 {
@@ -113,14 +87,8 @@ cc128GetExponent(uint64_t req_length)
     return (uint32_t)(63 - __builtin_clzll(req_length)) - 12;
 }
 
-// Encode [req_base, req_base+req_length) into src's bounds fields. This is a
-// direct port of the reference CTSRD-CHERI/cheri-compressed-cap compute_ebt():
-// pick E from the length, use an internal exponent when needed, round the top
-// up when low bits are lost, and -- crucially -- bump E by one when the length
-// mantissa overflows (the incE step). *exact reports whether the encoded region
-// is exactly [req_base, req_base+req_length). Our cc128DecodeBounds is the
-// matching reconstruction, so an exact encoding round-trips through the
-// cget* decoders and an inexact one strictly covers the requested region.
+// Encode [req_base, req_base + req_length) into src's bounds (reference
+// compute_ebt, with the incE step); *exact says whether it is exact.
 inline CAPTYPE
 cc128EncodeBounds(CAPTYPE src, uint64_t req_base, uint64_t req_length,
                   bool *exact)
@@ -181,10 +149,8 @@ cc128EncodeBounds(CAPTYPE src, uint64_t req_base, uint64_t req_length,
     return m;
 }
 
-// CRepresentableAlignmentMask: the mask that aligns a base DOWN so a capability
-// of req_length is exactly representable. Mirrors the reference
-// get_alignment_mask (compute_ebt with req_base == 0), returning the shift the
-// encoder would use -- E+3, or E+4 when the incE overflow step fires.
+// CRepresentableAlignmentMask: aligns a base down so that req_length is
+// exactly representable (reference get_alignment_mask).
 inline uint64_t
 cc128AlignMask(uint64_t req_length)
 {

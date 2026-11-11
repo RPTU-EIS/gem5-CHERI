@@ -40,7 +40,12 @@ if env['CONF']['BUILD_ISA']:
     Source('noncaching.cc')
 
     SimObject('BaseTimingSimpleCPU.py', sim_objects=['BaseTimingSimpleCPU'])
-    Source('timing.cc')
+    # The PCC fetch check (timing_cheri.cc) needs the CHERI-RISC-V headers:
+    # only in builds with that ISA, so the other ISAs still build.
+    Source('timing.cc',
+           append={'CPPDEFINES': ['GEM5_CHERI_RISCV']}
+           if env['CONF']['USE_RISCV_CHERI_ISA'] else {})
+    Source('timing_cheri.cc', tags='riscv cheri isa')
 
     DebugFlag('SimpleCPU')
 

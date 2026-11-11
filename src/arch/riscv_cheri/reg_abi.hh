@@ -94,23 +94,9 @@ struct Argument<CHERIRiscvISA::RegABI32, pseudo_inst::GuestAddr>
     }
 };
 
-// On this ISA the integer and capability register classes are modeled as
-// separate state, but physically there is only one merged register file:
-// the plain-integer value of a register is the address field of its
-// capability (see arch/riscv_cheri/sbi.cc). M5Op/pseudo-inst arguments,
-// whether plain integers or pointers, must therefore be read through the
-// capability register and its address field rather than through
-// intRegClass, or they come back as whatever unrelated value happens to
-// be sitting in the (unused for this purpose) integer register file.
-//
-// These need to be full (explicit) specializations rather than a single
-// partial one constrained with enable_if: partial-ordering can't resolve
-// an enable_if-guarded partial specialization against the pre-existing
-// generic one in syscall_abi.hh (both match via a dummy 3rd parameter),
-// which makes the instantiation ambiguous. A full specialization is
-// always preferred over any partial one, so there's no ambiguity. The
-// only concrete argument types pseudo_inst functions use are uint64_t
-// (Tick is just a typedef for it) and GuestAddr.
+// Integer values live in the address fields of the capability registers
+// (merged register file). Full specializations avoid ambiguity with
+// syscall_abi.hh.
 template <>
 struct Argument<CHERIRiscvISA::RegABI64, uint64_t>
 {
@@ -146,6 +132,33 @@ struct Argument<CHERIRiscvISA::RegABI64, pseudo_inst::GuestAddr>
         return (Arg)c.getAddress();
     }
 };
+
+// SE-mode syscalls also take other integral types (int, unsigned, ...)
+#define CHERI_RISCV_INT_ARGUMENT(T)                                     \
+template <>                                                             \
+struct Argument<CHERIRiscvISA::RegABI64, T>                             \
+{                                                                       \
+    static T                                                            \
+    get(ThreadContext *tc, CHERIRiscvISA::RegABI64::State &state)      \
+    {                                                                   \
+        return (T)Argument<CHERIRiscvISA::RegABI64, uint64_t>::get(    \
+            tc, state);                                                 \
+    }                                                                   \
+};
+
+CHERI_RISCV_INT_ARGUMENT(bool)
+CHERI_RISCV_INT_ARGUMENT(char)
+CHERI_RISCV_INT_ARGUMENT(signed char)
+CHERI_RISCV_INT_ARGUMENT(unsigned char)
+CHERI_RISCV_INT_ARGUMENT(short)
+CHERI_RISCV_INT_ARGUMENT(unsigned short)
+CHERI_RISCV_INT_ARGUMENT(int)
+CHERI_RISCV_INT_ARGUMENT(unsigned int)
+CHERI_RISCV_INT_ARGUMENT(long)
+CHERI_RISCV_INT_ARGUMENT(long long)
+CHERI_RISCV_INT_ARGUMENT(unsigned long long)
+
+#undef CHERI_RISCV_INT_ARGUMENT
 
 }
 

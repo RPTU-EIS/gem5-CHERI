@@ -1,32 +1,13 @@
 /*
- * CHERI tag controller: a timing model of capability tag storage.
- *
- * CHERI keeps one tag bit per 16-byte granule. Main memory has no room for
- * it, so CHERI systems store tags in a table in DRAM and put a tag
- * controller with a small tag cache between the last-level cache and the
- * memory controller: each line fill needs the line's tags, and each
- * writeback updates them. This object models the cost of that design: tag
- * cache hits and misses, the extra DRAM traffic for tag-table reads and
- * writes, and the latency a data response waits for its tags.
- *
- * Tag *values* are not modelled here: the functional tag table
- * (System::cheritagtable) stays the single source of truth, so adding this
- * controller never changes what the simulated program observes, only when.
- *
- * Tag table layout (Joannou et al., "Efficient Tagged Memory", ICCD 2017):
- *  - leaf level: 1 bit per 16-byte granule; a 64-byte leaf line holds the
- *    tags of 8 KiB of data;
- *  - optional root level ("hierarchical"): 1 bit per leaf line, set if any
- *    tag in that leaf line is set; a 64-byte root line covers 4 MiB. If the
- *    root says a leaf line is all zero, the leaf is neither read nor
- *    cached (zero elision).
- * The table lives at tag_table_base, which must be memory the guest does
- * not use (the board reserves it in the device tree).
+ * CHERI tag controller: models the timing of a tag table in DRAM
+ * behind leaf and optional root tag caches. Tag values stay in the
+ * functional tag table, so only timing changes.
  */
 
 #ifndef __MEM_CHERI_TAG_CONTROLLER_HH__
 #define __MEM_CHERI_TAG_CONTROLLER_HH__
 
+#include <bitset>
 #include <unordered_map>
 #include <vector>
 
@@ -53,18 +34,27 @@ class CheriTagController : public ClockedObject
     DrainState drain() override;
 
   private:
-    /** Set-associative, LRU, write-back cache of 64-byte tag-table lines.
-     *  Size 0 means no cache. */
+    /** Set-associative, LRU, write-back cache of tag-table lines;
+     *  size 0 means no cache. */
     class TagCache
     {
       public:
+        /** Data lines a leaf line covers (for spatial/temporal hits). */
+        static constexpr unsigned SubLines = 128;
+
         TagCache(uint64_t size_bytes, unsigned assoc);
 
-        /** Look up a line (updates LRU); optionally mark it dirty. */
-        bool access(Addr line, bool make_dirty);
-        /** Insert a line that missed. Returns true if a dirty line was
-         *  evicted, with its address in victim. */
-        bool insert(Addr line, bool dirty, Addr &victim);
+        /** Look up a line (LRU); *temporal says whether it already
+         *  served data line sub. */
+        bool access(Addr line, bool make_dirty, int sub = -1,
+                    bool *temporal = nullptr);
+        void markDirty(Addr line);
+        /** Record that a cached line served data line sub. */
+        void serve(Addr line, int sub);
+        /** Insert a missed line; true if a dirty victim must be
+         *  written back. */
+        bool insert(Addr line, bool dirty, Addr &victim,
+                    bool *evicted = nullptr);
         /** False when built with size 0 (no cache: always misses). */
         bool enabled() const { return numSets != 0; }
 
@@ -75,7 +65,9 @@ class CheriTagController : public ClockedObject
             bool valid = false;
             bool dirty = false;
             uint64_t lastUse = 0;
+            std::bitset<SubLines> served;
         };
+        Way *find(Addr line);
         unsigned numSets;
         unsigned assoc;
         uint64_t useClock = 0;
@@ -118,6 +110,7 @@ class CheriTagController : public ClockedObject
         PacketPtr pkt;   // data read whose response waits; nullptr: write
         Addr dataAddr;
         bool isWrite;
+        unsigned size;   // bytes written (writes)
     };
 
     /** An outstanding tag-table line read (an MSHR). */
@@ -135,13 +128,14 @@ class CheriTagController : public ClockedObject
         Tick responseArrival = 0;
     };
 
-    // ---- Configuration ----
+    // Configuration
     System *system;
     const AddrRange dataRange;
     const Addr leafBase;
     const Addr rootBase;
     const bool enabled;
     const bool hierarchical;
+    const bool silentWriteElim;
     const Cycles lookupLatency;
     RequestorID requestorId = 0;
 
@@ -157,21 +151,42 @@ class CheriTagController : public ClockedObject
     std::unordered_map<Addr, TagFill> fills;
     std::unordered_map<PacketPtr, HeldRead> heldReads;
 
-    // ---- Tag-table geometry ----
+    // Tag-table geometry
     static constexpr Addr LineBytes = 64;
     static constexpr Addr LeafLineCoverage = LineBytes * 8 * 16;  // 8 KiB
     static constexpr Addr RootLineCoverage =
         LineBytes * 8 * LeafLineCoverage;                         // 4 MiB
 
+    static constexpr Addr DataLineBytes = 64;
+
     Addr leafLineOf(Addr data_addr) const;
     Addr rootLineOf(Addr data_addr) const;
     Addr leafRegionOf(Addr data_addr) const;
     bool leafRegionHasTags(Addr data_addr) const;
+    /** Index of the data line within its leaf line's coverage. */
+    int subLineOf(Addr data_addr) const;
 
-    // ---- Request handling ----
+    // Tag values, for silent-write elimination
+    /** One bit per 16-byte granule of a leaf line's 8 KiB. */
+    using LeafBits = std::bitset<LeafLineCoverage / 16>;
+    /** Leaf lines as in memory and in the leaf cache; they lag the
+     *  functional table until data is written back. */
+    std::unordered_map<Addr, LeafBits> memTags;
+    std::unordered_map<Addr, LeafBits> cachedTags;
+
+    /** Does a data write change its leaf line's tags? Always true
+     *  without elimination. */
+    bool writeChangesTags(Addr leaf, const Waiter &w);
+    /** Insert a leaf line; true, with victim set, if a dirty line is
+     *  evicted. */
+    bool insertLeaf(Addr leaf, Addr &victim);
+    /** Apply the waiting accesses to a leaf line that just came in. */
+    bool applyFill(Addr leaf, const std::vector<Waiter> &ws);
+
+    // Request handling
     bool needsTagWork(PacketPtr pkt) const;
-    /** Timing: start the tag work for a data access. Returns true if the
-     *  access now waits on a tag fill. */
+    /** Start the tag work for a data access; true if it waits on a
+     *  tag fill. */
     bool startTagWork(const Waiter &w);
     /** Leaf-level step, once the root is known (or without a root). */
     bool leafStep(const Waiter &w);
@@ -193,7 +208,12 @@ class CheriTagController : public ClockedObject
         Stats(statistics::Group *parent);
 
         statistics::Scalar leafHits;
+        statistics::Scalar leafSpatialHits;
+        statistics::Scalar leafTemporalHits;
         statistics::Scalar leafMisses;
+        statistics::Scalar leafEvictions;
+        statistics::Scalar leafDirtyEvictions;
+        statistics::Scalar silentWrites;
         statistics::Scalar rootHits;
         statistics::Scalar rootMisses;
         statistics::Scalar zeroElided;
@@ -205,6 +225,7 @@ class CheriTagController : public ClockedObject
         statistics::Scalar delayTicks;
         statistics::Formula avgDelayTicks;
         statistics::Formula leafHitRate;
+        statistics::Formula leafDirtyEvictionRatio;
         statistics::Formula tagTrafficRatio;
     } stats;
 };

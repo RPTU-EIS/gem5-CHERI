@@ -1,11 +1,5 @@
-# CHERI tagged memory: puts a CheriTagController (timing model of the tag
-# table and tag cache) in front of any memory system.
-#
-#   membus --> CheriTagController --> tag_xbar --> memory controllers
-#
-# The tag table lives in a region at the top of physical memory that the
-# board reserves in the device tree, so the guest never uses it. Tag values
-# still come from the functional tag table; this only adds timing/traffic.
+# CHERI tagged memory: membus -> CheriTagController -> tag_xbar ->
+# memory. Adds the timing of a tag table at the top of memory.
 
 from typing import (
     List,
@@ -44,6 +38,8 @@ class CheriTaggedMemory(AbstractMemorySystem):
     :param leaf_cache_assoc: Leaf tag-cache associativity.
     :param root_cache_size: Root tag-cache size.
     :param root_cache_assoc: Root tag-cache associativity.
+    :param silent_write_elimination: A data write dirties its tag-table
+                                     line only if it changes its tags.
     """
 
     def __init__(
@@ -55,6 +51,7 @@ class CheriTaggedMemory(AbstractMemorySystem):
         leaf_cache_assoc: int = 8,
         root_cache_size: str = "1KiB",
         root_cache_assoc: int = 4,
+        silent_write_elimination: bool = False,
     ) -> None:
         super().__init__()
         self._memory = memory
@@ -66,6 +63,7 @@ class CheriTaggedMemory(AbstractMemorySystem):
             leaf_cache_assoc=leaf_cache_assoc,
             root_cache_size=root_cache_size,
             root_cache_assoc=root_cache_assoc,
+            silent_write_elimination=silent_write_elimination,
         )
         # Fans the controller out to the (possibly interleaved) channels. No
         # added latency, so enabled=False matches the plain memory system.

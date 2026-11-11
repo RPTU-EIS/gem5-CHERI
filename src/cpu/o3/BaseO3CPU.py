@@ -160,12 +160,8 @@ class BaseO3CPU(BaseCPU):
     numPhysIntRegs = Param.Unsigned(
         256, "Number of physical integer registers"
     )
-    # Only meaningful for ISAs with a capability register class (e.g.
-    # CHERI); other ISAs declare 0 capability registers so this has no
-    # effect there. Sized the same as numPhysIntRegs since on CHERI-RISCV
-    # the integer and capability views are architecturally the same
-    # merged register file, just modeled here as separate register
-    # classes -- see arch/riscv_cheri/sbi.cc's comment on that.
+    # Capability registers (CHERI), as many as the integer ones; other
+    # ISAs have none.
     numPhysCapRegs = Param.Unsigned(
         256, "Number of physical capability registers"
     )

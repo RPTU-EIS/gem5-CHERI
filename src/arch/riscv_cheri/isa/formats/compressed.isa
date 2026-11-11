@@ -59,13 +59,8 @@ def format CIOp(imm_code, code, imm_type='int64_t', *opt_flags) {{
         exec_output = ImmExecute.subst(iop)
 }};
 
-// PURECAP stack-pointer increment (c.addi16sp / c.addi4spn = c.cincoffset16csp /
-// c.cincoffset4cspn). These must preserve csp's tag and bounds, but int and cap
-// share one register container here, so an integer dest operand's writeback
-// zeroes tag+metadata. This format has NO written register operand: the code
-// reads the source (csp address via the int `sp` view) and writes the
-// capability result explicitly with xc->tcBase()->setReg on the cap register.
-// 'regs' points at the source so disassembly still names the register.
+// c.addi16sp / c.addi4spn (c.cincoffset16csp / c.cincoffset4cspn) have
+// no written operand, so the result keeps csp's tag and bounds.
 def format CIncSpOp(imm_code, code, imm_type='int64_t', *opt_flags) {{
     iop = InstObjParams(name, Name, 'ImmOp<%s>' % imm_type,
         {'code': code, 'imm_code': imm_code,
@@ -202,13 +197,8 @@ def template CJumpExecute {{
             Addr pc, const loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
-        // NOTE: for some compressed-jump encodings, accessing the source
-        // operand here (srcRegIdx(0) / registerName) segfaults the Exec
-        // tracer's disassembler (bad/implicit operand for this encoding).
-        // Execution itself is fine (branchTarget reads the register); only
-        // the *disassembly* is affected, so print just the mnemonic to keep
-        // the Exec trace usable. Re-add the operand once the underlying
-        // operand-decl issue is understood.
+        // Mnemonic only: the source operand crashes the disassembler
+        // for some compressed-jump encodings.
         ss << mnemonic;
         return ss.str();
     }

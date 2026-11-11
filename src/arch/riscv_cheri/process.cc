@@ -259,9 +259,7 @@ CHERIRiscvProcess::argsInit(int pageSize)
 
     ThreadContext *tc = system->threads[contextIds[0]];
     tc->setReg(StackPointerReg, memState->getStackMin());
-    // Bootstrap an initial stack-pointer capability the same way PCC/DDC
-    // are bootstrapped (see isa.cc) -- without this, csp starts out
-    // untagged/address-0 and any userspace dereference of it faults.
+    // Initial stack-pointer capability, bootstrapped like PCC and DDC
     CapRegContainer _csp = CapRegContainer::almighty(memState->getStackMin());
     tc->setReg(cap_reg::CSp, &_csp);
     tc->pcState(getStartPC());

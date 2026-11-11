@@ -42,10 +42,13 @@ GEM5 = cm.GEM5
 OUTPUT_INLINE_MAX = 32 * 1024
 
 
-def region(wl, exe, args, witness, revocation="default"):
-    """Guest commands for one workload (binaries in /root/cm/<abi>/)."""
+def region(wl, exe, args, witness, revocation="default", cwd=None):
+    """Guest commands for one workload (binaries in /root/cm/<abi>/; with
+    input files, run in cwd, where they are)."""
     lines = ["#!/bin/sh", "cd /tmp"]
     lines += cm.guest_prelude("on" if witness else "off", revocation)
+    if cwd:
+        lines.append(f"cd {cwd}")
     lines += [
         f'echo "=== CM-BEGIN {wl}"',
         "/sbin/m5 workbegin",
@@ -70,8 +73,11 @@ def main():
     ap.add_argument(
         "--work",
         default=os.path.expanduser("~/hiwi/olden-gem5"),
-        help="build.py work dir (builds/, workloads.json)",
+        help="build.py work dir (builds/, workloads.json; a workload's "
+        "\"files\" are input files relative to it)",
     )
+    ap.add_argument("--suite", default="olden",
+                    help="suite name in the manifest (e.g. tagval)")
     ap.add_argument("--abis", default=None,
                     help="default: every ABI built (purecap,hybrid,plain)")
     ap.add_argument(
@@ -188,7 +194,7 @@ def main():
     ).stdout.strip()
     manifest = {
         "date": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "suite": "olden",
+        "suite": args.suite,
         "gem5_rev": gem5_rev,
         "config": cm.CONFIG,
         "abis": abis,
@@ -216,6 +222,11 @@ def main():
 
     ckpts = {}
     base = os.path.abspath(args.checkpoint) if args.checkpoint else None
+    files = {wl: wls[wl].get("files", []) for wl in workloads}
+    if base and any(files.values()):
+        sys.exit("workloads with input files need booted runs (no "
+                 "--checkpoint, NO_CHECKPOINT=1): the checkpoints hold "
+                 "binaries only")
     for tagged in sorted({tag != "none" for _, tag in cfg.values()}
                          if base else []):
         ckpt = base + ("-tagged" if tagged else "-notag")
@@ -250,10 +261,14 @@ def main():
                 # and syncs as the checkpoint runner does
                 tgz = path + ".tgz"
                 cm.bundle(tgz, [(dict(bins_by_abi[abi])[wl],
-                                 f"{abi}/cm_{wl}.exe")])
+                                 f"{abi}/cm_{wl}.exe")] + [
+                    (os.path.join(work, fn),
+                     f"data/{wl}/{os.path.basename(fn)}")
+                    for fn in files[wl]])
                 body = region(wl, f"/root/cm/{abi}/cm_{wl}.exe",
                               wl_args[wl], args.witness == "on",
-                              args.revocation)
+                              args.revocation,
+                              f"/root/cm/data/{wl}" if files[wl] else None)
                 cm.write_payload_script(path, body[:2] + [
                     "mkdir -p /root/cm",
                     'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C /root/cm '

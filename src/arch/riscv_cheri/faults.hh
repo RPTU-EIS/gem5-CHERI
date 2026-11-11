@@ -86,9 +86,7 @@ enum ExceptionCode : uint64_t
     LOAD_PAGE = 13,
     STORE_PAGE = 15,
     AMO_PAGE = 15,
-    // CHERI-RISC-V (ISAv9): capability page faults (PTE CR/CW) and CHERI
-    // capability exceptions. CheriBSD: SCAUSE_LOAD_CAP_PAGE_FAULT,
-    // SCAUSE_STORE_AMO_CAP_PAGE_FAULT and SCAUSE_CHERI.
+    // CHERI-RISC-V (ISAv9): capability page faults and CHERI exceptions
     LOAD_CAP_PAGE = 26,
     STORE_AMO_CAP_PAGE = 27,
     CHERI_CAPABILITY = 28,
@@ -338,12 +336,8 @@ class SyscallFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
-// CHERI capability exception (ISAv9): xCAUSE = 28 and
-// xTVAL = {cap_idx[10:5], cause[4:0]}, where cap_idx is the capability
-// register that authorised the operation (0-31), or 32 + the special
-// capability register index (PCC = 32, DDC = 33, ...). This is what
-// CheriBSD's TVAL_CAP_CAUSE()/TVAL_CAP_IDX() decode into SIGPROT si_code /
-// si_capreg.
+// CHERI capability exception (ISAv9): xCAUSE = 28, xTVAL = {cap_idx[10:5],
+// cause[4:0]}; cap_idx 32+ are special registers (PCC = 32, DDC = 33).
 class CheriCapFault : public RiscvFault
 {
   private:
@@ -370,23 +364,17 @@ class CheriCapFault : public RiscvFault
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 
-// Whether CHERI capability exceptions are raised for code running at the
-// current privilege level. All checks funnel through here so the remaining
-// bring-up relaxation lives in one place.
+// Whether CHERI exceptions are raised at the current privilege level
 bool cheriEnforcing(ThreadContext *tc);
 bool cheriEnforcingAt(CHERIPrivilegeMode prv);
 
-// Turn the result of a capability check into a fault: NoFault when `code` is
-// None or enforcement is off (cheriEnforcing()), else a CheriCapFault naming
-// capability register `capReg`. `addr` is informational.
+// Turn a check result into a fault: NoFault if None or not enforcing,
+// else a CheriCapFault naming register `capReg`.
 Fault capEnforce(ThreadContext *tc, CheriCapException code,
                  int capReg = 0, Addr addr = 0);
 
-// Check a data memory access of `size` bytes at `ea` authorised by `auth`,
-// the value of capability register `capIdx` (the index is reported in
-// xTVAL). `acc` is a mask of CheriAccess flags (cheri_checks.hh); `stored`
-// is the capability being written by a capability store. Callers pass the
-// operand value they read, so this works on pipelined/out-of-order CPUs.
+// Check a data access of `size` bytes at `ea` through `auth` (register
+// `capIdx`); `acc` is a CheriAccess mask, `stored` a stored capability.
 Fault cheriCheckMem(ThreadContext *tc, const CapRegContainer &auth,
                     int capIdx, Addr ea, unsigned size, unsigned acc,
                     const CapRegContainer *stored = nullptr);

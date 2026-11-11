@@ -118,10 +118,12 @@ Clint::ClintRegisters::init()
     // Sanity check
     assert((int) clint->pioSize <= maxBankSize);
 
-    // Initialize registers
+    // mtimecmp starts disarmed: gem5 emulates the SBI timer, and at 0
+    // MTIP would stay pending and keep wfi from sleeping.
     for (int i = 0; i < clint->nThread; i++) {
         msip.emplace_back(std::string("msip") + std::to_string(i), 0);
-        mtimecmp.emplace_back(std::string("mtimecmp") + std::to_string(i), 0);
+        mtimecmp.emplace_back(std::string("mtimecmp") + std::to_string(i),
+                              ~uint64_t(0));
     }
 
     // Add registers to bank

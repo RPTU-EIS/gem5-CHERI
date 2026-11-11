@@ -1,12 +1,6 @@
 """
-elf_wrap.py — wrap a flat binary in a minimal RV64 ELF.
-
-Layout matches the reference script the user provided:
-  - ELF header at offset 0x000   (64 bytes)
-  - Program header at offset 0x040 (56 bytes)
-  - Zero padding up to offset 0x1000
-  - Payload at offset 0x1000
-  - Single PT_LOAD segment, flags R+X, vaddr = paddr = entry
+elf_wrap.py: wrap a flat binary in a minimal RV64 ELF (one R+X PT_LOAD
+segment at file offset 0x1000).
 """
 
 import struct

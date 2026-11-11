@@ -314,10 +314,8 @@ TLB::checkCheriPte(ThreadContext *tc, const RequestPtr &req, Addr vaddr,
     }
 
     if (mode == BaseMMU::Read && req->isCapLoad()) {
-        // Set explicitly every time: the atomic CPU reuses one Request
-        // object for all of its loads, so a stale `true` would strip the
-        // tags of later capability loads from ordinary pages.
-        // CR = CRM = 0: tags never load from this page.
+        // Set every time, as the atomic CPU reuses its Request; CR = CRM = 0
+        // means tags never load from this page.
         req->setClearTagOnLoad(!pte.cr && !pte.crm);
         if (!pte.cr && pte.crm) {
             DPRINTF(TLB, "CHERI: CR=0 CRM=1, capability load page fault\n");
@@ -325,9 +323,7 @@ TLB::checkCheriPte(ThreadContext *tc, const RequestPtr &req, Addr vaddr,
                 vaddr, ExceptionCode::LOAD_CAP_PAGE);
         } else if (pte.crm) {
             // Load-side revocation barrier: the page's capability read
-            // generation must match the current one (user or supervisor).
-            // Trapping regardless of the loaded tag (data-independent) is
-            // permitted and handled by CheriBSD.
+            // generation must match the current one.
             auto *isa = static_cast<ISA *>(tc->getIsaPtr());
             RegVal gen_bit = pte.u ? (1ULL << 3) : (1ULL << 2);
             bool gen = (isa->cheriSccsr & gen_bit) != 0;
@@ -487,14 +483,11 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         SATP satp = tc->readMiscReg(MISCREG_SATP);
         Fault fault = NoFault;
 
-        // ════════════════════════════════════════════
-        // CHERI checks — BEFORE normal translation
-        // ════════════════════════════════════════════
+        // CHERI checks, before translation
 
         Addr vaddr = req->getVaddr();
 
-        // 1. Capability access alignment check.
-        //    Cap loads/stores MUST be 16-byte aligned.
+        // Capability accesses must be 16-byte aligned
         if (req->isCapAccess()) {
             if (vaddr & (CheriTagTable::CAP_SIZE - 1)) {
                 DPRINTF(TLB, "CHERI: misaligned cap access "
@@ -511,36 +504,19 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
                     "alignment OK\n", vaddr);
         }
 
-        // DDC checks? TODO. 
-
         fault = pma->checkVAddrAlignment(req, mode);
 
-        // NOTE (bring-up, no OpenSBI): the kernel is entered in M-mode (reset
-        // default) but is an S-mode kernel that sets up satp/paging. Real
-        // RISC-V M-mode data accesses ignore satp, but here we deliberately
-        // honour satp whenever paging is enabled so the kernel's page tables
-        // (including the device map -> real MMIO) are actually walked. Fall
-        // back to the physical/linear early-boot mapping only when paging is
-        // off (satp==BARE) or S-mode is unsupported.
         DPRINTF(TLB, "xlate va=%#lx pmode=%d satp.mode=%d satp=%#lx rvs=%d\n",
                 vaddr, (int)pmode, (int)satp.mode, (uint64_t)satp,
                 (int)misa.rvs);
-        // With paging enabled every access is translated, as on hardware.
-        // (A former "DRAM identity passthrough" let VAs 0x80000000-0xffffffff
-        // bypass the page tables. That kept CheriBSD's locore running at its
-        // physical PC: on hardware the identity map locore builds is not
-        // executable, so the first fetch after `csrw satp` page-faults into
-        // STCC = the virtual `va:` label. It also let user VAs in that window
-        // reach physical memory directly.)
+        // With paging on, every access is translated, as on hardware
         if (!misa.rvs || satp.mode == AddrXlateMode::BARE) {
             req->setFlags(Request::PHYSICAL);
         }
 
         if (fault == NoFault) {
             if (req->getFlags() & Request::PHYSICAL) {
-                // CHERI early-boot: translate kernel high-half VAs to PAs
-                // The CheriBSD kernel uses VA 0xffffffc000000000 → PA 0x80200000
-                // mapping before MMU is enabled. Emulate that mapping here.
+                // Early boot: map the kernel's high-half VAs to its PAs
                 Addr vaddr = req->getVaddr();
                 Addr paddr;
                 constexpr Addr KERNEL_VA_BASE = 0xffffffc000000000ULL;

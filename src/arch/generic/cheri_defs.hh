@@ -7,7 +7,7 @@
 namespace gem5
 {
 
-// ── Permission bits ──
+// Permission bits
 namespace CHERIPerms
 {
     constexpr uint32_t GLOBAL        = 1 << 0;
@@ -24,22 +24,13 @@ namespace CHERIPerms
     constexpr uint32_t SETCID        = 1 << 11;
     constexpr uint32_t ALL           = 0xFFF;
 
-    // Software-defined (user) permissions occupy the top 4 bits of the
-    // 16-bit permission field (bits 12-15). CheriBSD uses bit 15 as the
-    // syscall permission: cheri_syscall_authorize() rejects any syscall
-    // whose PCC lacks it (ECAPMODE/94). The root capability must carry
-    // these so they can propagate to the userspace PCC at exec.
+    // Software-defined permissions; CheriBSD requires bit 15 in PCC
+    // for system calls, so the root capability carries them.
     constexpr uint32_t SW            = 0xF000;      // bits 12-15
     constexpr uint32_t ALL_WITH_SW   = ALL | SW;   // 0xFFFF
 }
 
-// ── Metadata layout constants ──
-// These MUST match the CAPTYPE bitunion below (the cc128 metadata layout):
-//   perm  = Bitfield<63,48> (16 bits)   otype = Bitfield<44,27> (18 bits)
-// They were previously PERM_SHIFT=0 / OTYPE_SHIFT=16 (a pre-cc128 layout), so
-// getPerms()/isSealed() read the TE/B/BE and IE/T bounds bits instead: every
-// capability looked sealed (SealViolation) with garbage perms, which masked
-// the bounds check in checkForLoad/checkForStore.
+// Metadata layout, matching the CAPTYPE bitunion (CC128)
 namespace CHERIMeta
 {
     constexpr int PERM_SHIFT = 48;
@@ -59,7 +50,7 @@ namespace CHERIMeta
     constexpr uint64_t OTYPE_SENTRY_FWD   = 0x3FFFBULL;
 }
 
-// ── Capability exception codes ──
+// Capability exception codes
 namespace CHERIRiscvISA
 {
     enum CheriCapException : uint64_t

@@ -112,7 +112,6 @@ output exec {{
 #include "base/condcodes.hh"
 #include "cpu/base.hh"
 
-// #include "cpu/simple/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/exetrace.hh"
 #include "cpu/simple/exec_context.hh"
@@ -126,22 +125,17 @@ output exec {{
 #include "sim/pseudo_inst.hh"
 #include "sim/sim_events.hh"
 
-// Needed by CapLoadCompleteAcc: read the CHERI tag CPU-side from the tag
-// table (system->cheritagtable) by physical address.
+// The tag table (system->cheritagtable), read by capability loads
 #include "sim/system.hh"
 
-// Needed by ecall: emulate SBI calls in gem5 (no OpenSBI firmware).
+// Capability checks; SBI calls emulated by ecall (no OpenSBI)
 #include "arch/riscv_cheri/cheri_checks.hh"
 #include "arch/riscv_cheri/sbi.hh"
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
-// CHERI memory-access check for an instruction body (ea_code): raise the
-// capability exception, if any, for an access of `size` bytes at `ea`
-// authorised by `auth`, the value of capability register `idx` (reported in
-// xTVAL). Pass operand values (Cs1, or _capv_Rs1 for an integer base
-// operand), never registers re-read through the thread context. `acc` is a
-// CheriAccess mask.
+// Raise the CHERI exception, if any, for an access of `size` bytes at
+// `ea` through `auth` (register `idx`); `acc` is a CheriAccess mask.
 #define CHERI_CHECK_MEM(auth, idx, ea, size, acc)                         \
     do {                                                                  \
         if (Fault _cheri_fault = CHERIRiscvISA::cheriCheckMem(            \
@@ -163,13 +157,8 @@ output exec {{
             return _cheri_fault;                                          \
     } while (0)
 
-// Which capability authorises a memory access (Sail
-// get_cheri_mode_cap_addr). The standard RISC-V encodings are mode
-// dependent: the base register's capability in capability mode, DDC in
-// integer (hybrid) mode, at the same address. The explicit forms in the
-// CHERI major opcode (0x5b: lb.cap, lc.cap, lr.w.cap, ...) always name
-// their capability, so the mode does not matter for them. `auth`/`idx`
-// are what capability mode would use.
+// Authorising capability (Sail get_cheri_mode_cap_addr): the base
+// register in capability mode, else DDC; 0x5b forms name their own.
 #define CHERI_MEM_USES_DDC (!CAPMODE && bits(machInst, 6, 0) != 0x5b)
 #define CHERI_MEM_AUTH(auth)                                              \
     (CHERI_MEM_USES_DDC ? cheriDdc(xc) : CapRegContainer(auth))
@@ -189,10 +178,8 @@ namespace gem5::CHERIRiscvISAInst
 {
 using namespace CHERIRiscvISA;
 
-// Result of a capability manipulation that ISAv9 makes tag-clearing (bounds,
-// permission, address and flag changes): where violations are enforced the
-// architectural result `r` is used as is; elsewhere (the kernel during
-// bring-up, see cheriEnforcing()) the source tag is kept, as before.
+// Result of a tag-clearing manipulation: `r` where violations are
+// enforced, else `r` with the source tag kept (see cheriEnforcing()).
 inline CapRegContainer
 cheriResult(ExecContext *xc, CapRegContainer r, bool src_tag)
 {
@@ -209,9 +196,8 @@ cheriDdc(ExecContext *xc)
     return isa->readCapMiscReg(MISCREG_DDC);
 }
 
-// xRET: continue at xEPCC (a sentry is unsealed). The PC state is written
-// directly; assigning the NPC operand instead would write back a PC state
-// snapshot taken before the body ran, i.e. with the OLD (kernel) PCC.
+// xRET: continue at xEPCC (sentries unsealed), writing the PC state
+// directly so the new PCC takes effect.
 inline void
 cheriReturnTo(ExecContext *xc, CapRegContainer epcc)
 {
@@ -225,9 +211,8 @@ cheriReturnTo(ExecContext *xc, CapRegContainer epcc)
     xc->pcState(next);
 }
 
-// Direct jump or taken branch to `target` (JAL, Bxx, C.J, C.BEQZ, ...): the
-// target must lie within PCC. Checked at the branch, before the link
-// register is written (Sail ext_control_check_pc).
+// Direct jump or taken branch to `target`: it must be within PCC (Sail
+// ext_control_check_pc).
 inline Fault
 cheriCheckBranch(ExecContext *xc, Addr target)
 {
@@ -251,9 +236,8 @@ cheriCheckPccAsr(ExecContext *xc)
                       CHERI_CAPIDX_PCC);
 }
 
-// CHERI (Sail ext_check_CSR): CSRs above user level, and the user trap
-// CSRs that have capability counterparts (utvec, uscratch, uepc), need
-// PCC.PERMIT_ACCESS_SYSTEM_REGISTERS; the fault is reported against PCC.
+// Sail ext_check_CSR: CSRs above user level, and utvec/uscratch/uepc,
+// need PCC.PERMIT_ACCESS_SYSTEM_REGISTERS.
 inline Fault
 cheriCheckCsrAccess(ExecContext *xc, uint64_t csr)
 {
@@ -264,13 +248,8 @@ cheriCheckCsrAccess(ExecContext *xc, uint64_t csr)
     return cheriCheckPccAsr(xc);
 }
 
-// Indirect jump through capability `target` (register `capIdx`) plus `imm`:
-// CJALR / C.CJR / C.CJALR. Raises the capability exception if enforcing;
-// otherwise installs the new PCC (sentries are unsealed) and PC, and, if
-// `link` is non-null, returns the sentry return capability for `retAddr`.
-// The PC state is written directly (to carry the new PCC), so the parser
-// does not see an NPC write: callers must list IsControl themselves, or the
-// pipelined CPUs never predict the jump.
+// Indirect jump through capability `target` + `imm` (CJALR, C.CJR,
+// C.CJALR). Writes the PC state directly: callers set IsControl.
 inline Fault
 cheriIndirectJump(ExecContext *xc, CapRegContainer target, int capIdx,
                   int64_t imm, Addr retAddr, CapRegContainer *link)
@@ -279,9 +258,7 @@ cheriIndirectJump(ExecContext *xc, CapRegContainer target, int capIdx,
         return f;
     const PCState &cur = xc->pcState().as<PCState>();
     if (!target.getTag()) {
-        // Only reachable where violations are not raised (the kernel during
-        // bring-up): keep going on the current PCC rather than adopting an
-        // untagged, boundless one.
+        // Not enforcing (kernel bring-up): stay on the current PCC
         warn_once("CHERI: jump through untagged c%d (addr %#x) tolerated "
                   "outside user mode\n", capIdx, target.getAddress());
         Addr a = target.getAddress();

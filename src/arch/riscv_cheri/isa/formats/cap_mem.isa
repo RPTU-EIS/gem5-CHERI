@@ -1,9 +1,5 @@
 ////////////////////////////////////////////////////////////////////
-// ══════════════════════════════════════════════════════════════ //
-// Memory operation instructions for capabilties                  //
-// ══════════════════════════════════════════════════════════════ //
-// CHERI Capability Load/Store Templates                          //
-// ══════════════════════════════════════════════════════════════ //
+// CHERI capability load/store templates
 ////////////////////////////////////////////////////////////////////
 
 def template CapLoadDeclare {{
@@ -80,14 +76,11 @@ def template CapLoadExecute {{
         %(op_rd)s;
         %(ea_code)s;
 
-        // ── Capability permission and bounds check ──
+        // Capability permission and bounds check
         %(cap_check_code)s;
 
-        // ── Atomic 16-byte capability read ──
-        // readCapMem sets the CHERI_CAP_LOAD flag; the atomic CPU looks up the
-        // tag from the tag table (by physical address) and stashes it, which we
-        // read back via getLoadedCapTag(). (The timing CPU instead uses the
-        // split initiateAcc/completeAcc path and reads the tag in completeAcc.)
+        // Atomic 16-byte capability read; the CPU looks up the tag
+        // (getLoadedCapTag()).
         uint8_t capData[16] = {0};
         const std::vector<bool> byte_enable(16, true);
         {
@@ -119,13 +112,10 @@ def template CapLoadInitiateAcc {{
         %(op_rd)s;
         %(ea_code)s;
 
-        // ── Capability permission and bounds check ──
+        // Capability permission and bounds check
         %(cap_check_code)s;
 
-        // ── Initiate 16-byte capability read ──
-        // Same pattern as vector initiateMemRead, but with
-        // CHERI_CAP_LOAD flag so AbstractMemory::access()
-        // looks up the tag from CheriTagTable.
+        // Initiate a 16-byte capability read
         const std::vector<bool> byte_enable(16, true);
         return xc->initiateCapMemRead(EA, 16,
             memAccessFlags, byte_enable);
@@ -140,34 +130,18 @@ def template CapLoadCompleteAcc {{
         %(op_decl)s;
         %(op_rd)s;
 
-        // ── Extract 16 data bytes from the packet ──
-        // Same as vector: memcpy from packet into local buffer
+        // The 16 data bytes
         const uint8_t *data = pkt->getConstPtr<uint8_t>();
 
-        // ── Read the tag from the CHERI tag table by physical address ──
-        // Look the tag up CPU-side here rather than reading it back from the
-        // memory Request. With a cache hierarchy the packet that reaches
-        // memory is a cache-line fill (NOT the exact 16-byte cap access), so
-        // AbstractMemory::access() cannot attach the tag to this request.
-        // pkt->getAddr() is the physical address of this 16-byte load, and the
-        // tag table is indexed by physical address, so this is correct with or
-        // without caches.
-        // (ORIGINAL request-piggyback, kept for revert:)
-        //   bool tag = pkt->req->getCapTag();
-        // If this load was served via O3 store-to-load forwarding, the
-        // tag table may not reflect the source store yet (its own
-        // completeAcc, which writes the table, can happen well after
-        // a dependent load is forwarded data) -- trust the forwarded
-        // tag instead of the table in that case. See
-        // Request::_cheriCapTagForwarded and lsq_unit.cc's forwarding
-        // path.
+        // The tag comes from the tag table by physical address, or
+        // from an in-flight store that forwarded it (O3).
         bool tag = pkt->req->getCapTagForwarded() ?
             pkt->req->getCapTag() :
             xc->tcBase()->getSystemPtr()->cheritagtable.getTag(pkt->getAddr());
         if (pkt->req->getClearTagOnLoad()) {
             tag = false;
         }
-        // ── Assemble into CapRegContainer ──
+        // Assemble the capability
         CapRegContainer _loadedCap;
         _loadedCap.fromMemory(data, tag);
 
@@ -179,9 +153,7 @@ def template CapLoadCompleteAcc {{
 }};
 
 
-// // ════════════════════════════════════════════════════════
-// // CHERI Capability Store Templates
-// // ════════════════════════════════════════════════════════
+// CHERI capability store templates
 
 def template CapStoreDeclare {{
     class %(class_name)s : public %(base_class)s
@@ -220,30 +192,30 @@ def template CapStoreExecute {{
         %(op_rd)s;
         %(ea_code)s;
 
-        // ── Capability permission and bounds check ──
+        // Capability permission and bounds check
         %(cap_check_code)s;
 
         CapRegContainer _storeCap;
 
-        // ── Prepare source capability for store ──
+        // Source capability
         %(memacc_code)s;
 
-        // ── Pack into 16 bytes and write, carrying the tag ──
-        // writeCapMem sets the CHERI_CAP_STORE flag and hands the source tag to
-        // the CPU (_pendingCapTag); the atomic CPU records it in the tag table
-        // by physical address. Without this the stored capability reloads with
-        // tag=0 and cjr/cjalr later refuse the (untagged) return capability.
+        // Write 16 bytes with the tag. For SC.C, gem5's success flag
+        // (1 = written) is the inverse of RISC-V's result.
+        uint64_t _scSuccess = 0;
         {
             uint8_t capData[16];
             _storeCap.toMemory(capData);
 
             const std::vector<bool> byte_enable(16, true);
             Fault fault = xc->writeCapMem(
-                capData, 16, EA, memAccessFlags, nullptr,
+                capData, 16, EA, memAccessFlags,
+                isStoreConditional() ? &_scSuccess : nullptr,
                 _storeCap.getTag(), byte_enable);
             if (fault != NoFault)
                 return fault;
         }
+        [[maybe_unused]] uint64_t result = !_scSuccess;
 
         %(postacc_code)s;
         %(op_wb)s;
@@ -263,17 +235,15 @@ def template CapStoreInitiateAcc {{
         %(op_rd)s;
         %(ea_code)s;
 
-        // ── Capability permission and bounds check ──
+        // Capability permission and bounds check
         %(cap_check_code)s;
 
         CapRegContainer _storeCap;
 
-        // ── Prepare source capability ──
+        // Source capability
         %(memacc_code)s;
 
-        // ── Pack and send through writeCapMem ──
-        // writeCapMem carries both the 16 data bytes AND the
-        // tag bit through the memory system, unlike writeMem.
+        // Write 16 bytes with the tag (writeCapMem)
         {
             uint8_t capData[16];
             _storeCap.toMemory(capData);
@@ -292,33 +262,21 @@ def template CapStoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
-        // ── CHERI: record the capability tag CPU-side, by physical address ──
-        // Done here (not in AbstractMemory) so it works with a write-back
-        // cache: the store's 16 data bytes sit in L1 and may never reach
-        // memory, but pkt->getAddr() is the physical address and the tag table
-        // is a side structure keyed by physical address. pkt->req->getCapTag()
-        // carries the tag that writeCapMem attached. Without this, a stored
-        // capability reloads with tag=0, and cjr/cjalr then refuse to jump to
-        // the (untagged) return capability and fall through -> crash.
-        //
-        // Pass the issuing instruction's sequence number (when known, i.e.
-        // under O3) so CheriTagTable can reject this write if a
-        // program-order-later write to the same granule already landed --
-        // completeAcc for two stores to the same granule can fire out of
-        // program order (see CheriTagTable::admitWrite for the full
-        // rationale; this fixed a real boot panic in
-        // witness_lock_order_add, where a byte-wise memset's tag-clearing
-        // completeAcc raced with the very next capability store's
-        // tag-setting completeAcc for the same 16 bytes).
-        xc->tcBase()->getSystemPtr()->cheritagtable.setTag(
-            pkt->getAddr(), pkt->req->getCapTag(),
-            pkt->req->hasInstSeqNum(),
-            pkt->req->hasInstSeqNum() ? pkt->req->getReqInstSeqNum() : 0);
+        // Record the tag in the tag table by physical address; the
+        // sequence number drops stale O3 writes. A failed SC.C writes
+        // nothing.
+        const bool _scFailed =
+            isStoreConditional() && !pkt->req->getExtraData();
+        if (!_scFailed) {
+            xc->tcBase()->getSystemPtr()->cheritagtable.setTag(
+                pkt->getAddr(), pkt->req->getCapTag(),
+                pkt->req->hasInstSeqNum(),
+                pkt->req->hasInstSeqNum() ? pkt->req->getReqInstSeqNum() : 0);
+        }
 
-        // ── Optional result writeback (store-conditional: SC.C) ──
-        // Most cap stores have no destination register, so op_decl/postacc/
-        // op_wb expand to nothing. SC.C sets Rd here (=0, success) via
-        // postacc_code and writes it back after the store completes.
+        // SC.C writes its result (0 = success) to rd; other
+        // capability stores have no destination register.
+        [[maybe_unused]] uint64_t result = _scFailed;
         %(op_decl)s;
         %(op_rd)s;
         %(postacc_code)s;
@@ -327,13 +285,8 @@ def template CapStoreCompleteAcc {{
     }
 }};
 
-// ════════════════════════════════════════════════════════════════
-// Capability-authorized SCALAR Load/Store (L[BHWD].CAP, S[BHWD].CAP)
-//
-// These store/load integer data (1/2/4/8 bytes) but use a
-// capability register as the base address, with permission
-// and bounds checking. They reuse the standard Mem operand.
-// ════════════════════════════════════════════════════════════════
+// Integer loads/stores through a capability base (L[BHWD].CAP,
+// S[BHWD].CAP), with permission and bounds checks.
 
 def template CapDataLoadDeclare {{
     class %(class_name)s : public %(base_class)s
@@ -514,23 +467,8 @@ def template CapDataStoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
-        // ── CHERI: S[BHWD].CAP stores integer data through a capability base,
-        // so it clears the tag of the granule(s) it writes (same invariant as
-        // StoreCompleteAcc). This is the common case for the kernel (memset
-        // uses sb.cap, struct writes use sd.cap): without clearing, a scalar
-        // write over old capability bytes leaves a stale valid tag behind.
-        //
-        // Pass the sequence number so a byte-wise scalar write (e.g. one
-        // iteration of a memset loop) can't retroactively clobber a
-        // program-order-LATER capability store to the same granule just
-        // because this store's completeAcc happens to fire after that
-        // later store's -- see CapStoreCompleteAcc and
-        // CheriTagTable::admitWrite. This is the actual root cause of the
-        // witness_lock_order_add panic root-caused on 2026-10-16: the
-        // kernel does memset(&entry, 0, sizeof(entry)) immediately before
-        // entry.wlod_next = ...; a byte of the memset landing after the
-        // wlod_next store's completeAcc wiped a tag that should have
-        // survived.
+        // A data store through a capability clears the tags it
+        // overwrites; the sequence number drops stale O3 writes.
         xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
             pkt->getAddr(), pkt->getSize(),
             pkt->req->hasInstSeqNum(),
@@ -540,9 +478,7 @@ def template CapDataStoreCompleteAcc {{
 }};
 
 
-// ════════════════════════════════════════════════════════
 // Format helpers and definitions
-// ════════════════════════════════════════════════════════
 
 
 def format CapLoad(memacc_code, ea_code, cap_check_code,

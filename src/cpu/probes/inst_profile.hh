@@ -1,14 +1,6 @@
 /*
- * Per-mnemonic profile of committed (micro-)ops.
- *
- * Listens to a CPU's "RetiredInstsStatic" probe and counts every committed
- * op per (privilege mode, static instruction); the mode comes from a
- * miscellaneous register (RISC-V: MISCREG_PRV). At every statistics dump
- * the counts since the last reset are written, aggregated by mnemonic, to
- * <outdir>/<prefix>-<n>.csv (mode,mnemonic,op_class,load,store,count;
- * n = 1, 2, ...), so the files line up with the stats.txt dumps. Lets the
- * instruction mix be split beyond gem5's op classes, e.g. capability-width
- * loads/stores from integer ones (util/cheri/overhead_bars.py).
+ * Per-mnemonic profile of committed (micro-)ops and privilege mode,
+ * written to <outdir>/<prefix>-<n>.csv at every statistics dump.
  */
 
 #ifndef __CPU_PROBES_INST_PROFILE_HH__

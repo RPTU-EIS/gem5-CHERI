@@ -71,13 +71,8 @@ class SEWorkload : public gem5::SEWorkload
 namespace guest_abi
 {
 
-// As in reg_abi.hh: on this ISA the plain-integer value of a register is
-// the address field of its (merged-file) capability (see
-// arch/riscv_cheri/sbi.cc). Writing the syscall return value through
-// intRegClass (ReturnValueReg = int_reg::A0) leaves it somewhere
-// userspace's "a0" reads never actually observe; it has to go through
-// the capability register's address field instead, same as sbi.cc's
-// wrReg() helper.
+// The syscall return value goes to the address field of ca0 (merged
+// register file), as in sbi.cc's wrReg().
 template <>
 struct Result<CHERIRiscvISA::SEWorkload::SyscallABI64, SyscallReturn>
 {

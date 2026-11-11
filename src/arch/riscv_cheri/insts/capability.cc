@@ -48,7 +48,6 @@ namespace gem5 {
         CapOp::generateDisassembly(Addr pc,
                                    const loader::SymbolTable *symtab) const {
             std::stringstream ss;
-            //TODO fix this
             ss << mnemonic << ' ' << registerName(destRegIdx(0)) << ", " <<
                registerName(srcRegIdx(0));
             if (_numSrcRegs >= 2)
@@ -62,9 +61,7 @@ namespace gem5 {
         CapLoad::generateDisassembly(Addr pc,
                                     const loader::SymbolTable *symtab) const
         {
-            // Format: lc cd, offset(cs1)
-            // destRegIdx(0) = cd (destination capability register)
-            // srcRegIdx(0)  = cs1 (base address / capability register)
+            // lc cd, offset(cs1)
             std::stringstream ss;
             ss << mnemonic << ' ' << registerName(destRegIdx(0))
             << ", " << offset
@@ -76,9 +73,7 @@ namespace gem5 {
         CapStore::generateDisassembly(Addr pc,
                                     const loader::SymbolTable *symtab) const
         {
-            // Format: sc cs2, offset(cs1)
-            // srcRegIdx(0) = cs1 (base address / capability register)
-            // srcRegIdx(1) = cs2 (source capability to store)
+            // sc cs2, offset(cs1)
             std::stringstream ss;
             ss << mnemonic << ' ' << registerName(srcRegIdx(1))
             << ", " << offset

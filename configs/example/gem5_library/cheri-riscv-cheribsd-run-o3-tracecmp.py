@@ -1,4 +1,5 @@
-# cheri-riscv-cheribsd-run.py
+# cheri-riscv-cheribsd-run-o3-tracecmp.py: O3 boot for a fixed number of
+# instructions, to compare its trace with the atomic run
 import m5
 from m5.objects import Root
 
@@ -20,34 +21,30 @@ from gem5.utils.requires import requires
 
 requires(isa_required=ISA.RISCV_CHERI)
 
-# ── Cache hierarchy (required by board for _setup_io_devices) ──
+# Cache hierarchy (the board needs one for its I/O devices)
 cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
     l1d_size="16kB", l1i_size="16kB", l2_size="256kB"
 )
 
-# cache_hierarchy = NoCache()
-
-# ── Memory ──
+# Memory
 memory = DualChannelDDR4_2400(size="3GB")
 
-# ── Processor ──
+# Processor
 processor = SimpleProcessor(
     cpu_type=CPUTypes.O3, isa=ISA.RISCV_CHERI, num_cores=1
 )
-# Stop cleanly after exactly N committed instructions, so the O3 and atomic
-# runs can be compared on a matched instruction count rather than matched
-# wall-clock/ticks (which would commit very different amounts of work).
+# Stop after N committed instructions, as the atomic run does
 processor.cores[0].get_simobject().max_insts_any_thread = 6500000
 
-# ── Board ──
+# Board
 board = RiscvCheriBoard(
     clk_freq="3GHz",
     processor=processor,
     memory=memory,
-    cache_hierarchy=cache_hierarchy,  # NOT None
+    cache_hierarchy=cache_hierarchy,
 )
 
-# ── Workload ──
+# Workload
 board.set_kernel_disk_workload(
     kernel=FileResource(
         local_path="/data/schmitz/gem5-CHERI/tests/kernel",
@@ -68,7 +65,6 @@ board.set_kernel_disk_workload(
     ],
 )
 
-# Override entry to skip bootloader stage
 simulator = Simulator(board=board)
 
 

@@ -45,18 +45,8 @@ namespace gem5
 {
 
 VirtIOBlock::VirtIOBlock(const Params &params)
-    // BRING-UP EXPERIMENT: advertise VIRTIO_BLK_F_RO (bit 5) so the guest
-    // mounts root read-only (non-exclusive in GEOM). This tests whether the
-    // GEOM re-taste storm that starves init is driven by the exclusive rw
-    // root mount spoiling other consumers. Revert to 0 once diagnosed.
-    // (GEOM checks the flag only on the disk's first open, so the image's
-    // m5_init.sh can still `mount -u -o rw /`.)
-    // With seg_max > 0 the device also advertises VIRTIO_BLK_F_SEG_MAX (as
-    // QEMU does, seg_max = queue size - 2): CheriBSD 2026's virtio_blk
-    // otherwise assumes one data segment per request and asks busdma for
-    // page alignment, whose bounce-buffer copy overruns small buffers (a
-    // CHERI bounds fault at boot). seg_max = 0 keeps the original feature
-    // set and an 8-byte config space.
+    // F_RO (bit 5): the guest mounts root shared, then remounts it rw.
+    // seg_max > 0 adds F_SEG_MAX, which CheriBSD 2026 needs.
     : VirtIODeviceBase(params, ID_BLOCK,
                        params.seg_max ? sizeof(Config) : sizeof(uint64_t),
                        (1 << 5) | (params.seg_max ? F_SEG_MAX : 0)),

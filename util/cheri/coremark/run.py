@@ -70,6 +70,7 @@ ENV_KNOBS = [
     "CHERI_TAG_CACHE",
     "CHERI_TAG_ASSOC",
     "CHERI_TAG_ROOT_CACHE",
+    "CHERI_TAG_SWE",
     "CHERI_L1D",
     "CHERI_L1I",
     "CHERI_L2",
@@ -82,6 +83,9 @@ ENV_KNOBS = [
     "CHERI_INST_PROFILE",
     "CHERI_VIRTIO_SEG_MAX",
 ]
+# gem5 binary: CHERI_GEM5 overrides the default build (e.g. to compare builds)
+GEM5_BIN = os.path.abspath(os.environ.get(
+    "CHERI_GEM5", os.path.join(GEM5, "build/RISCV_CHERI/gem5.opt")))
 
 
 def sha256(path):
@@ -294,7 +298,7 @@ def run_restored(outdir, cpu, tag, job, ckpt, timeout, env):
     )
     env.pop("CHERI_CKPT_OUT", None)
     cmd = [
-        os.path.join(GEM5, "build/RISCV_CHERI/gem5.opt"),
+        GEM5_BIN,
         "--outdir",
         outdir,
         CONFIG,
@@ -341,6 +345,8 @@ def run_one(outdir, cpu, tag, runner, timeout, env):
     cmd = [
         sys.executable,
         DRIVER,
+        "--gem5",
+        GEM5_BIN,
         "--outdir",
         outdir,
         "--binary",
@@ -425,6 +431,8 @@ def ensure_checkpoint(
         [
             sys.executable,
             DRIVER,
+            "--gem5",
+            GEM5_BIN,
             "--outdir",
             os.path.join(out, name),
             "--binary",
@@ -601,7 +609,7 @@ def main():
     manifest = {
         "date": time.strftime("%Y-%m-%d %H:%M:%S"),
         "gem5_rev": gem5_rev,
-        "gem5_binary": os.path.join(GEM5, "build/RISCV_CHERI/gem5.opt"),
+        "gem5_binary": GEM5_BIN,
         "config": CONFIG,
         "abis": abis,
         "configs": {

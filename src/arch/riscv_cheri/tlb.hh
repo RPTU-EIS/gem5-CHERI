@@ -113,19 +113,14 @@ class TLB : public BaseTLB
                            BaseMMU::Mode mode, PTESv39 pte);
     Fault createPagefault(Addr vaddr, BaseMMU::Mode mode);
 
-    // CHERI PTE checks for a capability load/store `req` against leaf
-    // `pte`: may raise a capability page fault (cause 26/27) or mark the
-    // request so the loaded tag is cleared. Sets `set_cd` when a tagged
-    // capability store must set the hardware-managed CD bit.
+    // CHERI PTE checks for a capability access: may raise a capability
+    // page fault, strip the loaded tag, or set `set_cd` to set CD.
     Fault checkCheriPte(ThreadContext *tc, const RequestPtr &req,
                         Addr vaddr, BaseMMU::Mode mode, PTESv39 pte,
                         bool &set_cd);
 
-    // checkCheriPte() for instructions that access memory functionally
-    // (amoswap.c, cloadtags): `cap_load` / `tagged_store` describe the
-    // access; `clear_tags` reports a CR = CRM = 0 page. A clear CD bit is
-    // reported as a capability store page fault (the kernel sets CD and
-    // retries) since a functional walk cannot update the PTE.
+    // checkCheriPte() for functional accesses (amoswap.c, cloadtags); a
+    // clear CD bit is reported as a store page fault.
     Fault checkCheriPteFunctional(ThreadContext *tc, Addr vaddr,
                                   BaseMMU::Mode mode, bool cap_load,
                                   bool tagged_store, bool &clear_tags);

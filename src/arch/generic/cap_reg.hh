@@ -76,7 +76,7 @@ namespace gem5
             tag = t;
         }
 
-        // Equality operator
+        // Assignment
         CapRegContainer&
         operator=(const CapRegContainer& that) {
             if (&that != this) {
@@ -137,12 +137,12 @@ namespace gem5
         }
 
         void toMemory(uint8_t* dst) const {
-            // little endian
+            // Little endian: address, then metadata
             for (int i = 0; i < 8; i++){
                 dst[i] = (address >> (i * 8)) & 0xFF;
                 dst[8 + i] = (metadata >> (i * 8)) & 0xFF;
             }
-            // Tag not needed here? stored seperately in tagged memory?
+            // The tag is not stored here but in the tag table
         }
 
         void fromMemory(const uint8_t* src, bool memTag) {
@@ -199,9 +199,7 @@ namespace gem5
             setPerms(getPerms() & mask);
         }
 
-        // ──────────────────────────────────────────
-        // Otype / sealing
-        // ──────────────────────────────────────────
+        // Object type and sealing
 
         uint32_t getOtype() const {
             return (metadata >> CHERIMeta::OTYPE_SHIFT) & CHERIMeta::OTYPE_MASK;
@@ -226,11 +224,8 @@ namespace gem5
         void seal(uint32_t otype) { setOtype(otype); }
         void unseal() { setOtype(CHERIMeta::OTYPE_UNSEALED); }
 
-        // ──────────────────────────────────────────
-        // Address/base/top decoding and bounds checking
-        // ──────────────────────────────────────────
-
-        // Need to revamp the decoder to get bounds from here.
+        // Bounds decoding and checks (the ISA itself uses
+        // regs/cc128_bounds.hh)
         static void decodeBounds(uint64_t meta, uint64_t addr,
                                  uint64_t &out_base, uint64_t &out_top) {
             CHERIRiscvISA::CAPTYPE m = meta;
@@ -286,9 +281,7 @@ namespace gem5
             out_top  = ((a_top + c_t) << (E + 14)) | (T << E);
         }
 
-        // ── Static bounds check ──
-        //   if (!CapRegContainer::inBounds(meta, addr, EA, 4))
-        //       return fault;
+        // True if [accessAddr, accessAddr + accessSize) is within bounds
         static bool inBounds(uint64_t meta, uint64_t addr,
                              uint64_t accessAddr, uint64_t accessSize) {
             uint64_t base, top;
@@ -296,11 +289,8 @@ namespace gem5
 
             if (accessAddr < base)
                 return false;
-            // An access starting past the top is out of bounds. Without this,
-            // (top - accessAddr) underflows to a huge value and the size check
-            // below wrongly passes (e.g. buf[17] on a 16-byte buffer). top == 0
-            // means top == 2^64 (a full-range capability; the carry is lost in
-            // 64 bits), where the unsigned subtraction below is already right.
+            // An access above top would underflow top - accessAddr;
+            // top == 0 encodes 2^64.
             if (top != 0 && accessAddr > top)
                 return false;
             if (accessSize > (top - accessAddr))
@@ -309,7 +299,7 @@ namespace gem5
         }
 
 
-        // Permission checks for loads and stores, including capability loads/stores
+        // Tag, seal, permission and bounds checks, in ISAv9 order
         static CHERIRiscvISA::CheriCapException checkForLoad(
             uint64_t meta, uint64_t addr, bool capTag, bool sealed,
             uint64_t accessAddr, uint64_t loadSize, bool capLoad) {
@@ -370,8 +360,7 @@ namespace gem5
         }
 
         /**
-         * Almighty (root) capability — full permissions, full address
-         * space bounds, tagged, unsealed.
+         * Root capability: all permissions, whole address space.
          */
         static CapRegContainer almighty(uint64_t addr = 0) {
             CapRegContainer cap;
@@ -379,18 +368,15 @@ namespace gem5
             cap.address = addr;
 
             CHERIRiscvISA::CAPTYPE meta = 0;
-            // Include software-defined permissions (bits 12-15) so the root
-            // cap can grant CheriBSD's syscall permission (bit 15) to derived
-            // caps; without it every userspace syscall fails with ECAPMODE.
+            // Software permissions too: CheriBSD needs bit 15 for
+            // system calls.
             meta.perm = CHERIPerms::ALL_WITH_SW;
             meta.otype = CHERIMeta::OTYPE_UNSEALED;
-            // Full address space bounds using Concentrate:
-            // IE=1, E=52 gives enough exponent to cover 2^64
+            // Bounds of the whole address space (the CC128 reset
+            // value): E = 52 and B = T = 0 decode to top = 2^64.
             meta.IE = 1;
             meta.BE = 0x4;   // E bits [2:0] = 4
             meta.TE = 0x6;   // E bits [5:3] = 6 -> E = 52
-            // B = T = 0: with IE the decoder reconstructs T[13:12] = 01, so
-            // top = 0x1000 << 52 = 2^64 exactly (the CC128 reset bounds).
             meta.B = 0;
             meta.T = 0;
 
@@ -413,15 +399,14 @@ namespace gem5
     struct ParseParam<CapRegContainer> {
         static bool
         parse(const std::string &str, CapRegContainer &value){
-        // Expected format: "tag,address,metadata" in hex
-        // Example: "1,0000000000000000,0000000000000000"
+            // Tag digit, then 16 hex digits each of address and
+            // metadata
 
             if (str.empty()) {
                 value.zero();
                 return true;
             }
 
-            // Simple parsing: expect 33 hex chars (1 for tag + 16 for addr + 16 for meta)
             if (str.size() != 33) {
                 warn("Capability register parse: unexpected string length");
                 return false;
@@ -447,7 +432,7 @@ namespace gem5
         static void
         show(std::ostream &os, const CapRegContainer &value)
         {
-            // Output format: "tag,address,metadata"
+            // Same format as parse()
             ccprintf(os, "%d%016x%016x",
                     value.getTag() ? 1 : 0,
                     value.getAddress(),

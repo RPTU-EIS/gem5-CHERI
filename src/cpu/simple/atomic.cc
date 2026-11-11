@@ -409,15 +409,8 @@ AtomicSimpleCPU::readMem(Addr addr, uint8_t *data, unsigned size,
                 thread->getIsaPtr()->handleLockedRead(req);
             }
 
-            // ── CHERI: capability load tag read-back (atomic path) ──
-            // The timing CPU reads the tag in completeAcc from the tag table by
-            // physical address; do the same here now that the access is done
-            // and req holds the translated physical address. Stash it for the
-            // CapLoad execute() template (getLoadedCapTag()). Works with or
-            // without caches: the tag table is a physical-address side
-            // structure, independent of the cache packet type. Without this,
-            // every capability load in atomic mode returns tag=0 and the kernel
-            // panics with "Expected valid capability".
+            // CHERI: read the loaded capability's tag from the tag
+            // table, for getLoadedCapTag().
             if (req->isCapLoad() && req->getSize() == 16 &&
                 CheriTagTable::isCapAligned(req->getPaddr())) {
                 bool tag = system->cheritagtable.getTag(req->getPaddr());
@@ -534,15 +527,8 @@ AtomicSimpleCPU::writeMem(uint8_t *data, unsigned size, Addr addr,
                     memcpy(res, pkt.getConstPtr<uint8_t>(), size);
                 }
 
-                // ── CHERI: store tag handling (atomic path) ──
-                // Mirror the timing CapStore/Store completeAcc invariant CPU-
-                // side by physical address: a capability store writes the
-                // source tag (set via writeCapMem -> _pendingCapTag) into the
-                // tag table; any other real data store clears the tag(s) of the
-                // granule(s) it overwrites, so a stale valid tag never survives
-                // a scalar overwrite. Keyed by req->getPaddr() so it is correct
-                // with or without caches. Cache-maintenance writes that carry
-                // no data (STORE_NO_DATA) must not disturb tags.
+                // CHERI: a capability store sets its tag in the tag
+                // table; other data stores clear the tags they overwrite.
                 if (!req->getFlags().isSet(Request::STORE_NO_DATA)) {
                     if (req->isCapStore() && req->getSize() == 16 &&
                         CheriTagTable::isCapAligned(req->getPaddr())) {

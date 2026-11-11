@@ -49,10 +49,8 @@ namespace CHERIRiscvISA
 namespace
 {
 
-// Stands in for an instruction whose fetch PCC does not authorise it:
-// executing it raises the CHERI exception against PCC (cap_idx 32). Doing the
-// check at decode covers every fetched instruction, including the second
-// half-word instruction of a parcel the CPU already fetched.
+// Stands in for an instruction whose fetch PCC does not authorise it;
+// executing it raises the CHERI exception against PCC.
 class CheriFetchFault : public PseudoOp
 {
   private:

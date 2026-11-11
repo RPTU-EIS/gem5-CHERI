@@ -253,19 +253,8 @@ def template StoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
-        // ── CHERI: a non-capability store clears the tag of the granule(s)
-        // it writes (the "any raw write invalidates a stored capability"
-        // invariant). Done CPU-side by physical address so it is cache-
-        // independent, mirroring CapStoreCompleteAcc's setTag. Without this,
-        // stale valid tags persist on reused memory and later read back as
-        // wild capabilities (e.g. an uninitialised kernel-stack slot became a
-        // bogus AT_TIMEKEEP cap that faulted rtld).
-        //
-        // Pass the sequence number for the same reason as
-        // CapDataStoreCompleteAcc: this store's completeAcc can otherwise
-        // fire after a program-order-later capability store's completeAcc
-        // for the same granule, clobbering a tag that should have
-        // survived. See CheriTagTable::admitWrite.
+        // CHERI: a data store clears the tags it overwrites; the
+        // sequence number drops stale O3 writes (admitWrite).
         xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
             pkt->getAddr(), pkt->getSize(),
             pkt->req->hasInstSeqNum(),
@@ -333,10 +322,7 @@ def template CacheBlockBasedStoreCompleteAcc {{
     %(class_name)s::completeAcc(PacketPtr pkt, ExecContext *xc,
         trace::InstRecord *traceData) const
     {
-        // ── CHERI: a cache-block raw write (e.g. cbo.zero) clears every tag
-        // in the block it overwrites. See StoreCompleteAcc for rationale,
-        // and CheriTagTable::admitWrite for why the sequence number is
-        // passed.
+        // CHERI: a cache-block write (cbo.zero) clears the block's tags
         xc->tcBase()->getSystemPtr()->cheritagtable.clearTagsInRange(
             pkt->getAddr(), pkt->getSize(),
             pkt->req->hasInstSeqNum(),

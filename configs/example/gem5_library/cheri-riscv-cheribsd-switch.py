@@ -1,74 +1,36 @@
 # cheri-riscv-cheribsd-switch.py
 #
-# Boot CheriBSD on the fast atomic CPU, then switch to a detailed CPU when the
-# guest executes `m5 workbegin` (the region of interest). Statistics are reset
-# at the switch, so stats.txt describes the detailed run only.
+# Boot CheriBSD on the atomic CPU and switch to a detailed CPU at the guest's
+# `m5 workbegin`, so the statistics describe the detailed region only.
 #
 # Environment variables:
-#   CHERI_SWITCH_CPU  CPU to switch to at the first workbegin: timing
-#                     (default), minor, o3, or atomic (fast instruction
-#                     counts; same processor layout, so checkpoints restore
-#                     into any of them)
-#   CHERI_READFILE    file returned by `m5 readfile` (the image's
-#                     /etc/m5_init.sh runs it)
-#   CHERI_KERNEL      kernel (default ./tests/kernel)
-#   CHERI_DISK        disk image (default ./tests/cheribsd-riscv64-purecap.img)
-#   CHERI_TAG_MODEL   tag-storage timing model (CheriTagController):
-#                       none (default)  no tag controller
-#                       passthrough     controller present, no tag traffic
-#                                       (baseline with the same topology)
-#                       flat            single-level tag table + tag cache
-#                       hierarchical    root level with zero elision
-#                       nocache         flat table without a tag cache: every
-#                                       lookup reads the tag table in DRAM
-#   CHERI_TAG_CACHE   leaf tag-cache size (default 32KiB)
-#   CHERI_TAG_ASSOC   leaf tag-cache associativity (default 8)
+#   CHERI_SWITCH_CPU   CPU after workbegin: timing (default), minor, o3, atomic
+#   CHERI_READFILE     file returned by `m5 readfile` (run by m5_init.sh)
+#   CHERI_KERNEL       kernel (default ./tests/kernel)
+#   CHERI_DISK         disk (default ./tests/cheribsd-riscv64-purecap.img)
+#   CHERI_TAG_MODEL    tag timing: none (default), passthrough, flat,
+#                      hierarchical, or nocache (flat without a tag cache)
+#   CHERI_TAG_CACHE    leaf tag-cache size (default 32KiB)
+#   CHERI_TAG_ASSOC    leaf tag-cache associativity (default 8)
 #   CHERI_TAG_ROOT_CACHE  root tag-cache size, hierarchical (default 1KiB)
-#   CHERI_L1D, CHERI_L1I, CHERI_L2
-#                     cache sizes (default 16kB, 16kB, 256kB)
-#   CHERI_L1D_PF, CHERI_L2_PF
-#                     L1D / L2 hardware prefetcher (default stride, gem5's
-#                     classic-cache default): none, stride, tagged
-#                     (next-line), bop, ampm, dcpt, indirect, isb, spp
-#   CHERI_PF_ON_ACCESS 1: those prefetchers train on every access, not only
-#                     on misses and prefetch hits (gem5's default)
-#   CHERI_VIRTIO_SEG_MAX  virtio disk: advertise VIRTIO_BLK_F_SEG_MAX with
-#                     this many segments (126 = QEMU's value for a 128-entry
-#                     queue); needed by CheriBSD 2026 kernels (else a CHERI
-#                     bounds fault in busdma at boot); default 0 = the
-#                     original device (2024 setups unchanged)
-#   CHERI_MISALIGNED  1: misaligned data accesses to DRAM complete (as on
-#                     QEMU or with firmware emulation) instead of trapping
-#                     (SIGBUS in the guest); default 0
-#   CHERI_CKPT_OUT    save a checkpoint there when the guest runs
-#                     `m5 checkpoint`, then exit
-#   CHERI_CKPT_IN     restore from that checkpoint instead of booting
-#   CHERI_PRIV_STATS  1: count the detailed CPU's committed instructions and
-#                     cycles per privilege mode (stats ...priv_tracker.insts
-#                     and .cycles ::user/supervisor/machine; a cycle counts
-#                     for the mode of the next committed instruction)
-#   CHERI_PC_PROFILE  1: committed instructions and cycles of the detailed
-#                     CPU per (privilege mode, PC), written to
-#                     pcprof-<n>.csv at every statistics dump (symbolised
-#                     by util/cheri/pc_profile.py)
-#   CHERI_INST_PROFILE 1: committed (micro-)ops of the detailed CPU per
-#                     (privilege mode, mnemonic), written to
-#                     instprof-<n>.csv at every statistics dump (e.g. to
-#                     split capability-width loads/stores from integer ones);
-#                     the boot CPU's to instprof-start-<n>.csv
-#   CHERI_STATS_AT_PC comma-separated PC[:COUNT] (guest virtual addresses,
-#                     hex): when the detailed CPU commits the instruction at
-#                     PC for the COUNT-th time (default 1), the statistics
-#                     are dumped without a reset, i.e. cumulative since the
-#                     workbegin, so differences between dumps split the
-#                     region into phases. These dumps come before the
-#                     workend one: use a separate results directory (the
-#                     suites' parse.py expect one dump per region)
+#   CHERI_TAG_SWE      1: silent-write elimination in the tag controller
+#   CHERI_L1D, CHERI_L1I, CHERI_L2  cache sizes (default 16kB, 16kB, 256kB)
+#   CHERI_L1D_PF, CHERI_L2_PF  L1D / L2 prefetcher (default stride): none,
+#                     stride, tagged, bop, ampm, dcpt, indirect, isb, spp
+#   CHERI_PF_ON_ACCESS 1: the prefetchers train on every access
+#   CHERI_VIRTIO_SEG_MAX  virtio disk F_SEG_MAX segments (CheriBSD 2026: 126)
+#   CHERI_MISALIGNED   1: misaligned DRAM accesses complete instead of trapping
+#   CHERI_CKPT_OUT     save a checkpoint at `m5 checkpoint`, then exit
+#   CHERI_CKPT_IN      restore from that checkpoint instead of booting
+#   CHERI_PRIV_STATS   1: committed instructions and cycles per privilege mode
+#   CHERI_PC_PROFILE   1: per-PC profile, pcprof-<n>.csv
+#   CHERI_INST_PROFILE 1: per-mnemonic profile, instprof-<n>.csv
+#   CHERI_STATS_AT_PC  PC[:COUNT],...: dump the statistics (no reset) when PC
+#                      commits for the COUNT-th time, to split the region into
+#                      phases (use a separate results directory)
 #
 # Statistics are reset at every `m5 workbegin` and dumped at every
-# `m5 workend`, so a guest can bracket several regions in one run. A run
-# that booted rather than restored a checkpoint also dumps them once at the
-# first workbegin, before the reset (the boot + setup; "[boot-stats] dump").
+# `m5 workend`; a booted run also dumps the boot first ("[boot-stats] dump").
 
 import os
 
@@ -158,9 +120,7 @@ class CheriCacheHierarchy(PrivateL1PrivateL2WalkCacheHierarchy):
                 if pf_choice[level] != "stride":
                     obj.prefetcher = make_prefetcher(pf_choice[level])
                 if on_access and pf_choice[level] != "none":
-                    # gem5 checks prefetch_on_pf_hit first: with it set (the
-                    # default) a hit only trains when it hits a prefetched
-                    # line, whatever prefetch_on_access says
+                    # prefetch_on_pf_hit takes precedence, so clear it
                     obj.prefetcher.prefetch_on_access = True
                     obj.prefetcher.prefetch_on_pf_hit = False
 
@@ -186,6 +146,7 @@ if tag_model != "none":
         else os.environ.get("CHERI_TAG_CACHE", "32KiB"),
         leaf_cache_assoc=int(os.environ.get("CHERI_TAG_ASSOC", "8")),
         root_cache_size=os.environ.get("CHERI_TAG_ROOT_CACHE", "1KiB"),
+        silent_write_elimination=os.environ.get("CHERI_TAG_SWE", "0") == "1",
     )
 processor = SimpleSwitchableProcessor(
     starting_core_type=CPUTypes.ATOMIC,
@@ -282,10 +243,8 @@ board.set_kernel_disk_workload(
 
 
 def on_workbegin():
-    # First workbegin: switch to the detailed CPU and start counting. A run
-    # that booted (no checkpoint) first dumps the statistics of the boot and
-    # the job's setup (never reset until here), so both are kept; scripts
-    # recognise this dump by the "[boot-stats] dump" console line.
+    # First workbegin: dump the boot statistics (if booted), switch to
+    # the detailed CPU and reset.
     if not os.environ.get("CHERI_CKPT_IN"):
         print(f"[boot-stats] dump: boot + setup, tick={m5.curTick()}",
               flush=True)

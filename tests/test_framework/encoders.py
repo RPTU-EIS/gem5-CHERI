@@ -1,8 +1,5 @@
 """
-encoders.py — instruction word encoders for each RISC-V format.
-
-Each function takes the field values and returns a 32-bit instruction word.
-All bit layouts follow the RISC-V Unprivileged ISA spec.
+encoders.py: 32-bit instruction encoders for each RISC-V format.
 """
 
 

@@ -66,24 +66,14 @@ decode QUADRANT default Unknown::unknown() {
             if (imm == 0)
                 return std::make_shared<IllegalInstFault>("immediate = 0",
                                                            machInst);
-            // PURECAP: c.addi4spn is c.cincoffset4cspn -- cd' = csp + imm, keep
-            // csp's tag and bounds. Write NO register via the framework; the dest
-            // is cd' (RP2+8). Read csp's cap for tag+bounds, take its address via
-            // the int `sp` source view, then write the integer dest and the cap
-            // dest (LAST, restoring tag+bounds) -- robust to shared-container or
-            // one-way int->cap sync.
-            // CIncOffset semantics: tag cleared if csp is sealed or the new
-            // address is not representable. Only a capability destination
-            // is written (an integer dest to the same register would
-            // clear the tag on write-back).
+            // c.addi4spn is c.cincoffset4cspn in capability mode: cd' =
+            // csp + imm, keeping csp's tag and bounds (CIncOffset).
             Cp2 = cheriResult(xc, capSetAddr(_capv_sp, rvSext(sp + imm)),
                               _capv_sp.getTag());
         }}, uint64_t);
         }
         format CompressedLoad {
-            // PURECAP: this encoding (C0, funct3=001) is c.lq (load 128-bit
-            // capability), NOT c.fld. Base is capability reg Cp1 (rs1',
-            // bits[9:7]), destination is cap reg Cp2 (rd', bits[4:2]).
+            // In capability mode this encoding is c.lq (capability load)
             0x1: decode CAPMODE {
                 0x0: c_fld({{
                     offset = CIMM3 << 3 | CIMM2 << 6;
@@ -204,9 +194,7 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
         format CompressedStore {
-            // PURECAP: this encoding (C0, funct3=101) is c.sq (store 128-bit
-            // capability), NOT c.fsd. Base cap reg Cp1 (rs1', bits[9:7]),
-            // source cap reg Cp2 (rs2', bits[4:2]).
+            // In capability mode this encoding is c.sq (capability store)
             0x5: decode CAPMODE {
                 0x0: c_fsd({{
                     offset = CIMM3 << 3 | CIMM2 << 6;
@@ -334,17 +322,8 @@ decode QUADRANT default Unknown::unknown() {
                     return std::make_shared<IllegalInstFault>(
                             "immediate = 0", machInst);
                 }
-                // PURECAP: c.addi16sp is c.cincoffset16csp -- adjust csp while
-                // preserving its tag and bounds. int and cap share ONE register
-                // container, so an integer dest-operand writeback zeroes csp's
-                // tag+metadata (that stripped csp untagged in every prologue and
-                // broke stack-derived &local -> kmem_subinit "valid capability
-                // min"). This format writes NO register via the framework.
-                // Order that works whether int/cap share one container or sync
-                // one-way: (1) read csp's cap FIRST to save tag+bounds, (2)
-                // write the integer sp (c.sqsp/c.lqsp address off int sp), (3)
-                // write the cap LAST so tag+bounds are restored onto the result.
-                // CIncOffset semantics (see c_addi4spn).
+                // c.addi16sp is c.cincoffset16csp in capability mode: csp
+                // keeps its tag and bounds (CIncOffset).
                 Csp = cheriResult(xc, capSetAddr(_capv_sp, rvSext(sp + imm)),
                                   _capv_sp.getTag());
             }});
@@ -492,12 +471,8 @@ decode QUADRANT default Unknown::unknown() {
             Rc1 = rvSext(Rc1 << imm);
         }}, uint64_t);
         format CompressedLoad {
-            // PURECAP: this encoding (C2, funct3=001) is c.lqsp (load 128-bit
-            // capability from sp), NOT c.fldsp. Route it through the CapLoad
-            // format so it does a 16-byte cap load + tag lookup, writing the
-            // capability destination register Cc1 (bits[11:7]). Without this,
-            // capability spills (every function prologue restores cra/cs*) were
-            // decoded as 8-byte float loads and corrupted returns.
+            // In capability mode this encoding is c.lqsp (capability
+            // load from csp)
             0x1: decode CAPMODE {
                 0x0: c_fldsp({{
                     offset = CIMM5<4:3> << 3 |
@@ -651,9 +626,8 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
         format CompressedStore {
-            // PURECAP: this encoding (C2, funct3=101) is c.sqsp (store 128-bit
-            // capability to sp), NOT c.fsdsp. Route through CapStore for a
-            // 16-byte cap store + tag, from source cap register Cc2 (bits[6:2]).
+            // In capability mode this encoding is c.sqsp (capability
+            // store to csp)
             0x5: decode CAPMODE {
                 0x0: c_fsdsp({{
                     offset = CIMM6<5:3> << 3 |
@@ -722,39 +696,11 @@ decode QUADRANT default Unknown::unknown() {
     }
     0x3: decode OPCODE5 {
         0x00: decode FUNCT3 {
-            // format Load {
-            //     0x0: lb({{
-            //         Rd_sd = Mem_sb;
-            //     }});
-            //     0x1: lh({{
-            //         Rd_sd = Mem_sh;
-            //     }});
-            //     0x2: lw({{
-            //         Rd_sd = Mem_sw;
-            //     }});
-            //     0x3: decode RVTYPE {
-            //         0x1: ld({{
-            //             Rd_sd = Mem_sd;
-            //         }});
-            //     }
-            //     0x4: lbu({{
-            //         Rd = Mem_ub;
-            //     }});
-            //     0x5: lhu({{
-            //         Rd = Mem_uh;
-            //     }});
-            //     0x6: decode RVTYPE {
-            //         0x1: lwu({{
-            //             Rd = Mem_uw;
-            //         }});
-            //     }
-            // }
             format CapDataLoad{
                 0x0: lb_cap({{
                         Rd_sd = Mem_sb;
                     }},
                     ea_code = {{
-                        // Cs1 = CapRegContainer::almighty(0x80010000);
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
@@ -1342,22 +1288,6 @@ decode QUADRANT default Unknown::unknown() {
                     IsSquashAfter, No_OpClass);
             }
 
-            // 0x2: decode FUNCT12 {
-            //     format CBMOp {
-            //         0x0: cbo_inval({{
-            //             Mem = 0;
-            //         }}, mem_flags=[INVALIDATE, DST_POC]);
-            //         0x1: cbo_clean({{
-            //             Mem = 0;
-            //         }}, mem_flags=[CLEAN, DST_POC]);
-            //         0x2: cbo_flush({{
-            //             Mem = 0;
-            //         }}, mem_flags=[CLEAN, INVALIDATE, DST_POC]);
-            //         0x4: cbo_zero({{
-            //             Mem = 0;
-            //         }}, mem_flags=[CACHE_BLOCK_ZERO]);
-            //     }
-            // }
             format CapLoad {
 
                 0x2: clc({{
@@ -1584,18 +1514,13 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
 
-        // 0x05: UOp::auipc({{
-        //     Rd = rvSext(PC + (sext<20>(imm) << 12));
-        // }});
-
         0x05: decode CAPMODE {
             0x0: UOp::auipc({{
                 Rd = rvSext(PC + (sext<20>(imm) << 12));
             }});
             0x1: UOp::auipcc({{
-            // AUIPCC cd, imm: PCC with address pc + (imm << 12); tag cleared
-            // if not
-            // representable.
+            // AUIPCC cd, imm: PCC with address pc + (imm << 12); tag
+            // cleared if not representable.
             const PCState &_pcs = xc->pcState().as<PCState>();
             CapRegContainer _pcc = _pcs.pcc();
             _pcc.setAddress(_pcs.instAddr());
@@ -1652,29 +1577,11 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x08: decode FUNCT3 {
-            // format Store {
-            //     0x0: sb({{
-            //         Mem_ub = Rs2_ub;
-            //     }});
-            //     0x1: sh({{
-            //         Mem_uh = Rs2_uh;
-            //     }});
-            //     0x2: sw({{
-            //         Mem_uw = Rs2_uw;
-            //     }});
-            //     0x3: decode RVTYPE {
-            //         0x1: sd({{
-            //             Mem_ud = Rs2_ud;
-            //         }});
-            //     }
-            // }
-
             format CapDataStore{
                 0x0: sb_cap({{
                         Mem_ub = Rs2_ub;
                     }},
                     ea_code = {{
-                        // Cs1 = CapRegContainer::almighty(0x80010000);
                         EA = rvZext(Cs1.getAddress() + offset);
                     }},
                     cap_check_code = {{
@@ -1962,10 +1869,7 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x0b: decode FUNCT3 {
-            // ── Zabha: byte atomics (FUNCT3=0) ──
-            // CheriBSD (compiled with Zabha) uses LR.B/SC.B/AMO*.B for byte-
-            // granular atomics (e.g. vm_page_set_valid_range); without these
-            // the kernel takes an illegal-instruction panic on the first one.
+            // Zabha byte atomics (FUNCT3=0), used by CheriBSD
             0x0: decode AMOFUNCT {
                 0x2: LoadReserved::lr_b({{
                     Rd_sd = Mem_sb;
@@ -2039,7 +1943,7 @@ decode QUADRANT default Unknown::unknown() {
                         [](uint8_t* b, uint8_t a){ if (a > *b) *b = a; });
                 }}, mem_flags=ATOMIC_RETURN_OP);
             }
-            // ── Zabha: halfword atomics (FUNCT3=1) ──
+            // Zabha halfword atomics (FUNCT3=1)
             0x1: decode AMOFUNCT {
                 0x2: LoadReserved::lr_h({{
                     Rd_sd = Mem_sh;
@@ -2265,21 +2169,10 @@ decode QUADRANT default Unknown::unknown() {
                     }}, mem_flags=ATOMIC_RETURN_OP);
                 }
             }
-            // ── CHERI capability-width atomics (funct3=4 -> 16 bytes) ──
-            // Single in-order hart: LR.C is a plain capability load; SC.C is a
-            // plain capability store that always reports success (Rd=0), since
-            // a reservation can never be broken between LR/SC on one hart.
-            // Without these, the kernel's purecap lock/atomic-pointer code hits
-            // an illegal instruction and panics.
+            // CHERI capability-width atomics (funct3=4, 16 bytes)
             0x4: decode AMOFUNCT {
-                // AMOSWAP.C cd, cs2, (cs1): atomically swap the 16-byte
-                // capability at [cs1] with cs2, returning the old value in cd.
-                // Single in-order hart -> no real concurrency, so implement it
-                // functionally as a register-format op (like cloadtags):
-                // translate cs1's address ourselves, read the old cap + tag via
-                // physProxy + the tag table into cd, then write cs2 (+ its tag).
-                // The kernel uses this for atomic capability pointer exchange
-                // (e.g. exec_alloc_args); without it -> illegal-instruction panic.
+                // AMOSWAP.C: swap the capability at [cs1] with cs2, done
+                // functionally at execute (translate, read old, write new).
                 0x1: COp::amoswap_c({{
                     using namespace gem5::CHERIRiscvISA;
                     auto *_ctc = xc->tcBase();
@@ -2358,7 +2251,7 @@ decode QUADRANT default Unknown::unknown() {
                         CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                     }},
                     offset_code = {{ offset = 0; }},
-                    postacc_code = {{ Rd = 0; }},
+                    postacc_code = {{ Rd = result; }},
                     mem_flags = LLSC,
                     inst_flags = [IsStore, IsStoreConditional]);
             }
@@ -5470,7 +5363,6 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x16: decode FUNCT3 {
-            // format COp {
                 0x0: decode FUNCT7 {
                     format COp {
                         0x01:cspecialrw({{
@@ -5483,12 +5375,8 @@ decode QUADRANT default Unknown::unknown() {
                             auto *isa = static_cast<CHERIRiscvISA::ISA *>(
                                 tc->getIsaPtr());
 
-                            // Sail CSpecialRW: unknown SCRs, writes to the
-                            // read-only PCC and SCRs above the current
-                            // privilege are illegal; every SCR other than
-                            // PCC/DDC also needs
-                            // PCC.PERMIT_ACCESS_SYSTEM_REGISTERS
-                            // (fault reported against SCR 32 + index).
+                            // Sail CSpecialRW: unknown, read-only (PCC) and
+                            // over-privileged SCRs are illegal; most need ASR.
                             int mapped = scrToMiscReg(scr_index);
                             auto prv = (CHERIPrivilegeMode)
                                 xc->readMiscReg(MISCREG_PRV);
@@ -5610,9 +5498,8 @@ decode QUADRANT default Unknown::unknown() {
 
                     format COp {
                         0x12: ctoptr({{
-                            // CToPtr rd, cs1, cs2 (c0 = DDC): offset of cs1
-                            // from cs2's base, or 0 if
-                            // cs1 is untagged.
+                            // CToPtr rd, cs1, cs2 (c0 = DDC): cs1's offset
+                            // from cs2's base, or 0 if cs1 is untagged.
                             CapRegContainer _ctp = CS2 == 0
                                 ? cheriDdc(xc) : Cs2;
                             Rd = Cs1.getTag()
@@ -5622,10 +5509,8 @@ decode QUADRANT default Unknown::unknown() {
 
                     format COp {
                         0x13: cfromptr({{
-                            // CFromPtr cd, cs1 (c0 = DDC), rs2: null if rs2 ==
-                            // 0, else cs1 with offset
-                            // rs2 (tag cleared if sealed or not
-                            // representable).
+                            // CFromPtr cd, cs1 (c0 = DDC), rs2: null if rs2
+                            // == 0, else cs1 with offset rs2 (CSetOffset).
                             CapRegContainer _auth = CS1 == 0
                                 ? cheriDdc(xc) : Cs1;
                             if (Rs2 == 0) {
@@ -5737,10 +5622,8 @@ decode QUADRANT default Unknown::unknown() {
 
                             uint64_t req_length = Rs1;
 
-                            // Use the shared reference-consistent rounding so
-                            // CRRL agrees with CSetBounds (the kernel rounds a
-                            // length here, aligns the base with CRAM below, then
-                            // asserts CSetBounds produced exactly this length).
+                            // Same rounding as CSetBounds, so the kernel's
+                            // CRRL / CRAM / CSetBounds sequence agrees.
                             uint64_t rounded_length = cc128RoundLength(req_length);
                             Rd = rounded_length;
 
@@ -5759,11 +5642,8 @@ decode QUADRANT default Unknown::unknown() {
 
                             uint64_t req_length = Rs1;
 
-                            // CRepresentableAlignmentMask returns a mask such
-                            // that (addr & mask) rounds addr DOWN to a base that
-                            // can hold an exact-bounds capability of req_length.
-                            // Uses the same reference cc128 exponent/incE logic
-                            // as CSetBounds and CRRL so the three stay consistent.
+                            // Mask aligning a base down so that bounds of
+                            // req_length are exact (same logic as CRRL).
                             uint64_t mask = cc128AlignMask(req_length);
                             Rd = mask;
 
@@ -5799,51 +5679,6 @@ decode QUADRANT default Unknown::unknown() {
                             Cd = _link;
                         }}, IsControl, IsIndirectControl, IsUncondControl);
 
-                        // 0x0c: jalr_cap({{
-                        //     using namespace gem5::CHERIRiscvISA;
-
-                        //     DPRINTF(CheriDecode, "JALR.CAP: cd=c%d cs1=c%d\n",
-                        //             CD + cap_reg::_CNullIdx, CS1 + cap_reg::_CNullIdx);
-
-                        //     // Check cs1 validity
-                        //     if (!Cs1.getTag()) {
-                        //         // Raise exception
-                        //         // fault = std::make_shared<CheriCapException>(CapEx_TagViolation, CS1);
-                        //     } else {
-                        //         // Get current PCC
-                        //         PCState pc_state;
-                        //         set(pc_state, xc->pcState());
-                        //         CapRegContainer current_pcc = pc_state.pcc();
-
-                        //         // Create return capability (sealed as sentry)
-                        //         Cd = current_pcc;
-                        //         CAPTYPE meta = current_pcc.getMetadata();
-                        //         meta.otype = (1ULL << 18) - 2;  // Sentry otype
-                        //         Cd.setMetadata(meta);
-                        //         Cd.setAddress(pc_state.npc());
-
-                        //         // Update PCC to cs1
-                        //         CapRegContainer new_pcc = Cs1;
-                        //         uint64_t target = Cs1.getAddress() & ~1ULL;
-                        //         new_pcc.setAddress(target);
-
-                        //         // Unseal if sentry
-                        //         meta = new_pcc.getMetadata();
-                        //         if (meta.otype == ((1ULL << 18) - 2)) {
-                        //             meta.otype = (1ULL << 18) - 1;  // Unsealed
-                        //             new_pcc.setMetadata(meta);
-                        //         }
-
-                        //         // Update PC state
-                        //         pc_state.pcc(new_pcc);
-                        //         pc_state.set(target);
-                        //         xc->pcState(pc_state);
-
-                        //         DPRINTF(CheriDecode, "JALR.CAP: jumping to 0x%x\n", target);
-                        //     }
-
-                        // }});
-
                         0x0e: cclear({{
                             using namespace gem5::CHERIRiscvISA;
 
@@ -5869,8 +5704,7 @@ decode QUADRANT default Unknown::unknown() {
                             // Get mask of which FP registers to clear
                             uint64_t mask = Rs1;
 
-                            // Clear floating point registers according to mask
-                            // Each bit in mask corresponds to one FP register (bits 0-31)
+                            // Bit i of the mask clears f<i>
                             for (int i = 0; i < 32; i++) {
                                 if (mask & (1ULL << i)) {
                                     // Clear FP register i
@@ -5889,31 +5723,17 @@ decode QUADRANT default Unknown::unknown() {
 
                         0x12: CTagLoad::cloadtags({{
 
-                            // ── Functional-only path (AtomicSimpleCPU / the
-                            // functional proxy). The timing path
-                            // (CTagLoadInitiateAcc/CompleteAcc, in
-                            // formats/capability.isa) issues a real,
-                            // locally-serviced LSQ read instead of doing its
-                            // own translation here -- see that format's
-                            // comments for why (it's what lets this
-                            // instruction track just the stores it actually
-                            // races with, instead of being fully serialized
-                            // like the old IsNonSpeculative version).
+                            // Functional path (atomic CPU); the timing path
+                            // is in formats/capability.isa (CTagLoad*).
                             using namespace gem5::CHERIRiscvISA;
 
                             const uint64_t caps_per_cache_line = 8;
                             const uint64_t cap_size = 16;  // 128-bit capability
 
-                            // cloadtags is a register-format instruction so it
-                            // does not go through the load/store translation
-                            // path; translate the virtual address ourselves. The
-                            // tag table is keyed by physical address, the same
-                            // way clc/csc read/write tags in cap_mem.isa.
+                            // Translate EA here: the tag table is keyed by
+                            // physical address.
                             auto *ctc = xc->tcBase();
-                            // Use the virtual-address Request constructor (sets
-                            // VALID_VADDR); the 4-arg form builds a PHYSICAL
-                            // request and translateFunctional()'s getVaddr()
-                            // would assert.
+                            // Needs a virtual-address Request (VALID_VADDR)
                             RequestPtr treq = std::make_shared<Request>(
                                 EA, access_length, Request::Flags(),
                                 Request::funcRequestorId, /*pc*/0,
@@ -5939,16 +5759,11 @@ decode QUADRANT default Unknown::unknown() {
                                 // A real access would take this page fault.
                                 return tf;
                             } else {
-                                // Bring-up: this early cloadtags targets a
-                                // PHYSICAL address (e.g. 0x80204b00, in the DRAM
-                                // range where the kernel is loaded) that is not
-                                // mapped in the current page table, so translation
-                                // faults. Fall back to treating the capability
-                                // address as physical (identity) -- the tags for
-                                // that region are already in the table.
+                                // Early boot: an unmapped address is taken
+                                // to be physical.
                                 pa = EA;
-                                DPRINTF(CheriDecode, "cloadtags translate
-                                failed for vaddr %#llx, using identity pa\n",
+                                DPRINTF(CheriDecode, "cloadtags translate "
+                                "failed for vaddr %#llx, using identity pa\n",
                                  (unsigned long long)EA);
                             }
                             for (uint64_t i = 0;
@@ -5958,8 +5773,8 @@ decode QUADRANT default Unknown::unknown() {
                                     tag_bits |= (1ULL << i);
                             }
 
-                            DPRINTF(CheriDecode, "Loaded tag bits =
-                                %#llx from vaddr %#llx (pa-based)\n",
+                            DPRINTF(CheriDecode, "Loaded tag bits = "
+                                "%#llx from vaddr %#llx (pa-based)\n",
                                  (unsigned long long)tag_bits,
                                  (unsigned long long)EA);
                             Rd = tag_bits;
@@ -5973,10 +5788,7 @@ decode QUADRANT default Unknown::unknown() {
                             const uint64_t access_length = 8 * 16;
 
                             // Sail CLoadTags: tag, seal, PERMIT_LOAD,
-                            // PERMIT_LOAD_CAP, bounds, then alignment. (Early
-                            // kernel caps don't carry correct perms yet, so
-                            // this is only enforced where cheriEnforcing() is
-                            // true.)
+                            // PERMIT_LOAD_CAP, bounds, then alignment.
                             if (Fault _f = CHERIRiscvISA::capEnforce(
                                     xc->tcBase(),
                                     capCheckMemAccess(Cs1, EA,
@@ -5992,10 +5804,8 @@ decode QUADRANT default Unknown::unknown() {
                         }}, IsLoad);
 
                         0x14: jalr_pcc({{
-                            // JALR.PCC rd, rs1 (Sail JALR_PCC = RISCV_JALR):
-                            // integer jump to rs1 & ~1 within the current
-                            // PCC, checked against PCC at the jump; the
-                            // integer return address goes to rd.
+                            // JALR.PCC: integer jump to rs1 & ~1 within PCC,
+                            // integer return address in rd.
                             Addr _target = Rs1 & ~Addr(1);
                             if (Fault _f = cheriCheckBranch(xc, _target))
                                 return _f;
@@ -6007,10 +5817,8 @@ decode QUADRANT default Unknown::unknown() {
                     }
 
 
-                    // Explicit stores (CheriStore_r, funct7 0x7c): the
-                    // operation is in the rd field, data in rs2, no offset.
-                    // .ddc: integer address rs1 authorised by DDC; .cap:
-                    // authorising capability cs1.
+                    // Explicit stores (funct7 0x7c, operation in rd, data
+                    // in rs2): .ddc through DDC, .cap through cs1.
                     0x7c: decode RD {
                         format CapDataStore {
                             0x00: sb_ddc({{
@@ -6098,9 +5906,7 @@ decode QUADRANT default Unknown::unknown() {
                                 CHERI_CHECK_CAP_STORE(Cs1, CS1, EA, Cs2);
                             }},
                             offset_code = {{ offset = 0; }});
-                            // sc.c.cap: single in-order hart, the
-                            // reservation always holds (as sc.c); the result
-                            // goes to the rs2 register.
+                            // sc.c.cap always succeeds (rs2 = 0): one hart
                             0x1c: sc_c_cap({{
                                 _storeCap = Cs2;
                             }},
@@ -6301,9 +6107,7 @@ decode QUADRANT default Unknown::unknown() {
 
                 format COp {
                     0x1: cincoffsetimm({{
-                        // CIncOffsetImm cd, cs1, simm12 (tag cleared if sealed
-                        // or the new address
-                        // is not representable).
+                        // CIncOffsetImm cd, cs1, simm12 (CSetAddr semantics)
                         int64_t imm = sext<12>(IMM12);
                         Cd = cheriResult(xc, capSetAddr(Cs1, Cs1.getAddress()
                             + imm), Cs1.getTag());
@@ -6391,9 +6195,8 @@ decode QUADRANT default Unknown::unknown() {
                     NPC = _target;
                 }}, IsIndirectControl, IsUncondControl);
                 0x1: Jump::cjalr({{
-                // CJALR (purecap jalr): jump to cs1 + imm, link a sentry
-                // for the next instruction into cd. Cs1 is read before Cd is
-                // written (common case: jalr cra, 0(cra)).
+                // CJALR: jump to cs1 + imm and link a sentry into cd (cs1
+                // is read first, as in jalr cra, 0(cra)).
                 CapRegContainer _link;
                 if (Fault _f = cheriIndirectJump(xc, Cs1, CS1, imm,
                         xc->pcState().as<PCState>().npc(), &_link))
@@ -6403,10 +6206,7 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
 
-        // CJAL (purecap jal): the link register receives the PCC with its
-        // address set to the return address, sealed as a sentry. (Writing the
-        // integer return address instead produced untagged return
-        // capabilities that the following cret could not legally use.)
+        // CJAL (purecap jal): link a sentry PCC with the return address
         0x1b: decode CAPMODE {
             0x0: JOp::jal({{
                 if (Fault _f = cheriCheckBranch(xc, rvZext(PC + imm)))
@@ -6436,10 +6236,8 @@ decode QUADRANT default Unknown::unknown() {
                                 // the kernel's handler as usual.
                                 return std::make_shared<SyscallFault>(prv);
                             }
-                            // Supervisor/Machine ecall -> SBI call. We have no
-                            // M-mode firmware (OpenSBI), so emulate the SBI in
-                            // gem5 and resume at the next instruction (ecall is
-                            // not IsControl, so the PC auto-advances on NoFault).
+                            // S/M-mode ecall: emulate the SBI (no OpenSBI)
+                            // and continue at the next instruction.
                             handleSbiEcall(xc->tcBase());
                             return NoFault;
                         }}, IsSerializeAfter, IsNonSpeculative, IsSyscall,
@@ -6460,8 +6258,7 @@ decode QUADRANT default Unknown::unknown() {
                             status.uie = status.upie;
                             status.upie = 1;
                             xc->setMiscReg(MISCREG_STATUS, status);
-                            // CHERI: continue at UEPCC (unsealed if a
-                            // sentry).
+                            // CHERI: continue at UEPCC (unsealed if a sentry)
                             auto *isa = dynamic_cast<ISA*>(
                                 xc->tcBase()->getIsaPtr());
                             cheriReturnTo(xc,
@@ -6495,8 +6292,7 @@ decode QUADRANT default Unknown::unknown() {
                                 status.spp = PRV_U;
                                 xc->setMiscReg(MISCREG_STATUS, status);
 
-                                // ── CHERI: continue at SEPCC (unsealed if a
-                                // sentry) ──
+                                // CHERI: continue at SEPCC
                                 auto *isa = dynamic_cast<ISA*>(
                                     xc->tcBase()->getIsaPtr());
                                 cheriReturnTo(xc,
@@ -6563,8 +6359,7 @@ decode QUADRANT default Unknown::unknown() {
                         status.mpp = PRV_U;
                         xc->setMiscReg(MISCREG_STATUS, status);
 
-                        // ── CHERI: continue at MEPCC (unsealed if a sentry)
-                        // ──
+                        // CHERI: continue at MEPCC (unsealed if a sentry)
                         auto *isa = dynamic_cast<ISA*>(
                             xc->tcBase()->getIsaPtr());
                         cheriReturnTo(xc, isa->readCapMiscReg(MISCREG_MEPCC));

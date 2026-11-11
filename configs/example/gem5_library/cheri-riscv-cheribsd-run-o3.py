@@ -1,4 +1,4 @@
-# cheri-riscv-cheribsd-run.py
+# cheri-riscv-cheribsd-run-o3.py: boot CheriBSD on the O3 CPU
 import m5
 from m5.objects import Root
 
@@ -20,30 +20,28 @@ from gem5.utils.requires import requires
 
 requires(isa_required=ISA.RISCV_CHERI)
 
-# ── Cache hierarchy (required by board for _setup_io_devices) ──
+# Cache hierarchy (the board needs one for its I/O devices)
 cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
     l1d_size="16kB", l1i_size="16kB", l2_size="256kB"
 )
 
-# cache_hierarchy = NoCache()
-
-# ── Memory ──
+# Memory
 memory = DualChannelDDR4_2400(size="3GB")
 
-# ── Processor ──
+# Processor
 processor = SimpleProcessor(
     cpu_type=CPUTypes.O3, isa=ISA.RISCV_CHERI, num_cores=1
 )
 
-# ── Board ──
+# Board
 board = RiscvCheriBoard(
     clk_freq="3GHz",
     processor=processor,
     memory=memory,
-    cache_hierarchy=cache_hierarchy,  # NOT None
+    cache_hierarchy=cache_hierarchy,
 )
 
-# ── Workload ──
+# Workload
 board.set_kernel_disk_workload(
     kernel=FileResource(
         local_path="/data/schmitz/gem5-CHERI/tests/kernel",
@@ -64,9 +62,6 @@ board.set_kernel_disk_workload(
     ],
 )
 
-# Override entry to skip bootloader stage
-# Bounded run for perf diagnosis: exits cleanly (flushing stats.txt) after
-# 5ms of simulated time, rather than being killed externally by `timeout`.
 simulator = Simulator(board=board)
 
 
