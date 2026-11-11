@@ -75,8 +75,7 @@ class PhysRegFile
     RegFile intRegFile;
     std::vector<PhysRegId> intRegIds;
 
-    /** Capability register file (e.g. CHERI). Empty/unused on ISAs
-     *  without a capability register class. */
+    /** Capability register file (CHERI); empty on other ISAs. */
     RegFile capRegFile;
     std::vector<PhysRegId> capRegIds;
 

@@ -1,8 +1,6 @@
 /*
- * CHERI-RISC-V PCC check at fetch for the TimingSimpleCPU, in its own file
- * so that timing.cc does not include the CHERI-RISC-V headers: they need
- * that ISA's generated headers, which only builds with it have (SCons
- * scans #include lines regardless of #ifdef).
+ * CHERI-RISC-V PCC check at fetch for the TimingSimpleCPU, kept apart
+ * so that timing.cc builds without the CHERI-RISC-V headers.
  */
 
 #ifndef __CPU_SIMPLE_TIMING_CHERI_HH__

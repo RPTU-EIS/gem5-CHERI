@@ -1,23 +1,7 @@
 /*
- * CHERI-RISC-V (ISAv9) capability checks.
- *
- * Pure functions (no simulator state) that implement the architectural
- * checks performed on memory accesses, jumps and instruction fetch, in the
- * priority order of the Sail reference model (sail-cheri-riscv). They return
- * the CHERI exception cause; the caller decides whether to raise it (see
- * capEnforce() in faults.hh) and which capability register to report.
- *
- * Bounds are decoded with the reference CC128 algorithm (cheri-compressed-cap
- * compute_base_top) and a 65-bit top, so a capability whose top is 2^64 (the
- * root/almighty capability) is handled without special cases.
- *
- * Metadata convention: this model stores the null capability -- and every
- * integer written to the merged register file -- with metadata 0. On real
- * hardware those carry the null capability's pesbt (no permissions, unsealed,
- * bounds [0, 2^64)), which memory stores XORed with that same value so that it
- * reads back as 0. capPesbt() maps metadata 0 to that pesbt before any field
- * is interpreted, so null-derived values get ISAv9 semantics (unsealed,
- * otype -1, length 2^64).
+ * CHERI-RISC-V (ISAv9) capability checks and manipulations, as pure
+ * functions following the Sail model. Metadata 0 is the null
+ * capability's pesbt (see capPesbt()).
  */
 
 #ifndef __ARCH_RISCV_CHERI_CHERI_CHECKS_HH__
@@ -177,12 +161,8 @@ enum CheriAccess : unsigned
     CheriAccLoadTags = 1u << 3,
 };
 
-// Memory access authorised by `auth` (Sail handle_load_data_via_cap,
-// handle_store_cap_via_cap, ...). For capability stores `stored` is the value
-// being written: storing a tagged capability needs PERMIT_STORE_CAP, and a
-// tagged local (non-GLOBAL) one additionally PERMIT_STORE_LOCAL_CAP. A
-// capability *load* through an authority without PERMIT_LOAD_CAP does not
-// trap; the loaded tag is cleared instead (see capLoadResult()).
+// Checks a memory access through `auth` (Sail handle_*_via_cap);
+// `stored` is the capability a capability store writes.
 inline CheriCapException
 capCheckMemAccess(const CapRegContainer &auth, uint64_t ea, uint64_t size,
                   unsigned acc, const CapRegContainer *stored = nullptr)
@@ -225,9 +205,8 @@ capLoadResult(const CapRegContainer &loaded, const CapRegContainer &auth)
 // satisfy (Sail min_instruction_bytes()).
 constexpr uint64_t CHERI_MIN_INST_BYTES = 2;
 
-// Indirect jump through `target` with immediate offset `imm` (Sail CJALR /
-// C.CJR / C.CJALR). As in Sail, the target's bounds are checked at the jump,
-// against `target` (not later, on fetch, against the new PCC).
+// Indirect jump through `target` + `imm` (Sail CJALR); the bounds are
+// checked at the jump, not at fetch.
 inline CheriCapException
 capCheckJump(const CapRegContainer &target, int64_t imm)
 {
@@ -296,10 +275,8 @@ capJumpTargetPcc(const CapRegContainer &target, uint64_t target_addr)
     return pcc;
 }
 
-// ---- Capability manipulation (ISAv9 tag-clearing semantics) ----
-//
-// Each returns the architectural result. Where the ISA clears the tag on a
-// violation (instead of trapping), the returned capability is untagged.
+// Capability manipulation: where ISAv9 clears the tag instead of
+// trapping, the result is untagged.
 
 inline bool
 capBoundsEqual(const CapRegContainer &a, const CapRegContainer &b)
@@ -308,9 +285,8 @@ capBoundsEqual(const CapRegContainer &a, const CapRegContainer &b)
     return ba.base == bb.base && ba.top == bb.top;
 }
 
-// CSetAddr / CIncOffset / CSetOffset / CFromPtr: change the address. The tag
-// is cleared if the source is sealed or the bounds would no longer decode
-// identically (not representable).
+// CSetAddr / CIncOffset / CSetOffset / CFromPtr: the tag is cleared if
+// the source is sealed or the result is not representable.
 inline CapRegContainer
 capSetAddr(const CapRegContainer &c, uint64_t addr)
 {
@@ -321,10 +297,8 @@ capSetAddr(const CapRegContainer &c, uint64_t addr)
     return r;
 }
 
-// ---- Trap-vector / exception-PC capabilities ----
-//
-// The integer CSRs xtvec and xepc are views of the address of xTCC and
-// xEPCC. Writes go through capSetAddr (Sail update_cap_with_integer_pc).
+// Trap-vector and exception-PC capabilities: xtvec and xepc are the
+// addresses of xTCC and xEPCC.
 
 // Sail legalize_xepc: epc[0] is 0, and so is epc[1] without RVC.
 inline uint64_t
@@ -360,10 +334,8 @@ capLegalizeTcc(const CapRegContainer &old_tcc, const CapRegContainer &v)
                                          v.getAddress()));
 }
 
-// CSetBounds / CSetBoundsImm / CSetBoundsExact: bounds [address,
-// address + len). The tag is cleared if the source is sealed, the requested
-// region is not within the source bounds, or (exact) it is not exactly
-// representable.
+// CSetBounds(Imm/Exact): bounds [address, address + len); the tag is
+// cleared if sealed, out of bounds or (exact) not representable.
 inline CapRegContainer
 capSetBounds(const CapRegContainer &c, uint64_t len, bool exact_required)
 {
@@ -379,9 +351,8 @@ capSetBounds(const CapRegContainer &c, uint64_t len, bool exact_required)
     return r;
 }
 
-// Architectural permission mask (hardware perms 0..11, user perms at
-// 15..18) <-> stored 16-bit field (user perm 0 at bit 15, user perms 1..3 at
-// bits 12..14). See cgetperm/candperm.
+// Architectural permissions (user perms at 15..18) <-> the stored
+// 16-bit field (user perms at 15 and 12..14).
 inline uint64_t
 capArchPerms(const CapRegContainer &c)
 {
@@ -440,9 +411,7 @@ capWithOtype(const CapRegContainer &c, uint64_t otype)
 // (unsealed, sentry, and two reserved types).
 constexpr uint64_t CHERI_MAX_OTYPE = CHERIMeta::OTYPE_UNSEALED - 4;
 
-// Is `auth` a valid sealing (perm = SEAL) or unsealing (perm = UNSEAL)
-// authority for its address, i.e. tagged, unsealed, permitted, with the
-// address in bounds and a non-reserved object type?
+// Is `auth` a usable sealing (SEAL) or unsealing (UNSEAL) authority?
 inline bool
 capSealAuthOk(const CapRegContainer &auth, uint32_t perm)
 {

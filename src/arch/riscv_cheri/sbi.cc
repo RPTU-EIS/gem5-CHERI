@@ -53,19 +53,13 @@ wrReg(ThreadContext *tc, int idx, uint64_t val)
 void
 putConsole(char ch)
 {
-    // Flush every character so interactive prompts that lack a trailing newline
-    // (e.g. the single-user "...RETURN for /bin/sh: ") appear immediately rather
-    // than staying stuck in the buffer until the next newline / Ctrl-C.
+    // Flush each character, so prompts without a newline appear at once
     std::cout << ch;
     std::cout.flush();
 }
 
-// Read one byte from gem5's own stdin (the terminal gem5 was launched in),
-// without blocking. Returns the byte (0-255) or -1 if nothing is available.
-// This makes the SBI console (rcons0, which FreeBSD selects as /dev/console
-// here) INTERACTIVE: keystrokes typed in gem5's window reach the guest shell.
-// Requires gem5 to be run with an interactive stdin (i.e. not piped/redirected
-// as csp_dump.py does). stdout stays the SBI console output.
+// Read one byte from gem5's stdin without blocking (-1 if none), which
+// makes the SBI console interactive.
 int
 getConsole()
 {
@@ -75,16 +69,10 @@ getConsole()
         if (fl != -1)
             ::fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
         inited = true;
-        // DEBUG: fires the first time the guest polls console input at all.
-        // warn("SBI getConsole: first poll (guest IS reading console input; "
-        //      "stdin isatty=%d)\n", ::isatty(STDIN_FILENO));
     }
     unsigned char ch;
     ssize_t n = ::read(STDIN_FILENO, &ch, 1);
     if (n == 1) {
-        // DEBUG: a keystroke actually reached the guest.
-        // warn("SBI getConsole: delivered 0x%02x '%c'\n", ch,
-        //      (ch >= 32 && ch < 127) ? ch : '?');
         return (int)ch;
     }
     return -1;
@@ -197,10 +185,7 @@ handleSbiEcall(ThreadContext *tc)
         break;
 
       case EXT_DBCN:
-        // Debug Console Extension:
-        //   fid 0 = console_write(num_bytes=a0, base_lo=a1, base_hi=a2)
-        //   fid 1 = console_read (no input available)
-        //   fid 2 = console_write_byte(a0)
+        // Debug console: fid 0 writes a buffer, 1 reads, 2 writes a byte
         if (fid == 0) {
             const uint64_t num = a0;
             const uint64_t alo = rdReg(tc, A1);

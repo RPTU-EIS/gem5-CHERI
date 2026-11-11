@@ -60,7 +60,7 @@ namespace gem5
 enum RegClassType
 {
     IntRegClass,        ///< Integer register
-    CapRegClass,        ///< Integer register
+    CapRegClass,        ///< Capability register (CHERI)
     FloatRegClass,      ///< Floating-point register
     /** Vector Register. */
     VecRegClass,

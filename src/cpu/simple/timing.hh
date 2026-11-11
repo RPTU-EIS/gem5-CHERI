@@ -263,8 +263,7 @@ class TimingSimpleCPU : public BaseSimpleCPU
 
     Cycles previousCycle;
 
-    // ── CHERI: pending tag for capability stores ──
-    // Here or base.hh? 
+    // CHERI: tag of a pending capability store
     bool _pendingCapTag = false;
     bool _hasPendingCapTag = false;
 
@@ -299,7 +298,7 @@ class TimingSimpleCPU : public BaseSimpleCPU
                    const std::vector<bool>& byte_enable = std::vector<bool>())
         override;
     
-    // ── CHERI capability memory access ──
+    // CHERI capability memory access
     Fault initiateCapMemRead(Addr addr, unsigned size,
             Request::Flags flags,
             const std::vector<bool>& byte_enable = std::vector<bool>());

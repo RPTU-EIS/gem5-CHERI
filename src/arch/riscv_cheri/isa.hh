@@ -120,7 +120,7 @@ class ISA : public BaseISA
     void setMiscRegNoEffect(RegIndex idx, RegVal val) override;
     void setMiscReg(RegIndex idx, RegVal val) override;
 
-    // Misc registers that are capability registers. These are accessed by custom CSRs in the same way as other CSRs, but they are stored separately in the ISA class and accessed through separate read/set functions.
+    // Capability SCRs, stored apart from the integer misc registers
     CapRegContainer readCapMiscRegNoEffect(RegIndex idx) const;
     CapRegContainer readCapMiscReg(RegIndex idx);
     void setCapMiscRegNoEffect(RegIndex idx, const CapRegContainer& val);
@@ -181,20 +181,16 @@ class ISA : public BaseISA
 
     bool getEnableRvv() const { return enableRvv; }
 
-    // sccsr (CSR 0x9c0), the CHERI-RISC-V supervisor capability control and
-    // status register. Bit 31 (TAG_CLEARING) is read-only 1: capability
-    // manipulation instructions clear tags instead of raising exceptions, the
-    // ISAv9 behaviour CheriBSD requires. E (bit 0), SGCLG (bit 2) and UGCLG
-    // (bit 3) are read/write.
+    // sccsr (CSR 0x9c0): TAG_CLEARING (bit 31) reads as 1, the ISAv9
+    // behaviour; E, SGCLG and UGCLG are read/write.
     static constexpr RegVal SCCSR_E = 1ULL << 0;
     static constexpr RegVal SCCSR_WRITABLE = (1ULL << 0) | (1ULL << 2) |
                                              (1ULL << 3);
     static constexpr RegVal SCCSR_TAG_CLEARING = 1ULL << 31;
     RegVal cheriSccsr = SCCSR_TAG_CLEARING | SCCSR_E;
 
-    // SBI timer emulation (there is no M-mode firmware): the S-mode timer
-    // compare value from sbi_set_timer. The CLINT raises STIP once mtime
-    // reaches it, then disarms it, as OpenSBI's MTIP handler does.
+    // SBI timer emulation: the compare value from sbi_set_timer; the
+    // CLINT raises STIP when mtime reaches it.
     static constexpr uint64_t SBI_TIMER_DISARMED = ~uint64_t(0);
     uint64_t sbiTimecmp = SBI_TIMER_DISARMED;
 

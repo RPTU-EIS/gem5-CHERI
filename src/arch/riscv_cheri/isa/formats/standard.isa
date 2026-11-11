@@ -338,11 +338,8 @@ def template CSRExecute {{
 
         auto csr_data_it = csr_data.find(csr);
         if (csr_data_it == csr_data.end()) {
-            // uccsr (0x8c0) / sccsr (0x9c0) / mccsr (0xbc0): CHERI capability
-            // control/status register, one register seen at three privilege
-            // levels and kept in the ISA object (see ISA::cheriSccsr). User
-            // code reads uccsr to test TAG_CLEARING. Scoped so op_decl doesn't
-            // clash with the main body below.
+            // uccsr / sccsr / mccsr (0x8c0 / 0x9c0 / 0xbc0): one CHERI
+            // control register (ISA::cheriSccsr) at three privilege levels.
             if (csr == 0x8c0 || csr == 0x9c0 || csr == 0xbc0) {
                 if ((CHERIPrivilegeMode)xc->readMiscReg(MISCREG_PRV) <
                         (CHERIPrivilegeMode)bits(csr, 9, 8)) {

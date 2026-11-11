@@ -492,9 +492,8 @@ CheriTagController::handleTagResponse(PacketPtr pkt)
         Addr victim;
         if (insertLeaf(line, victim))
             issueTagWriteback(victim);
-        // Without a leaf cache a tag write is a read-modify-write of the
-        // tag-table line: write it back right away (one write for all the
-        // writes that waited on this read).
+        // Without a leaf cache a tag write is a read-modify-write of
+        // the line: write it back at once.
         if (applyFill(line, fill.waiters) && !leafCache.enabled())
             issueTagWriteback(line);
     }

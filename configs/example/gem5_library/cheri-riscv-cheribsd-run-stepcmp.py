@@ -1,21 +1,12 @@
 # cheri-riscv-cheribsd-run-stepcmp.py
 #
-# Runs atomic or O3 CheriBSD boot in a loop of fixed-size instruction
-# steps, using Simulator.schedule_max_insts() (which wraps BaseCPU's
-# scheduleInstStopAnyThread()) between run() calls. Unlike restarting the
-# whole process with a larger max_insts_any_thread each time, this keeps
-# the SAME simulation alive across steps -- each step's instructions are
-# executed exactly once, not re-executed from tick 0.
+# Run the CheriBSD boot (atomic or O3) in fixed instruction steps of one
+# simulation, printing a STEPLOOP line after every step.
 #
 # Usage:
 #   ./build/RISCV_CHERI/gem5.opt --debug-flags=Exec --outdir=<dir> \
 #       configs/example/gem5_library/cheri-riscv-cheribsd-run-stepcmp.py \
 #       <atomic|o3> [step_size] [max_steps]
-#
-# Prints a "STEPLOOP:" progress line after every step (instruction count,
-# tick) and stops either on a natural exit (kernel panic -> SBI reset,
-# which raises NotImplementedError from this fork's exit_event.py since
-# there's no OpenSBI firmware) or after max_steps.
 
 import sys
 

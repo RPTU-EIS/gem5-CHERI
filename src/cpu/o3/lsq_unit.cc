@@ -185,18 +185,8 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
             }
         } else if (inst->isStore()) {
             // This is a regular store (i.e., not store conditionals and
-            // atomics), so it can complete without writing back to a
-            // register -- but it must still run completeAcc(). CHERI
-            // capability stores record their tag into the CheriTagTable
-            // there (CapStoreCompleteAcc), and plain stores clear any
-            // stale tag in the range they overwrite there too
-            // (StoreCompleteAcc). Skipping this call (as stock gem5
-            // does, since upstream completeAcc for a plain store is a
-            // no-op) meant a capability store's tag was only ever
-            // recorded when a dependent load happened to catch it via
-            // store-to-load forwarding while still in the LSQ; any load
-            // reading the value back after the store had already left
-            // the queue saw a stale/missing tag from the table instead.
+            // atomics), so it can complete without writing back. CHERI:
+            // completeAcc() still runs, as it updates the tag table.
             inst->completeAcc(request->mainPacket());
             completeStore(request->instruction()->sqIt);
         }
@@ -1058,11 +1048,8 @@ LSQUnit::getLatestHtmUid() const
 void
 LSQUnit::storePostSend()
 {
-    // CHERI: a tag load must not be unstalled here -- this runs when the
-    // blocking store is merely *sent*, not when its response (and
-    // therefore its completeAcc()-driven tag-table write) has actually
-    // landed. Leave it stalled; completeStore() releases it once the
-    // write has happened.
+    // CHERI: a stalled tag load waits until the store completes
+    // (completeStore()), not just until it is sent.
     if (isStalled() &&
         storeWBIt->instruction()->seqNum == stallingStoreIsn &&
         !stallingLoadIsCheriTagLoad) {
@@ -1346,18 +1333,8 @@ LSQUnit::stallOnOlderOverlappingStore(LSQRequest *request, ssize_t load_idx)
     Addr req_e = req_s + request->mainReq()->getSize();
 
     auto store_it = load_inst->sqIt;
-    // Unlike read()'s own forwarding scan a few lines down (which stops
-    // at storeWBIt, since it only cares about stores still queued to be
-    // sent), this must also see stores that have already been sent but
-    // whose response -- and therefore whose completeAcc()-driven
-    // tag-table write -- hasn't landed yet. Those sit between
-    // storeQueue.begin() and storeWBIt. completed() is what makes
-    // scanning that far safe: an already-completed store's tag write
-    // has already happened, so it's not a hazard even though it's
-    // below storeWBIt (and skipping it here is what avoids the
-    // "Should not check one of these" panic a few lines down, which
-    // assumes -- correctly, for that narrower scan -- that a
-    // partial-coverage entry is never already completed).
+    // Unlike read(), also scan stores that were sent but have not
+    // completed, as their tag-table writes are still pending.
     while (store_it != storeQueue.begin()) {
         store_it--;
         assert(store_it->valid());
@@ -1377,11 +1354,8 @@ LSQUnit::stallOnOlderOverlappingStore(LSQRequest *request, ssize_t load_idx)
         Addr st_e = st_s + store_size;
 
         if (req_s < st_e && st_s < req_e) {
-            // Overlap with an older store whose tag-table write (if
-            // any) hasn't happened yet. Stall exactly as read()'s own
-            // PartialAddrRangeCoverage case does below -- there is no
-            // data to forward for a tag read, only a write to wait
-            // out, so any overlap (not just partial) takes this path.
+            // Any overlap with a pending store stalls the tag load,
+            // as in read()'s partial-coverage case.
             if (!stalled ||
                 (stalled &&
                  load_inst->seqNum <
@@ -1576,19 +1550,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         MemCmd::ReadReq);
                 data_pkt->dataStatic(load_inst->memData);
 
-                // ── CHERI: forward the capability tag too ──
-                // The 16 data bytes above are correctly forwarded from
-                // the store's own buffer, but the tag bit lives in a
-                // separate side table (CheriTagTable) that the source
-                // store only updates at its own completeAcc -- which,
-                // for a store still sitting in the store queue, can
-                // happen well after this load is served here via
-                // forwarding. Without this, CapLoadCompleteAcc would
-                // read the tag table before the store ever wrote to
-                // it. Carry the tag on the request instead (see
-                // Request::setCapTagForwarded); DynInst::writeCapMem
-                // is what makes the store's own request hold the
-                // correct tag this early.
+                // CHERI: forward the tag too, as the store writes the
+                // tag table only when it completes.
                 if (request->mainReq()->isCapLoad() &&
                         store_it->request()->req(0)->isCapStore()) {
                     data_pkt->req->setCapTagForwarded(

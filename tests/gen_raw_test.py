@@ -1,29 +1,7 @@
 #!/usr/bin/env python3
-# Generates a flat RV64 binary that executes all CHERI capability-inspection
-# instructions against a chosen capability register (default CNull=0) and
-# stores the results sequentially to memory, then hits EBREAK.
-#
-# Layout/encodings:
-#   - All CHERI ops use major opcode 0x5b; funct3 == 0 for this class.
-#   - "Source & Dest" (inspect) form: [31:25]=0x7f, [24:20]=subop,
-#     [19:15]=cs1, [14:12]=0, [11:7]=rd, [6:0]=0x5b.  (CHERI-RISC-V spec)
-#
-# Example:
-#   python3 gen_raw_tests.py
-#   # Produces cheri_inspect.bin and cheri_inspect.lst
-#
-# To run in gem5 (bare metal):
-#   build/RISCV_CHERI/gem5.opt configs/example/riscv-cheri-baremetal.py \
-#     --bare-metal --semihosting --kernel cheri_inspect.bin
-#
-# Notes:
-#  * Results are stored as 64-bit values at RESULT_BASE onwards using SD.
-#  * By default we read from capability register 0 (CNull). That exercises
-#    decoding/dispatch for all opcodes without needing to pre-initialize caps.
-#  * If your platform requires a valid DDC for stores, ensure gem5’s DDC covers
-#    RAM (common in these bare-metal configs). Otherwise switch to semihosting
-#    I/O or adapt to explicit-capability stores.
-#
+# Generate a flat RV64 binary that runs every CHERI capability-inspection
+# instruction on one capability register (default CNull), stores the
+# results at RESULT_BASE and hits EBREAK (cheri_inspect.bin and .lst).
 from dataclasses import dataclass
 from typing import List, Tuple
 import argparse

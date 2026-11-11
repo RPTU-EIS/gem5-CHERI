@@ -255,9 +255,7 @@ class Request : public Extensible<Request>
         CHERI_CAP_LOAD              = 0x0001000000000000,
         /** CHERI: The request is a capability store (16-byte, aligned) */
         CHERI_CAP_STORE             = 0x0002000000000000,
-        /** CHERI: a functional tag-table read (cloadtags) -- serviced
-         *  locally via Request::localAccessor, never issued to the
-         *  cache hierarchy. */
+        /** CHERI: a tag-table read (cloadtags), served locally */
         CHERI_TAG_LOAD              = 0x0004000000000000,
 
         /**
@@ -486,15 +484,8 @@ class Request : public Extensible<Request>
     bool _cheriClearTagOnLoad = false;
 
     /**
-     * CHERI: true if _cheriCapTag was explicitly forwarded from an
-     * in-flight store (O3 store-to-load forwarding) rather than
-     * looked up from the CHERI tag table. The tag table is a side
-     * structure the LSQ's forwarding logic knows nothing about, so a
-     * store's own tag-table write (at its completeAcc, which may not
-     * happen until well after a dependent load is served via
-     * forwarding) can't be relied on yet -- this flag tells
-     * CapLoadCompleteAcc to trust the piggybacked tag instead of the
-     * (possibly not-yet-updated) table.
+     * CHERI: the tag was forwarded from an in-flight store (O3), so
+     * CapLoadCompleteAcc uses it instead of the tag table.
      */
     bool _cheriCapTagForwarded = false;
 
@@ -1157,13 +1148,11 @@ class Request : public Extensible<Request>
     bool isCacheMaintenance() const { return _flags.isSet(CLEAN|INVALIDATE); }
     /** @} */
 
-    // ── CHERI capability request accessors ──
+    // CHERI capability request accessors
     bool isCapLoad() const { return _flags.isSet(CHERI_CAP_LOAD); }
     bool isCapStore() const { return _flags.isSet(CHERI_CAP_STORE); }
     bool isCapAccess() const { return isCapLoad() || isCapStore(); }
-    // Deliberately not folded into isCapAccess(): a tag load carries no
-    // capability data of its own, it just needs the same local-access
-    // (not cache-hierarchy) + single-request treatment in the O3 LSQ.
+    // A tag load carries no capability data, so it is no cap access
     bool isCheriTagLoad() const { return _flags.isSet(CHERI_TAG_LOAD); }
 
     void setCapLoad() { _flags.set(CHERI_CAP_LOAD); }

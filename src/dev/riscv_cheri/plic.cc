@@ -374,12 +374,8 @@ Plic::readClaim(Register32& reg, const int context_id)
             return 0;
         }
     } else {
-        // One claim in flight per context (the interrupt line stays low
-        // until it completes), so nothing else is claimable: return 0, as
-        // the spec does when no interrupt is pending. Returning the
-        // in-flight ID again livelocked kernels that claim until 0 (e.g.
-        // CheriBSD 2026's plic_intr, whose ithread handlers complete
-        // later); kernels that claim once per trap never get here.
+        // One claim per context at a time: return 0 until it
+        // completes (CheriBSD 2026 claims until it reads 0).
         DPRINTF(Plic,
             "Claim while %d in flight (not completed) - context: %d\n",
             lastID[context_id], context_id);

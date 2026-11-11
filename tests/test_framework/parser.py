@@ -1,13 +1,6 @@
 """
-parser.py — Tokenize a minimal assembly source.
-
-Supported syntax:
-  - One instruction per line: `mnemonic op1, op2, op3`
-  - Whitespace insensitive, mnemonic case insensitive
-  - Comments: '#' or '//' to end of line
-  - Blank lines ignored
-
-No labels, no directives. The user said minimal — we keep it minimal.
+parser.py: tokenize minimal assembly (one instruction per line, '#' or
+'//' comments, no labels or directives).
 """
 
 

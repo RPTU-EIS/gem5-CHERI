@@ -153,17 +153,12 @@ class PCState : public GenericISA::UPCState<4>
         _pcc.setAddress(val);
     }
 
-    // Set PC with bounds checking against PCC
+    // Set the PC if PCC is tagged (unused; bounds are checked elsewhere)
     bool setChecked(Addr val) {
         if (!_pcc.getTag()) {
-            // If PCC is untagged
             return false;
         }
 
-        // Check if the new PC value is within the bounds of the PCC
-        // TO DO: Add full bound checking logic here
-
-        // If the check passes, update the PC and PCC address
         set(val);
         return true;
     }

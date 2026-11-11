@@ -1,11 +1,5 @@
-# CHERI tagged memory: puts a CheriTagController (timing model of the tag
-# table and tag cache) in front of any memory system.
-#
-#   membus --> CheriTagController --> tag_xbar --> memory controllers
-#
-# The tag table lives in a region at the top of physical memory that the
-# board reserves in the device tree, so the guest never uses it. Tag values
-# still come from the functional tag table; this only adds timing/traffic.
+# CHERI tagged memory: membus -> CheriTagController -> tag_xbar ->
+# memory. Adds the timing of a tag table at the top of memory.
 
 from typing import (
     List,

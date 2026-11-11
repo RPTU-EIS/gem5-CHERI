@@ -103,8 +103,7 @@ class BootloaderKernelWorkload: public Workload
     PCEvent *kernelOopsPcEvent = nullptr;
 
     /**
-     * Bring-up fixup: rewrites rvbp->kern_l1pt (physical -> kernel VA) at
-     * pmap_bootstrap entry for the firmware-less physical-entry boot.
+     * Unused: the kern_l1pt bring-up fixup was removed.
      */
     PCEvent *kernL1ptFixupEvent = nullptr;
 

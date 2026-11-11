@@ -1,12 +1,6 @@
 /*
- * Counts committed instructions and cycles per privilege mode.
- *
- * Listens to a CPU's "RetiredInstsPC" probe. At every committed instruction
- * it reads the privilege mode from a miscellaneous register of thread 0
- * (RISC-V: MISCREG_PRV, 0 = user, 1 = supervisor, 3 = machine) and counts
- * the instruction, and the cycles since the previous commit, for that mode.
- * Cycles are attributed to the instruction that ends them, so stall and
- * sleep (WFI) cycles count for the mode of the next committed instruction.
+ * Counts committed instructions and cycles per privilege mode; stall
+ * cycles count for the mode of the next committed instruction.
  */
 
 #ifndef __CPU_PROBES_PRIV_MODE_TRACKER_HH__

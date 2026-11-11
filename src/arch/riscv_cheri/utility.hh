@@ -168,13 +168,8 @@ registerName(RegId reg)
         }
         return VecRegNames[reg.index()];
     } else  {
-        /* InvalidRegClass or an unrecognized register class. reg.index() can
-         * be garbage / out-of-range for such a RegId (e.g. an implicit or
-         * improperly-declared operand), so do NOT index RegNames with it —
-         * that was an out-of-bounds std::vector access -> segfault when the
-         * Exec tracer disassembled an instruction carrying such an operand
-         * (seen on a c_jr in kvprintf). Treat it as the zero register.
-         */
+        /* Invalid or unknown register class: the index may be garbage,
+         * so name it as the zero register. */
         return int_reg::RegNames[0];
     }
 }

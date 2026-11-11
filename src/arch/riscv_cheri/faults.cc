@@ -133,8 +133,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         }
 
         // Set fault cause, privilege, and return PC
-        // ── Determine which CHERI SCRs to use, matching the privilege level
-        // we're entering. PCC saves to xEPCC; new PCC loads from xTCC. ──
+        // CHERI: the SCRs of the privilege level being entered
         MiscRegIndex epcc_idx, tcc_idx;
         switch (prv) {
           case PRV_U: epcc_idx = MISCREG_UEPCC; tcc_idx = MISCREG_UTCC; break;
@@ -161,26 +160,16 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         auto isa = static_cast<CHERIRiscvISA::ISA*>(tc->getIsaPtr());
         isa->clearLoadReservation(tc->contextId());
 
-        // ── CHERI: save current PCC into xEPCC ──
-        // Address of saved PCC = faulting instruction's PC. Bounds/perms
-        // are the existing PCC's. CheriBSD reads MEPCC/SEPCC on xret and
-        // restores PCC from it.
+        // CHERI: save PCC, with the faulting PC as address, in xEPCC
         CapRegContainer saved_pcc = pc_state.pcc();
         saved_pcc.setAddress(pc_state.instAddr());
         isa->setCapMiscReg(epcc_idx, saved_pcc);
 
-        // ── CHERI: load new PCC from xTCC ──
-        // The trap vector cap holds bounds/perms for the handler.
-        // Its address is the handler entry point (matching MTVEC address).
+        // CHERI: the handler runs under xTCC
         CapRegContainer new_pcc = isa->readCapMiscReg(tcc_idx);
 
-        // Compute handler address per RISC-V tvec format (direct vs vectored).
-        // In CHERI-RISC-V the trap vector IS xTCC; its address field serves as
-        // xTVEC. The purecap kernel programs xTCC (via cspecialrw), NOT the
-        // legacy xTVEC CSR (which stays 0), so derive the handler address from
-        // xTCC's address rather than getFaultHandlerAddr(tvec)/xTVEC (which
-        // returned 0 and vectored every trap to PC=0 -> fetch-fault loop).
-        // The integer xtvec/xepc CSRs are views of xTCC/xEPCC (isa.cc).
+        // Handler address from xTCC's address (direct or vectored); the
+        // integer xtvec CSR is a view of it.
         uint64_t vec = new_pcc.getAddress();
         Addr addr = mbits(vec, 63, 2);
         if (isInterrupt() && bits(vec, 1, 0) == 1)
@@ -199,22 +188,11 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 void
 Reset::invoke(ThreadContext *tc, const StaticInstPtr &inst)
 {
-    // ── Emulate the OpenSBI -> kernel handoff (no firmware in this setup). ──
-    // On real hardware M-mode firmware (OpenSBI) delegates traps to S-mode and
-    // drops to S-mode before entering the S-mode kernel. We have no OpenSBI, so
-    // do the equivalent here: enter the kernel directly in S-mode with traps
-    // delegated. Otherwise the kernel runs in M-mode and its page faults etc.
-    // are delivered to the unset MTVEC (the kernel only programs STVEC) and the
-    // machine hangs. faults.cc already honours MEDELEG/MIDELEG when the faulting
-    // privilege is < M. To revert, set PRV_M and drop the two deleg writes.
+    // No firmware (OpenSBI): enter the kernel in S-mode with traps
+    // delegated, as OpenSBI would.
     tc->setMiscReg(MISCREG_PRV, PRV_S);
-    // Delegate exceptions to S-mode, EXCEPT ecall-from-S (9) / ecall-from-M
-    // (11), which must stay in M-mode so our inline SBI emulation still fires.
-    // Bits: 0-8 (misaligned/access/illegal/breakpoint/ecall-U) + 12/13/15
-    // (instr/load/store page fault) = 0xB1FF, plus the CHERI causes 26/27
-    // (capability load/store page fault) and 28 (CHERI exception), which
-    // OpenSBI delegates on CHERI hardware so CheriBSD's S-mode handler sees
-    // them (SCAUSE_CHERI -> SIGPROT).
+    // Delegate exceptions to S-mode, except ecall from S/M (kept for the
+    // SBI emulation), including the CHERI causes 26-28.
     tc->setMiscReg(MISCREG_MEDELEG,
                    0xB1FF | (1ULL << LOAD_CAP_PAGE) |
                    (1ULL << STORE_AMO_CAP_PAGE) | (1ULL << CHERI_CAPABILITY));
@@ -300,9 +278,8 @@ SyscallFault::invokeSE(ThreadContext *tc, const StaticInstPtr &inst)
 bool
 cheriEnforcingAt(CHERIPrivilegeMode prv)
 {
-    // CHERI violations are raised at every privilege level. This is the one
-    // place to relax enforcement (e.g. return prv == PRV_U to exempt the
-    // kernel) when bringing up a new boot path.
+    // CHERI violations are raised at every privilege level; relax here
+    // when bringing up a new boot path.
     (void)prv;
     return true;
 }

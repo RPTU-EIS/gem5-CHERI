@@ -557,7 +557,7 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
 
     req->taskId(taskId());
 
-    // ── CHERI: attach tag to capability store requests ──
+    // CHERI: attach the tag to capability store requests
     if (_hasPendingCapTag && req->isCapStore()) {
         req->setCapTag(_pendingCapTag);
         DPRINTF(SimpleCPU, "CHERI: attaching tag=%d to cap store "
@@ -738,8 +738,7 @@ TimingSimpleCPU::fetch()
 
     if (needToFetch) {
 #ifdef GEM5_CHERI_RISCV
-        // Pcc validation being done here. If Pcc is valid the fetch will
-        // proceed.
+        // CHERI: check PCC before fetching
         if (Fault fault = cheriFetchCheck(thread->pcState());
                 fault != NoFault) {
             DPRINTF(SimpleCPU, "PCC violation at fetch of %#x: %s\n",

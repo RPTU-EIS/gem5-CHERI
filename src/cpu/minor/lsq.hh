@@ -711,9 +711,8 @@ class LSQ : public Named
         bool committed);
 
     /** Single interface for readMem/writeMem/amoMem to issue requests into
-     *  the LSQ. cap_tag is the tag stored by a CHERI capability store; it
-     *  is attached to the request before address translation, which checks
-     *  the page's capability-write permission for tagged stores. */
+     *  the LSQ. cap_tag is a CHERI capability store's tag, which the
+     *  translation checks. */
     Fault pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,
                       uint64_t *res, AtomicOpFunctorPtr amo_op,

@@ -1,33 +1,11 @@
 #!/usr/bin/env python3
 """
-cheri_asm.py — CHERI-RISC-V assembler.
-
-Reads:
-  - cheri_isa.json      (instruction encodings, register maps)
-  - startup.json        (optional: capability register state)
-  - <program>.s         (user assembly, pure capability mode)
-
-Produces:
-  - <out>.bin           (flat binary)
-  - <out>.lst           (listing: PC + hex + source)
-  - <out>.elf           (single-segment R+X ELF)
+cheri_asm.py: assembles a CHERI-RISC-V test program (an optional startup
+prologue, then a .s file) into .bin, .lst and .elf.
 
 Usage:
-  python3 cheri_asm.py prog.s
-  python3 cheri_asm.py prog.s --startup startup.json --base 0x80000000 --out build/prog
-
-The startup prologue (if given) is emitted first, then the user assembly
-follows immediately. They share the same address space; PC begins at --base.
-
-Pipeline:
-  1. Load ISA JSON (encodings + register maps)
-  2. If --startup given, generate prologue assembly lines from it
-  3. Read user assembly file
-  4. Concatenate: prologue + user assembly
-  5. Parse → list of (mnemonic, operands, lineno)
-  6. Encode each → 32-bit word
-  7. Write .bin (raw little-endian words), .lst (commented listing),
-     .elf (wrapping the .bin)
+  python3 cheri_asm.py prog.s [--startup startup.json]
+      [--base 0x80000000] [--out build/prog]
 """
 
 import argparse
@@ -48,11 +26,7 @@ DEFAULT_BASE = 0x80000000
 
 def assemble(source_lines, isa, base_addr):
     """
-    Encode a list of source lines.
-
-    Returns: (bin_bytes, listing_lines)
-      bin_bytes:     concatenated little-endian 32-bit words
-      listing_lines: ['  80000000:  04200293    addi    x5, x0, 0x42', ...]
+    Encode source lines; returns (binary, listing lines).
     """
     parsed = parse_source("\n".join(source_lines))
 
@@ -88,7 +62,7 @@ def main():
                         "Produces <stem>.bin, <stem>.lst, <stem>.elf")
     args = p.parse_args()
 
-    # ── Resolve paths ──
+    # Resolve paths
     script_dir = Path(__file__).parent
     isa_path = Path(args.isa) if args.isa else script_dir / "cheri_isa.json"
     src_path = Path(args.source)
@@ -105,10 +79,10 @@ def main():
 
     base_addr = int(args.base, 0)
 
-    # ── Load ISA ──
+    # Load the ISA
     isa = ISA(str(isa_path))
 
-    # ── Build source: startup prologue + user assembly ──
+    # Source: startup prologue, then the user's assembly
     all_lines = []
 
     if args.startup:
@@ -124,14 +98,14 @@ def main():
     all_lines.append("")
     all_lines.extend(src_path.read_text().splitlines())
 
-    # ── Assemble ──
+    # Assemble
     try:
         blob, listing = assemble(all_lines, isa, base_addr)
     except ValueError as e:
         print(f"assembly error: {e}", file=sys.stderr)
         sys.exit(2)
 
-    # ── Write outputs ──
+    # Write the outputs
     bin_path = out_stem.with_suffix(".bin")
     lst_path = out_stem.with_suffix(".lst")
     elf_path = out_stem.with_suffix(".elf")

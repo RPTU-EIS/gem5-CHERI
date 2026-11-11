@@ -1,14 +1,7 @@
 # cheri-riscv-cheribsd-checkpoint-continue.py
 #
-# Restores a checkpoint saved by cheri-riscv-cheribsd-checkpoint-save.py
-# and continues simulation under a chosen CPU model (atomic or O3) for a
-# further instruction budget. Checkpoints are architectural-state-only,
-# so a checkpoint saved under atomic can be continued under O3 here.
-#
-# Combine with --debug-flags/--debug-start/--debug-end on the gem5.opt
-# command line as usual -- ticks/instruction counts are relative to the
-# checkpoint's own tick (printed at startup and in each STEPLOOP line),
-# NOT relative to 0, since the checkpoint restores mid-boot state.
+# Restore a checkpoint of cheri-riscv-cheribsd-checkpoint-save.py and run
+# on the atomic or O3 CPU; debug ticks count from the checkpoint's tick.
 #
 # Usage:
 #   ./build/RISCV_CHERI/gem5.opt [--debug-flags=... --debug-start=... \
@@ -83,9 +76,7 @@ board.set_kernel_disk_workload(
     ],
 )
 
-# NOTE: must be a plain str, not a pathlib.Path -- m5.instantiate() calls
-# the pybind11-bound _m5.core.getCheckpoint(str), which does not accept a
-# Path object (TypeError: incompatible function arguments).
+# A str, not a Path: _m5.core.getCheckpoint() only takes a str
 simulator = Simulator(board=board, checkpoint_path=checkpoint_dir)
 
 print(

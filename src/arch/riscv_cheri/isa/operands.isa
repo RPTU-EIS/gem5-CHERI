@@ -51,42 +51,8 @@ def operand_types {{
     'capc'  : 'CHERIRiscvISA::CapRegContainer'
 }};
 
-// =====================================================================
-// MERGED REGISTER FILE (CHERI) -- added to boot the CheriBSD purecap kernel.
-//
-// WHY:
-//   CheriBSD is compiled for a *merged* register file: integer register
-//   x_n and capability register c_n are the SAME architectural register.
-//   Reading x_n yields c_n's address; writing x_n yields a null-derived
-//   (untagged) capability whose address is the written value.
-//
-//   Previously integer operands used a SEPARATE intRegClass storage, so a
-//   value produced by a capability instruction (e.g. `auipcc ct0`) was not
-//   visible to a following integer instruction (`addi t0, t0, imm`), and
-//   vice-versa. That broke the locore "enter capability mode" trampoline
-//   (auipcc ct0,0 ; addi t0,t0,26 ; csetaddr ct1,ct1,t0 ; jalr.cap ct1),
-//   which then jumped to itself and hung the boot in an infinite loop.
-//
-// WHAT THIS DOES:
-//   Every integer operand now reads/writes the CAPABILITY register file
-//   (capRegClass), using the capability's address field as the integer
-//   view. capRegClass and intRegClass share the same 1:1 index numbering
-//   (x_n <-> c_n, x0 <-> cnull, Ureg0 <-> CUreg0), so every reg_spec
-//   expression (RD, RS1, AMOTempReg, ReturnAddrReg, ...) is reused as-is.
-//   The intRegClass storage in regs/int.hh becomes unused (dead), but is
-//   left in place so this change is trivially revertible.
-//
-// HOW TO REVERT:
-//   Delete the merged `IntReg` class below and un-comment the ORIGINAL
-//   `IntReg` class (kept commented directly under it). No other file needs
-//   to change -- intRegClass is still declared in regs/int.hh.
-//
-// NOTE:
-//   The per-instruction `xc->tcBase()->setReg(intRegClass[CD], ...)` sync
-//   lines added earlier in decoder.isa are now REDUNDANT (nothing reads
-//   intRegClass anymore). They are harmless dead writes and can be removed
-//   later; left in place for now to keep this change isolated.
-// =====================================================================
+// Merged register file (CHERI): integer operands read and write the
+// capability registers, the integer value being the address.
 let {{
     class IntReg(IntRegOp):
         # Integer operand N aliases capability register N (merged file).
@@ -159,15 +125,6 @@ let {{
             )
 }};
 
-// ---- ORIGINAL split-register-file IntReg (kept for revert) ----------
-// let {{
-//     class IntReg(IntRegOp):
-//         @overrideInOperand
-//         def regId(self):
-//             return f'(({self.reg_spec}) == 0) ? RegId() : ' \
-//                    f'{self.reg_class}[{self.reg_spec}]'
-// }};
-// ---------------------------------------------------------------------
 
 let {{
     class CapReg(CapRegOp):

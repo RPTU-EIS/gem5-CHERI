@@ -162,10 +162,8 @@ class ExecContext
                        byte_enable);
     }
 
-    // CHERI: tag bit produced by the most recent capability load. Only
-    // meaningful in atomic mode, where the load completes inside readMem/
-    // readCapMem (no packet reaches the ISA execute() template). CPU models
-    // that support atomic CHERI loads override this; default is untagged.
+    // CHERI: tag of the most recent capability load, for CPUs that
+    // complete loads inside readMem (atomic); untagged by default.
     virtual bool getLoadedCapTag() const { return false; }
 
 
@@ -192,8 +190,8 @@ class ExecContext
                 Request::Flags flags, uint64_t *res, bool capTag,
                 const std::vector<bool>& byte_enable = std::vector<bool>())
     {
-        // Default: fall back to writeMem with cap store flag.
-        // CPU models that support CHERI override this.
+        // Default: a write flagged as a capability store, without its
+        // tag; CHERI-capable CPU models override this.
         return writeMem(data, size, addr,
                         flags | Request::CHERI_CAP_STORE,
                         res, byte_enable);

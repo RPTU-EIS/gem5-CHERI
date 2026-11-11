@@ -1,18 +1,8 @@
 # cheri-riscv-cheribsd-checkpoint-save.py
 #
-# Runs atomic CheriBSD boot untraced up to a target instruction count, then
-# saves a full-system checkpoint via Simulator.save_checkpoint() (a thin
-# wrapper around m5.checkpoint()). This needs NO guest-side cooperation
-# (no "m5 checkpoint" pseudo-instruction in the running program) -- it's
-# triggered entirely from the host/Python side right after a
-# schedule_max_insts()-triggered pause, the same pause mechanism
-# stepcmp.py already uses.
-#
-# Checkpoints are CPU-model-agnostic (architectural state only), so a
-# checkpoint saved here under atomic can later be restored and continued
-# under O3 (or atomic again) via cheri-riscv-cheribsd-checkpoint-continue.py.
-# This lets us investigate a bug deep in boot (e.g. hundreds of millions of
-# instructions in) without re-simulating from tick 0 every time.
+# Boot CheriBSD on the atomic CPU up to a target instruction count, then
+# save a checkpoint; continue it with
+# cheri-riscv-cheribsd-checkpoint-continue.py.
 #
 # Usage:
 #   ./build/RISCV_CHERI/gem5.opt --outdir=<dir> \

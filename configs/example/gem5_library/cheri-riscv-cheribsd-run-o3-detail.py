@@ -1,10 +1,7 @@
 # cheri-riscv-cheribsd-run-o3-detail.py
 #
-# Runs O3 CheriBSD boot UNTRACED up to just before a target instruction
-# count, then dynamically enables the O3CPUAll debug flag for a short
-# window around it. This avoids generating a multi-GB Exec trace just to
-# see detailed pipeline behavior (rename/issue/execute/LSQ) around one
-# specific instruction.
+# Run the O3 CheriBSD boot untraced up to a target instruction count,
+# then enable the O3CPUAll debug flag for a short window.
 #
 # Usage:
 #   ./build/RISCV_CHERI/gem5.opt --outdir=<dir> \

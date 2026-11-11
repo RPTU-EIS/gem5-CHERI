@@ -81,14 +81,8 @@ enum : RegIndex
 
 } // namespace int_reg
 
-// inline constexpr RegClass intRegClass(IntRegClass, IntRegClassName,
-//         int_reg::NumRegs, debug::IntRegs);
-
-// GPR operands (Rd/Rs1/sp/ra/a0/...) all read/write capRegClass now --
-// see the IntReg override in isa/operands.isa. This storage is allocated
-// but unused by any GPR operand post-merge; kept registered because
-// BaseISA::regClasses() indexes positionally by RegClassType and removing
-// it would shift every other class's index gem5-wide.
+// Unused since the merged register file (GPR operands use capRegClass),
+// but kept so that the register class indices stay the same.
 static inline TypedRegClassOps<RegVal> intRegClassOps;
 
 inline constexpr RegClass intRegClass =

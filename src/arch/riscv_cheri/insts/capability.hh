@@ -59,15 +59,7 @@ namespace gem5
                     Addr pc, const loader::SymbolTable *symtab) const override;
         };
 /**
- * Base class for CHERI capability load instructions (LC).
- *
- * Handles 16-byte capability loads with tag sideband.
- * The ISA templates (CapLoadInitiateAcc, CapLoadCompleteAcc)
- * use initiateMemRead with CHERI_CAP_LOAD flag and extract
- * the tag from pkt->req->getCapTag() on completion.
- *
- * Follows the same pattern as the scalar Load base class:
- * stores offset and memAccessFlags, provides generateDisassembly.
+ * Base class for CHERI capability loads (16 bytes and their tag).
  */
         class CapLoad : public CHERIRiscvStaticInst
         {
@@ -83,13 +75,7 @@ namespace gem5
                 Addr pc, const loader::SymbolTable *symtab) const override;
         };
 /**
- * Base class for CHERI capability store instructions (SC).
- *
- * Handles 16-byte capability stores with tag sideband.
- * The ISA templates (CapStoreInitiateAcc) use writeCapMem
- * to carry both the 16 data bytes and the tag bit through
- * the memory system to AbstractMemory::access(), which
- * writes the tag to CheriTagTable.
+ * Base class for CHERI capability stores (16 bytes and their tag).
  */
         class CapStore : public CHERIRiscvStaticInst
         {

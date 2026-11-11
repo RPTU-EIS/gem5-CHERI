@@ -58,9 +58,8 @@ BitUnion64(ExtMachInst)
     // Decoder state
     Bitfield<63, 62>    rv_type;
     Bitfield<61>        compressed;
-    // CHERI: PCC's capability-mode flag at fetch. Several encodings decode
-    // differently in capability and integer (hybrid) mode, so it is part of
-    // the decode-cache key.
+    // CHERI: PCC's capability-mode flag; part of the decode-cache key, as
+    // some encodings decode differently per mode.
     Bitfield<60>        cap_mode;
     // More bits for vector extension
     Bitfield<57, 41>    vl;     // [0, 2**16]

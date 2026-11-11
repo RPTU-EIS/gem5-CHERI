@@ -403,15 +403,8 @@ class DynInst : public ExecContext, public RefCounted
                    Request::Flags flags, uint64_t *res,
                    const std::vector<bool> &byte_enable) override;
 
-    // ExecContext's default writeCapMem() silently drops the capTag
-    // argument (falls back to plain writeMem() with just the
-    // CHERI_CAP_STORE flag set), so nothing ever calls
-    // Request::setCapTag() for capability stores executed by O3 --
-    // every cap store's tag bit is lost, and CapStoreCompleteAcc (see
-    // cap_mem.isa) then records "untagged" into the CHERI tag table
-    // regardless of the real value. BaseSimpleCPU/TimingSimpleCPU
-    // override this correctly (stash the tag, then apply it to the
-    // constructed Request); this mirrors that for O3.
+    // Pass the capability tag on to the request, as the simple CPUs
+    // do (the default writeCapMem() drops it).
     Fault writeCapMem(uint8_t *data, unsigned int size, Addr addr,
                        Request::Flags flags, uint64_t *res, bool capTag,
                        const std::vector<bool> &byte_enable =

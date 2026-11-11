@@ -92,11 +92,8 @@ class BaseSimpleCPU : public BaseCPU
     bool _pendingCapTag = false;
     bool _hasPendingCapTag = false;
 
-    // CHERI: tag of the most recent capability load. The atomic CPU does its
-    // memory access to completion inside readMem(), so (unlike the timing CPU's
-    // split initiate/complete) there is no packet left for the ISA execute()
-    // template to read the tag from. readMem() stashes the looked-up tag here
-    // and the CapLoad execute template reads it via getLoadedCapTag().
+    // CHERI: tag of the last capability load (atomic CPU), read by the
+    // CapLoad execute() template via getLoadedCapTag().
     bool _loadedCapTag = false;
 
   public:
@@ -180,7 +177,7 @@ class BaseSimpleCPU : public BaseCPU
         panic("writeMem() is not implemented\n");
     }
 
-    // Cap Aware Read and Write Functions
+    // CHERI capability loads and stores
     virtual Fault readCapMem(Addr addr, uint8_t *data, unsigned size,
                     Request::Flags flags,
                     const std::vector<bool>& byte_enable);

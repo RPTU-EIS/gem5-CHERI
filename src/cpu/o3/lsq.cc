@@ -794,15 +794,8 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     bool needs_burst = transferNeedsBurst(addr, size, cacheLineSize);
     LSQRequest* request = nullptr;
 
-    // CHERI: a tag-table read (cloadtags) is serviced locally -- it never
-    // reaches the cache hierarchy, so the cache-line-crossing burst/split
-    // logic below is meaningless for it. Worse, it's actively wrong: a
-    // SplitDataRequest's _mainReq never passes through translateTiming
-    // (paddr stays 0) and never inherits _localAccessor from its fragment
-    // Requests (Request::setFlags() only ORs flag bits). Force a single
-    // request+packet regardless of size. Safe to do unconditionally: a
-    // 128-byte, 128-byte-aligned tag-table read is always within one 4KB
-    // SV39 page.
+    // CHERI: a tag-table read is served locally and stays within one
+    // page, so it is never split.
     if (isLoad && (flags & Request::CHERI_TAG_LOAD))
         needs_burst = false;
 
@@ -1140,16 +1133,9 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
             );
         }
 
-        // CHERI: a tag-table read (cloadtags) is also serviced locally,
-        // but deliberately leaves the packet payload untouched here --
-        // the actual cheritagtable read happens in CTagLoadCompleteAcc,
-        // which has pkt->req->getClearTagOnLoad() available and runs
-        // after LSQUnit's older-store-overlap stall has already
-        // cleared. Capture nothing (unlike the NO_ACCESS lambda just
-        // above, which captures `req` by value into _localAccessor --
-        // a member of that same Request -- creating a self-referential
-        // shared_ptr cycle that leaks it; harmless for rare HTM markers,
-        // not for a per-cloadtags request).
+        // CHERI: a tag-table read is also served locally; its
+        // completeAcc reads the table. Capturing nothing avoids a
+        // shared_ptr cycle.
         if (_flags.isSet(Request::CHERI_TAG_LOAD)) {
             req->setLocalAccessor(
                 [](gem5::ThreadContext *, PacketPtr) -> Cycles

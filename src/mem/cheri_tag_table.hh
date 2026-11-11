@@ -21,27 +21,8 @@ namespace gem5
         private:
             std::unordered_map<uint64_t, bool> tagTable;
 
-            // Per-granule sequence number of the last write admitted by
-            // admitWrite() below. Only tracked for writes that pass a
-            // sequence number (i.e. come from an O3 store's completeAcc);
-            // callers with no ordering information (atomic CPU, the
-            // initial kernel-image tag load, AMO instructions that are
-            // already correctly serialized via IsNonSpeculative) don't
-            // need it and never populate this map.
-            //
-            // Unlike tagTable (which only ever holds entries for
-            // currently-tagged granules, and so stays naturally bounded),
-            // this map would otherwise grow by one entry per DISTINCT
-            // granule address any sequenced store has ever written across
-            // the whole run -- unbounded, and large: this OOM-killed a
-            // full CheriBSD boot+userspace run at ~35GB before the cap
-            // below was added. The actual reordering this guards against
-            // can only span instructions simultaneously in flight in the
-            // pipeline (the ROB/LSQ window, a few hundred entries at
-            // most), so it is safe to drop everything once the map grows
-            // far beyond that -- any entry old enough to be evicted is
-            // long past the point where a stale completion could still
-            // race it.
+            // Last admitted write per granule (sequenced O3 stores
+            // only), cleared once it exceeds LAST_WRITE_SEQ_CAP.
             static constexpr size_t LAST_WRITE_SEQ_CAP = 1 << 18; // 262144
             std::unordered_map<uint64_t, InstSeqNum> lastWriteSeq;
 
@@ -59,21 +40,8 @@ namespace gem5
                 return addr >> 4; // Divide by 16 to get the index
             }
 
-            // Under O3, two stores to the same (or overlapping) 16-byte
-            // granule are issued to memory in program order, but their
-            // *responses* -- and therefore the completeAcc call where the
-            // tag-table write actually happens -- can arrive out of that
-            // order (e.g. a byte-wise scalar write that misses, followed
-            // in program order by a capability store that hits and
-            // completes first; the miss's eventual, now-stale clear then
-            // lands after the capability store's correct set). Reject a
-            // write whose sequence number is older than the newest one
-            // already admitted for this granule, so the tag table always
-            // reflects the program-order-latest write regardless of
-            // completion order. Single-core only: InstSeqNum is a
-            // per-thread-context counter, not globally comparable across
-            // cores, so a multi-core board would need per-context
-            // disambiguation here.
+            // O3 stores to one granule can complete out of order: drop
+            // a write older than the newest admitted one (single core).
             bool admitWrite(uint64_t idx, bool hasSeq, InstSeqNum seq) {
                 if (!hasSeq)
                     return true;
@@ -118,8 +86,7 @@ namespace gem5
                 if (tag) {
                     tagTable[idx] = true;
                 } else {
-                    // Erase rather than store false — saves memory.
-                    // Absent entries are implicitly false.
+                    // Absent entries are untagged
                     tagTable.erase(idx);
                 }
             }
@@ -146,9 +113,7 @@ namespace gem5
                 }
             }
 
-            // True if any 16-byte granule in [paddr, paddr + size) holds a
-            // valid tag (used by timing models, e.g. tag-table zero
-            // elision in CheriTagController).
+            // True if any granule in [paddr, paddr + size) is tagged
             bool anyTagInRange(Addr paddr, size_t size) const {
                 if (size == 0 || tagTable.empty()) return false;
                 Addr end = alignAddress(paddr + size - 1);
@@ -172,8 +137,7 @@ namespace gem5
                 return (addr & (CAP_SIZE - 1)) == 0;
             }
 
-            // Checkpoint: the indices of the tagged granules, as one sorted
-            // array (a full CheriBSD boot holds ~10^5..10^6 tags).
+            // Checkpoints hold the sorted indices of tagged granules
             void serialize (CheckpointOut &cp) const override {
                 std::vector<uint64_t> granules;
                 granules.reserve(tagTable.size());
