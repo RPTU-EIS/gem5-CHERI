@@ -89,9 +89,9 @@ def load_shards(builds, abi, cwe, limit):
     return out
 
 
-def make_job(path, builds, cwe, prog, runs, exes, test_timeout, limit):
-    """Guest script for one shard: unpack, run the multi-call binary (all
-    good then all bad tests) and/or the separate executables via jrun."""
+def shard_members(path, builds, cwe, prog, runs, exes):
+    """Write a shard's input, test list and jrun list next to its job script
+    `path`; [(file, name under /tmp/jl)] that the guest needs."""
     work = path + ".d"
     os.makedirs(work, exist_ok=True)
     with open(os.path.join(work, "in.txt"), "w") as f:
@@ -109,8 +109,22 @@ def make_job(path, builds, cwe, prog, runs, exes, test_timeout, limit):
         members += [(os.path.join(builds, "jrun"), "jrun"),
                     (os.path.join(work, "list.txt"), "list.txt")]
         members += [(e, "sep/" + os.path.basename(e)) for e in exes]
-    tgz = path + ".tgz"
-    cm.bundle(tgz, members)
+    return members
+
+
+def guest_setup(cwe, nruns):
+    """Guest commands before the tests, in /tmp/jl/work."""
+    return [
+        # CWE134 (format strings) reads these, as in cheribuild
+        "export ADD='%s%d%s'",
+        "cp /tmp/jl/in.txt /tmp/in.txt",
+        "printf '%s\\n' 'Format string: %s %d %s' > /tmp/file.txt",
+        f'echo "=== JL-BEGIN CWE{cwe} {nruns}"',
+    ]
+
+
+def guest_tests(prog, exes, runs, test_timeout, limit):
+    """Guest commands running a shard's tests; st = last failing status."""
     cmds = []
     if prog:
         # with --limit, stop after the expected number of results
@@ -119,6 +133,14 @@ def make_job(path, builds, cwe, prog, runs, exes, test_timeout, limit):
     if exes:
         cmds.append(f"/tmp/jl/jrun {test_timeout} /tmp/jl/in.txt "
                     "/tmp/jl/list.txt")
+    return ["st=0"] + [c + " || st=$?" for c in cmds]
+
+
+def make_job(path, builds, cwe, prog, runs, exes, test_timeout, limit):
+    """Guest script for one shard: unpack, run the multi-call binary (all
+    good then all bad tests) and/or the separate executables via jrun."""
+    tgz = path + ".tgz"
+    cm.bundle(tgz, shard_members(path, builds, cwe, prog, runs, exes))
     lines = [
         "#!/bin/sh",
         # Lock-order checking (the kernel is built with WITNESS) costs ~25%
@@ -127,15 +149,10 @@ def make_job(path, builds, cwe, prog, runs, exes, test_timeout, limit):
         "rm -rf /tmp/jl && mkdir -p /tmp/jl/work && cd /tmp/jl/work",
         'tail -c +@PAYLOAD_OFFSET@ "$0" | tar xzf - -C /tmp/jl || '
         '{ echo "=== JL-UNPACK-FAILED"; exit 1; }',
-        # CWE134 (format strings) reads these, as in cheribuild
-        "export ADD='%s%d%s'",
-        "cp /tmp/jl/in.txt /tmp/in.txt",
-        "printf '%s\\n' 'Format string: %s %d %s' > /tmp/file.txt",
-        f'echo "=== JL-BEGIN CWE{cwe} {len(runs)}"',
-        "/sbin/m5 workbegin",
-        "st=0",
     ]
-    lines += [c + " || st=$?" for c in cmds]
+    lines += guest_setup(cwe, len(runs))
+    tests = guest_tests(prog, exes, runs, test_timeout, limit)
+    lines += ["/sbin/m5 workbegin"] + tests
     lines += ["/sbin/m5 workend", 'echo "=== JL-END status=$st"']
     cm.write_payload_script(path, lines, tgz)
     return len(runs)

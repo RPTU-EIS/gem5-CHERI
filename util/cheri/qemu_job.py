@@ -38,39 +38,37 @@ SHELL_PROMPT_Q = b"Enter full pathname of shell"
 DONE = b"=== QEMU-JOB-DONE"
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--script", required=True)
-    ap.add_argument("--log", required=True)
-    ap.add_argument("--payload", help="directory to ship as a tar disk")
-    ap.add_argument("--icount", action="store_true")
-    ap.add_argument("--timeout", type=int, default=7200)
-    args = ap.parse_args()
+def run_job(script, log_path, members=None, icount=None, memory=2048,
+            timeout=7200, tmp_on_root=False):
+    """Boot, type the script (list of lines) into the console and run it in
+    /tmp/payload, which holds members [(file or directory, name)]; the console
+    goes to log_path. /tmp is a tmpfs, or with tmp_on_root the root file system
+    remounted read-write (-snapshot protects the image), as in a gem5 run.
+    Returns the host seconds it took."""
     env = {k: os.environ.get(k, v) for k, v in DEFAULTS.items()}
     for k, v in env.items():
         if not os.path.exists(v):
             sys.exit(f"missing {k}={v}")
 
-    cmd = [env["QEMU"], "-M", "virt", "-cpu", "rv64,sstc=off", "-m", "2048",
-           "-nographic", "-bios", env["QEMU_BIOS"],
+    cmd = [env["QEMU"], "-M", "virt", "-cpu", "rv64,sstc=off",
+           "-m", str(memory), "-nographic", "-bios", env["QEMU_BIOS"],
            "-kernel", env["CHERI_KERNEL"], "-append", "-s", "-snapshot",
            "-drive", f"if=none,file={env['CHERI_DISK']},id=drv,format=raw",
            "-device", "virtio-blk-device,drive=drv"]
-    if args.icount:
-        cmd += ["-icount", "shift=0"]
+    if icount:
+        cmd += ["-icount", icount]
     tmp = None
-    if args.payload:
+    if members:
         tmp = tempfile.NamedTemporaryFile(suffix=".tar", delete=False)
         with tarfile.open(fileobj=tmp, mode="w") as tar:
-            tar.add(args.payload, arcname=".")
+            for path, name in members:
+                tar.add(path, arcname=name)
         tmp.write(b"\0" * (-tmp.tell() % 512))  # whole sectors
         tmp.close()
         cmd += ["-drive", f"if=none,file={tmp.name},id=pl,format=raw",
                 "-device", "virtio-blk-device,drive=pl"]
-    with open(args.script) as f:
-        script = [ln.rstrip("\n") for ln in f]
 
-    log = open(args.log, "wb")
+    log = open(log_path, "wb")
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, bufsize=0)
     buf, stage, t0 = b"", 0, time.time()
@@ -80,7 +78,7 @@ def main():
         p.stdin.flush()
 
     try:
-        while time.time() - t0 < args.timeout and p.poll() is None:
+        while time.time() - t0 < timeout and p.poll() is None:
             r, _, _ = select.select([p.stdout], [], [], 1.0)
             if not r:
                 continue
@@ -95,9 +93,10 @@ def main():
                 send("\n")
                 stage, buf = 1, b""
             elif stage == 1 and buf.endswith(b"# "):
-                send("mount -t tmpfs tmpfs /tmp && mkdir /tmp/payload\n")
+                send(("mount -u -o rw / && mkdir -p /tmp" if tmp_on_root else
+                      "mount -t tmpfs tmpfs /tmp") + " && mkdir /tmp/payload\n")
                 time.sleep(1)
-                if args.payload:
+                if members:
                     send("tar xf /dev/vtbd1 -C /tmp/payload\n")
                     time.sleep(2)
                 send("cat > /tmp/job.sh <<'QJ_EOF'\n")
@@ -118,7 +117,23 @@ def main():
         log.close()
         if tmp:
             os.unlink(tmp.name)
-    print(f"{args.log}: {time.time() - t0:.0f} s")
+    return time.time() - t0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--script", required=True)
+    ap.add_argument("--log", required=True)
+    ap.add_argument("--payload", help="directory to ship as a tar disk")
+    ap.add_argument("--icount", action="store_true")
+    ap.add_argument("--timeout", type=int, default=7200)
+    args = ap.parse_args()
+    with open(args.script) as f:
+        script = [ln.rstrip("\n") for ln in f]
+    secs = run_job(script, args.log,
+                   [(args.payload, ".")] if args.payload else None,
+                   "shift=0" if args.icount else None, timeout=args.timeout)
+    print(f"{args.log}: {secs:.0f} s")
 
 
 if __name__ == "__main__":
