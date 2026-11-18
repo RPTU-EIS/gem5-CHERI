@@ -1,4 +1,4 @@
-# CHERIsma: A CHERI-RISC-V implementation in gem5
+# gem5-CHERI: A CHERI-RISC-V implementation in gem5
 
 A model of a [CHERI](https://www.cl.cam.ac.uk/research/security/ctsrd/cheri/)
 RISC-V processor in the [gem5](https://www.gem5.org) simulator. It boots a

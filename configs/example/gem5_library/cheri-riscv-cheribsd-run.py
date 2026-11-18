@@ -32,9 +32,7 @@ memory = DualChannelDDR4_2400(size="3GB")
 
 # Processor
 processor = SimpleProcessor(
-    cpu_type=CPUTypes.ATOMIC,
-    isa=ISA.RISCV_CHERI,
-    num_cores=1
+    cpu_type=CPUTypes.ATOMIC, isa=ISA.RISCV_CHERI, num_cores=1
 )
 
 # Board
@@ -48,10 +46,10 @@ board = RiscvCheriBoard(
 # Workload
 board.set_kernel_disk_workload(
     kernel=FileResource(
-        local_path="/data/schmitz/gem5-CHERI/tests/kernel",
+        local_path="/data/gem5-CHERI/tests/kernel",
     ),
     disk_image=DiskImageResource(
-        local_path="/data/schmitz/cheri/output/cheribsd-riscv64-purecap.img",
+        local_path="/data/cheri/output/cheribsd-riscv64-purecap.img",
         root_partition="1",
     ),
     readfile_contents="/sbin/m5 dumpstats\n/sbin/m5 exit",

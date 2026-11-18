@@ -58,7 +58,7 @@ requires(isa_required=ISA.RISCV)
 # For classic, PrivateL1PrivateL2 and NoCache have been tested.
 # For Ruby, MESI_Two_Level and MI_example have been tested.
 cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
-    l1d_size="32KiB", l1i_size="32KiB", l2_size="512KiB"
+    l1d_size="16KiB", l1i_size="16KiB", l2_size="256KiB"
 )
 
 # Setup the system memory.
@@ -66,7 +66,7 @@ memory = SingleChannelDDR3_1600()
 
 # Setup a single core Processor.
 processor = SimpleProcessor(
-    cpu_type=CPUTypes.TIMING, isa=ISA.RISCV, num_cores=1
+    cpu_type=CPUTypes.Minor, isa=ISA.RISCV, num_cores=1
 )
 
 # Setup the board.

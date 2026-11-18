@@ -34,7 +34,7 @@ target_insts = int(sys.argv[1]) if len(sys.argv) > 1 else 645_000_000
 checkpoint_dir = (
     sys.argv[2]
     if len(sys.argv) > 2
-    else "/data/schmitz/gem5-CHERI/scratch/checkpoints/boot-atomic"
+    else "/data/gem5-CHERI/scratch/checkpoints/boot-atomic"
 )
 
 cache_hierarchy = PrivateL1PrivateL2WalkCacheHierarchy(
@@ -54,13 +54,13 @@ board = RiscvCheriBoard(
 
 board.set_kernel_disk_workload(
     kernel=FileResource(
-        local_path="/data/schmitz/gem5-CHERI/tests/kernel",
+        local_path="/data/gem5-CHERI/tests/kernel",
     ),
     disk_image=DiskImageResource(
-        local_path="/data/schmitz/cheri/output/cheribsd-riscv64-purecap.img",
+        local_path="/data/cheri/output/cheribsd-riscv64-purecap.img",
         root_partition="1",
     ),
-    readfile="/data/schmitz/gem5-CHERI/scratch/m5_init_script_cheri.sh",
+    readfile="/data/gem5-CHERI/scratch/m5_init_script_cheri.sh",
     kernel_args=[
         "-s",
         "console=ttyS0",

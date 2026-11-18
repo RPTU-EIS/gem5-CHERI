@@ -29,6 +29,7 @@
 #ifndef __DEV_RISCV_CHERI_LUPV_HH__
 #define __DEV_RISCV_CHERI_LUPV_HH__
 
+#include "arch/riscv_cheri/interrupts.hh"
 #include "dev/lupio/lupio_pic.hh"
 #include "dev/platform.hh"
 #include "params/LupV.hh"

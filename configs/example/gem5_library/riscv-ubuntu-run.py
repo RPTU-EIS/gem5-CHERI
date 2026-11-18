@@ -48,7 +48,11 @@ from gem5.components.memory import DualChannelDDR4_2400
 from gem5.components.processors.cpu_types import CPUTypes
 from gem5.components.processors.simple_processor import SimpleProcessor
 from gem5.isas import ISA
-from gem5.resources.resource import obtain_resource
+from gem5.resources.resource import (
+    DiskImageResource,
+    FileResource,
+    obtain_resource,
+)
 from gem5.simulate.simulator import Simulator
 from gem5.utils.requires import requires
 
@@ -72,7 +76,7 @@ memory = DualChannelDDR4_2400(size="3GB")
 
 # Here we setup the processor. We use a simple processor.
 processor = SimpleProcessor(
-    cpu_type=CPUTypes.TIMING, isa=ISA.RISCV, num_cores=2
+    cpu_type=CPUTypes.MINOR, isa=ISA.RISCV, num_cores=1
 )
 
 # Here we setup the board. The RiscvBoard allows for Full-System RISCV
@@ -88,8 +92,25 @@ board = RiscvBoard(
 # Ubuntu 20.04. Once the system successfully boots it encounters an `m5_exit`
 # instruction which stops the simulation. When the simulation has ended you may
 # inspect `m5out/system.pc.com_1.device` to see the stdout.
-board.set_workload(
-    obtain_resource("riscv-ubuntu-20.04-boot", resource_version="3.0.0")
+# Workload
+board.set_kernel_disk_workload(
+    kernel=FileResource(
+        local_path="/import/public/Linux/gem5/RISCV/riscv-linux-6.5.5-kernel",
+    ),
+    disk_image=DiskImageResource(
+        local_path="/import/public/Linux/gem5/RISCV/riscv-ubuntu-20.04-img",
+        root_partition="1",
+    ),
+    readfile_contents="/sbin/m5 dumpstats\n/sbin/m5 exit",
+    kernel_args=[
+        "-s",
+        "console=ttyS0",
+        "root={root_value}",
+        "disk_device={disk_device}",
+        "rw",
+        "init_script=/etc/m5_init.sh",
+        "init_shell=/bin/sh",
+    ],
 )
 
 simulator = Simulator(board=board)

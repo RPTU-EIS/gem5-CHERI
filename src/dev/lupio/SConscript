@@ -26,14 +26,21 @@
 
 Import('*')
 
-SimObject('LupioBLK.py', sim_objects=['LupioBLK'], tags='riscv cheri isa')
-SimObject('LupioIPI.py', sim_objects=['LupioIPI'], tags='riscv cheri isa')
-SimObject('LupioPIC.py', sim_objects=['LupioPIC'], tags='riscv cheri isa')
-SimObject('LupioRNG.py', sim_objects=['LupioRNG'], tags='riscv cheri isa')
-SimObject('LupioRTC.py', sim_objects=['LupioRTC'], tags='riscv cheri isa')
-SimObject('LupioTMR.py', sim_objects=['LupioTMR'], tags='riscv cheri isa')
-SimObject('LupioTTY.py', sim_objects=['LupioTTY'], tags='riscv cheri isa')
-SimObject('LupioSYS.py', sim_objects=['LupioSYS'], tags='riscv cheri isa')
+# The Lupio devices are shared by the plain and the CHERI RISC-V builds, so
+# they carry the tags of whichever of the two is being built.
+if env['CONF']['USE_RISCV_CHERI_ISA']:
+    lupio_tags = 'riscv cheri isa'
+else:
+    lupio_tags = 'riscv isa'
+
+SimObject('LupioBLK.py', sim_objects=['LupioBLK'], tags=lupio_tags)
+SimObject('LupioIPI.py', sim_objects=['LupioIPI'], tags=lupio_tags)
+SimObject('LupioPIC.py', sim_objects=['LupioPIC'], tags=lupio_tags)
+SimObject('LupioRNG.py', sim_objects=['LupioRNG'], tags=lupio_tags)
+SimObject('LupioRTC.py', sim_objects=['LupioRTC'], tags=lupio_tags)
+SimObject('LupioTMR.py', sim_objects=['LupioTMR'], tags=lupio_tags)
+SimObject('LupioTTY.py', sim_objects=['LupioTTY'], tags=lupio_tags)
+SimObject('LupioSYS.py', sim_objects=['LupioSYS'], tags=lupio_tags)
 
 DebugFlag('LupioBLK')
 DebugFlag('LupioIPI')
@@ -44,11 +51,11 @@ DebugFlag('LupioTMR')
 DebugFlag('LupioTTY')
 DebugFlag('LupioSYS')
 
-Source('lupio_blk.cc', tags='riscv cheri isa')
-Source('lupio_ipi.cc', tags='riscv cheri isa')
-Source('lupio_pic.cc', tags='riscv cheri isa')
-Source('lupio_rng.cc', tags='riscv cheri isa')
-Source('lupio_rtc.cc', tags='riscv cheri isa')
-Source('lupio_tmr.cc', tags='riscv cheri isa')
-Source('lupio_tty.cc', tags='riscv cheri isa')
-Source('lupio_sys.cc', tags='riscv cheri isa')
+Source('lupio_blk.cc', tags=lupio_tags)
+Source('lupio_ipi.cc', tags=lupio_tags)
+Source('lupio_pic.cc', tags=lupio_tags)
+Source('lupio_rng.cc', tags=lupio_tags)
+Source('lupio_rtc.cc', tags=lupio_tags)
+Source('lupio_tmr.cc', tags=lupio_tags)
+Source('lupio_tty.cc', tags=lupio_tags)
+Source('lupio_sys.cc', tags=lupio_tags)

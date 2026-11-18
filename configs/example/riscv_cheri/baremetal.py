@@ -89,7 +89,7 @@ board.set_kernel_disk_workload(
     bootloader=BootloaderResource(
         "/import/public/Linux/gem5/RISCV/riscv-bootloader-opensbi-1.3.1"
     ),
-    kernel=KernelResource("/data/schmitz/gem5-CHERI/binaries/median.riscv"),
+    kernel=KernelResource("/data/gem5-CHERI/binaries/median.riscv"),
     # kernel=KernelResource("/import/public/Linux/gem5/RISCV/riscv-linux-6.5.5-kernel"),
     disk_image=DiskImageResource(
         "/import/public/Linux/gem5/RISCV/ubuntu-spec.img",

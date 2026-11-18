@@ -30,27 +30,34 @@
 
 Import('*')
 
-SimObject('HiFive.py', sim_objects=['HiFiveBase', 'GenericRiscvCHERIPciHost'],
-          tags='riscv cheri isa')
-SimObject('LupV.py', sim_objects=['LupV'], tags='riscv cheri isa')
-SimObject('Clint.py', sim_objects=['Clint'], tags='riscv cheri isa')
-SimObject('PlicDevice.py', sim_objects=['PlicIntDevice'],
-                tags='riscv cheri isa')
-SimObject('Plic.py', sim_objects=['PlicBase', 'Plic'], tags='riscv cheri isa')
-SimObject('RTC.py', sim_objects=['RiscvRTC'], tags='riscv cheri isa')
-SimObject('RiscvCHERIVirtIOMMIO.py', sim_objects=['RiscvCHERIMmioVirtIO'],
-    tags='riscv cheri isa')
+# These devices use the same SimObject and module names as the ones in
+# ../riscv. SimObject() registers its targets whatever the tags are, so the
+# two sets must not both be registered in one build: register this set only
+# for the CHERI RISC-V ISA.
+if env['CONF']['USE_RISCV_CHERI_ISA']:
+    SimObject('HiFive.py',
+              sim_objects=['HiFiveBase', 'GenericRiscvCHERIPciHost'],
+              tags='riscv cheri isa')
+    SimObject('LupV.py', sim_objects=['LupV'], tags='riscv cheri isa')
+    SimObject('Clint.py', sim_objects=['Clint'], tags='riscv cheri isa')
+    SimObject('PlicDevice.py', sim_objects=['PlicIntDevice'],
+              tags='riscv cheri isa')
+    SimObject('Plic.py', sim_objects=['PlicBase', 'Plic'],
+              tags='riscv cheri isa')
+    SimObject('RTC.py', sim_objects=['RiscvRTC'], tags='riscv cheri isa')
+    SimObject('RiscvCHERIVirtIOMMIO.py',
+              sim_objects=['RiscvCHERIMmioVirtIO'], tags='riscv cheri isa')
 
-DebugFlag('Clint', tags='riscv cheri isa')
-DebugFlag('Plic', tags='riscv cheri isa')
-DebugFlag('VirtIOMMIO', tags='riscv cheri isa')
+    DebugFlag('Clint', tags='riscv cheri isa')
+    DebugFlag('Plic', tags='riscv cheri isa')
+    DebugFlag('VirtIOMMIO', tags='riscv cheri isa')
 
-Source('pci_host.cc', tags='riscv cheri isa')
+    Source('pci_host.cc', tags='riscv cheri isa')
 
-Source('hifive.cc', tags='riscv cheri isa')
-Source('lupv.cc', tags='riscv cheri isa')
-Source('clint.cc', tags='riscv cheri isa')
-Source('plic_device.cc', tags='riscv cheri isa')
-Source('plic.cc', tags='riscv cheri isa')
-Source('rtc.cc', tags='riscv cheri isa')
-Source('vio_mmio.cc', tags='riscv cheri isa')
+    Source('hifive.cc', tags='riscv cheri isa')
+    Source('lupv.cc', tags='riscv cheri isa')
+    Source('clint.cc', tags='riscv cheri isa')
+    Source('plic_device.cc', tags='riscv cheri isa')
+    Source('plic.cc', tags='riscv cheri isa')
+    Source('rtc.cc', tags='riscv cheri isa')
+    Source('vio_mmio.cc', tags='riscv cheri isa')
